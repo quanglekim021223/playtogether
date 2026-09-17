@@ -34,7 +34,9 @@ test('environment meshes render and a fuel blast produces bounded effects and au
   }, initial);
   await expect(page.locator('#scene')).toHaveAttribute('data-fuel-barrels', '2');
   await expect(page.locator('#scene')).toHaveAttribute('data-bounce-pads', '2');
-  await expect(page.locator('#scene')).toHaveAttribute('data-asset-kit', '6');
+  await expect(page.locator('#scene')).toHaveAttribute('data-asset-kit', '8');
+  await expect(page.locator('#scene')).toHaveAttribute('data-resident-assets', '2');
+  await expect.poll(() => page.locator('#scene').getAttribute('data-resident-models').then(Number)).toBeGreaterThan(0);
   game.damageEnvironment(game.environmentItems.find(i => i.kind === 'fuelBarrel'), 999, 'test');
   await page.evaluate(snapshot => window.environmentScene.update(snapshot), game.snapshot());
   await expect(page.locator('#scene')).toHaveAttribute('data-fuel-barrels', '1');
@@ -112,6 +114,7 @@ test('camera follows the active resident across teams and rooftops; overview and
   game.readyAim();
   await page.evaluate(snapshot => window.focusScene.update(snapshot), game.snapshot());
   await expect(page.locator('#scene')).toHaveAttribute('data-camera-mode', 'tactical');
+  await expect(page.locator('#scene')).toHaveAttribute('data-resident-animation', 'aim');
   await expect.poll(() => page.locator('#scene').getAttribute('data-camera-x').then(Number)).toBeGreaterThan(game.shooter.body.position.x + 4);
   await page.screenshot({ path: 'artifacts/tactical-aim.png', scale: 'css' });
   game.enterPhase('move', 12);

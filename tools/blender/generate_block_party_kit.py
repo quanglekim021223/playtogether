@@ -49,6 +49,14 @@ CORAL = material("Coral", (0.85, 0.11, 0.06), metallic=0.05, roughness=0.58)
 TEAL = material("Teal", (0.08, 0.62, 0.58), metallic=0.15, roughness=0.42)
 GLOW = material("Glow", (0.60, 1.0, 0.84), metallic=0.1, roughness=0.18)
 WARNING = material("Warning", (1.0, 0.68, 0.12), metallic=0.05, roughness=0.55)
+SKIN = material("Skin", (0.92, 0.56, 0.34), roughness=0.72)
+SKIN_LIGHT = material("Skin Light", (1.0, 0.68, 0.43), roughness=0.7)
+HAIR = material("Hair", (0.10, 0.055, 0.035), roughness=0.9)
+HELMET = material("Helmet", (0.92, 0.68, 0.25), roughness=0.58)
+PANTS = material("Pants", (0.11, 0.16, 0.19), roughness=0.84)
+BOOT = material("Boot", (0.075, 0.055, 0.045), roughness=0.9)
+SHIRT = material("Shirt", (0.78, 0.74, 0.62), roughness=0.86)
+WHITE = material("Eye White", (0.96, 0.96, 0.91), roughness=0.5)
 
 
 def link(obj, root):
@@ -87,6 +95,22 @@ def stone(name, root, location, scale, mat):
     obj.scale = scale
     obj.data.materials.append(mat)
     return link(obj, root)
+
+
+def sphere(name, root_obj, location, scale, mat, segments=20, rings=12):
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=rings, location=location)
+    obj = bpy.context.object
+    obj.name = name
+    obj.scale = scale
+    obj.data.materials.append(mat)
+    return link(obj, root_obj)
+
+
+def pivot(name, parent, location):
+    obj = bpy.data.objects.new(name, None)
+    bpy.context.collection.objects.link(obj)
+    obj.location = location
+    return link(obj, parent)
 
 
 def root(name):
@@ -166,6 +190,54 @@ def bounce_pad():
     return r, (1.45, .34, .95), "bouncePad"
 
 
+def resident_asset(team):
+    """Build a lightweight articulated character; named pivots are animated in Three.js."""
+    team_name = "Coral" if team == 0 else "Teal"
+    jacket = CORAL if team == 0 else TEAL
+    r = root(f"BP_Resident{team_name}")
+    rig = pivot("CharacterRig", r, (0, 0, 0))
+    hips = pivot("Hips", rig, (0, -.10, 0))
+
+    # Chunky silhouette remains readable from the shared-screen camera.
+    sphere("Torso", hips, (0, .30, 0), (.36, .43, .25), jacket)
+    cube("Shirt", hips, (0, .34, .245), (.28, .28, .035), SHIRT, .035)
+    cube("JacketZip", hips, (0, .31, .278), (.035, .55, .025), METAL, .012)
+    cube("Belt", hips, (0, -.04, .02), (.62, .10, .43), BOOT, .035)
+    for x in (-.20, .20):
+        cube("BeltPouch", hips, (x, -.08, .245), (.18, .19, .10), WOOD_DARK, .035)
+    cube("Backpack", hips, (0, .31, -.25), (.46, .49, .16), WOOD_DARK, .07)
+
+    head = pivot("Head", hips, (0, .78, 0))
+    sphere("HeadMesh", head, (0, 0, .015), (.30, .33, .27), SKIN_LIGHT)
+    sphere("Hair", head, (0, .15, -.015), (.285, .21, .265), HAIR)
+    sphere("Helmet", head, (0, .25, 0), (.35, .18, .32), HELMET)
+    cube("HelmetBrim", head, (0, .18, .17), (.72, .055, .40), HELMET, .025)
+    cube("HelmetLamp", head, (0, .29, .30), (.16, .13, .08), WARNING, .025)
+    for x in (-.105, .105):
+        sphere("Eye", head, (x, .025, .256), (.075, .09, .035), WHITE, 16, 10)
+        sphere("Pupil", head, (x, .018, .288), (.030, .042, .018), HAIR, 12, 8)
+        brow = cube("Brow", head, (x, .115, .293), (.15, .035, .025), HAIR, .012)
+        brow.rotation_euler.z = -.12 if x < 0 else .12
+    sphere("Nose", head, (0, -.03, .286), (.055, .07, .055), SKIN)
+    cube("Mouth", head, (0, -.13, .286), (.13, .028, .025), HAIR, .01)
+    for x in (-.31, .31): sphere("Ear", head, (x, 0, 0), (.07, .105, .055), SKIN)
+
+    for side, suffix in ((-1, "L"), (1, "R")):
+        arm = pivot(f"Arm_{suffix}", hips, (side * .37, .54, 0))
+        sphere(f"Sleeve_{suffix}", arm, (side * .025, -.17, 0), (.145, .24, .145), jacket)
+        sphere(f"Glove_{suffix}", arm, (side * .035, -.40, .035), (.12, .14, .115), METAL)
+        leg = pivot(f"Leg_{suffix}", hips, (side * .18, -.08, 0))
+        sphere(f"Trouser_{suffix}", leg, (0, -.25, 0), (.17, .29, .18), PANTS)
+        cube(f"Knee_{suffix}", leg, (0, -.34, .16), (.23, .16, .08), METAL, .04)
+        cube(f"Boot_{suffix}", leg, (0, -.55, .075), (.28, .25, .42), BOOT, .065)
+        cube(f"Sole_{suffix}", leg, (0, -.68, .095), (.31, .075, .46), STONE_DARK, .025)
+
+    # Small shoulder badge gives the two team assets an unmistakable color read.
+    badge = sphere("TeamBadge", hips, (-.31, .48, .22), (.075, .075, .035), WARNING, 16, 8)
+    badge["team"] = team
+    return r, (1.0, 1.65, .75), f"resident{team}"
+
+
 def export(root_obj, name):
     bpy.ops.object.select_all(action='DESELECT')
     root_obj.select_set(True)
@@ -177,6 +249,7 @@ def export(root_obj, name):
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete(use_global=False)
 assets = [factory() for factory in (wood_block, brick_block, stone_block, glass_block, fuel_barrel, bounce_pad)]
+assets.extend((resident_asset(0), resident_asset(1)))
 manifest = []
 for obj, size, kind in assets:
     export(obj, obj.name.lower())

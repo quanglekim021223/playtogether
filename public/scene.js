@@ -11,7 +11,8 @@ export function createScene(container) {
   const kitFiles = {
     wood: ['bp_woodblock.glb', [1.4, 1.5, 1.4]], brick: ['bp_brickblock.glb', [1.4, 1.5, 1.4]],
     stone: ['bp_stoneblock.glb', [1.4, 1.5, 1.4]], glass: ['bp_glassblock.glb', [1.4, 1.5, .13]],
-    fuelBarrel: ['bp_fuelbarrel.glb', [.72, 1.18, .72]], bouncePad: ['bp_bouncepad.glb', [1.45, .34, .95]]
+    fuelBarrel: ['bp_fuelbarrel.glb', [.72, 1.18, .72]], bouncePad: ['bp_bouncepad.glb', [1.45, .34, .95]],
+    resident0: ['bp_residentcoral.glb', [1, 1.65, .75]], resident1: ['bp_residentteal.glb', [1, 1.65, .75]]
   };
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   let matchWinner = null, eventBaseline = false;
@@ -105,13 +106,37 @@ export function createScene(container) {
   const viewTarget = new T.Vector3(0, 2, 0); let viewDistance = 50;
   function kitKey(item) {
     if (['fuelBarrel', 'bouncePad'].includes(item.kind)) return item.kind;
+    if (item.kind === 'resident') return `resident${item.team}`;
     return item.kind === 'block' ? item.material : null;
   }
+  function residentClips() {
+    const scalar = (name, duration, times, values) => new T.NumberKeyframeTrack(`${name}.rotation[z]`, times.map(t => t * duration), values);
+    const bounce = (duration, height) => new T.VectorKeyframeTrack('CharacterRig.position', [0, duration * .5, duration], [0, 0, 0, 0, height, 0, 0, 0, 0]);
+    return [
+      new T.AnimationClip('idle', 1.8, [bounce(1.8, .025), scalar('Head', 1.8, [0, .5, 1], [-.025, .025, -.025])]),
+      new T.AnimationClip('move', .62, [bounce(.62, .075), scalar('Leg_L', .62, [0, .5, 1], [-.48, .48, -.48]), scalar('Leg_R', .62, [0, .5, 1], [.48, -.48, .48]), scalar('Arm_L', .62, [0, .5, 1], [.34, -.34, .34]), scalar('Arm_R', .62, [0, .5, 1], [-.34, .34, -.34])]),
+      new T.AnimationClip('aim', .8, [bounce(.8, .012), scalar('Arm_L', .8, [0, .5, 1], [-1.05, -.98, -1.05]), scalar('Arm_R', .8, [0, .5, 1], [1.05, .98, 1.05])]),
+      new T.AnimationClip('hit', .28, [scalar('CharacterRig', .28, [0, .25, .5, .75, 1], [0, -.16, .14, -.08, 0]), scalar('Head', .28, [0, .5, 1], [0, .15, 0])]),
+      new T.AnimationClip('celebrate', .72, [bounce(.72, .20), scalar('Arm_L', .72, [0, .5, 1], [-2.1, -2.45, -2.1]), scalar('Arm_R', .72, [0, .5, 1], [2.1, 2.45, 2.1])])
+    ];
+  }
+  function attachResidentAsset(obj, asset) {
+    if (obj.userData.assetModel) return;
+    const model = asset.scene.clone(true);
+    model.scale.setScalar(.78); model.position.y = -.03;
+    model.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+    obj.userData.rig.visible = false; obj.add(model); obj.userData.assetModel = model;
+    const mixer = new T.AnimationMixer(model), actions = Object.fromEntries(residentClips().map(clip => [clip.name, mixer.clipAction(clip)]));
+    actions.hit.setLoop(T.LoopOnce, 1); actions.hit.clampWhenFinished = true;
+    actions.idle.play(); obj.userData.assetAnimator = { mixer, actions, current: 'idle' };
+    obj.userData.assetItem = null;
+  }
   function applyKit(obj, item) {
-    if (item.kind === 'resident' || obj.userData.assetModel) return;
+    if (obj.userData.assetModel) return;
     const key = kitKey(item); if (!key) return;
     const asset = kit.get(key);
-    if (!asset) { obj.userData.assetItem = { kind: item.kind, material: item.material, size: [...item.size] }; return; }
+    if (!asset) { obj.userData.assetItem = { kind: item.kind, material: item.material, team: item.team, size: [...item.size] }; return; }
+    if (item.kind === 'resident') { attachResidentAsset(obj, asset); return; }
     for (const child of obj.children) if (!obj.userData.cracks?.includes(child)) child.visible = false;
     const model = asset.scene.clone(true), [bw, bh, bd] = asset.size, [w, h, d] = item.size;
     const thinGlass = item.material === 'glass';
@@ -125,7 +150,9 @@ export function createScene(container) {
     const loaded = await loader.loadAsync(`/assets/kit/${file}`); kit.set(key, { scene: loaded.scene, size });
   })).then(() => {
     container.dataset.assetKit = String(kit.size);
+    container.dataset.residentAssets = String([...kit.keys()].filter(key => key.startsWith('resident')).length);
     for (const obj of objects.values()) if (obj.userData.assetItem) applyKit(obj, obj.userData.assetItem);
+    container.dataset.residentModels = String([...objects.values()].filter(obj => obj.userData.assetAnimator).length);
   }).catch(() => { container.dataset.assetKit = 'fallback'; });
   const dots = Array.from({ length: 15 }, () => { const dot = sphere(0, 0, 1.45, 0.065, 0xffffff); dot.visible = false; return dot; });
   container.dataset.trajectorySamples = String(dots.length);
@@ -200,8 +227,11 @@ export function createScene(container) {
       if (obj.userData.cracks) obj.userData.cracks.forEach((c, i) => { c.visible = item.crack === i + 1; });
       if (obj.userData.hp !== undefined && item.hp < obj.userData.hp) obj.userData.hurtUntil = performance.now() / 1000 + .65;
       obj.userData.hp = item.hp; obj.userData.team = item.team;
+      obj.userData.activeResident = item.kind === 'resident' && item.id === data.shooterId;
+      obj.userData.gamePhase = data.phase;
       obj.visible = item.kind !== 'resident' || item.hp > 0;
     }
+    container.dataset.residentModels = String([...objects.values()].filter(obj => obj.userData.assetAnimator).length);
     const hasProjectileList = Array.isArray(data.projectiles) && data.projectiles.length > 0;
     const currentProjList = hasProjectileList
       ? data.projectiles
@@ -337,8 +367,20 @@ export function createScene(container) {
     if (selection.visible) selection.position.set(activeShooter.p[0], activeShooter.p[1] + .12, 1.55);
     if (shake > 0 && !reducedMotion.matches) { camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake; shake *= 0.88; }
     for (const obj of objects.values()) {
+      obj.userData.moving = obj.position.distanceToSquared(obj.userData.targetP) > .001;
       obj.position.lerp(obj.userData.targetP, Math.min(1, dt * 22)); obj.quaternion.slerp(obj.userData.targetQ, Math.min(1, dt * 22));
       art.animateResident(obj, now, reducedMotion.matches, matchWinner);
+      const animator = obj.userData.assetAnimator;
+      if (animator) {
+        const hurt = now / 1000 < obj.userData.hurtUntil;
+        const next = matchWinner === obj.userData.team ? 'celebrate' : hurt ? 'hit' : obj.userData.moving ? 'move' : obj.userData.activeResident && ['aim', 'flight'].includes(obj.userData.gamePhase) ? 'aim' : 'idle';
+        if (animator.current !== next) {
+          const previous = animator.actions[animator.current], action = animator.actions[next];
+          previous.fadeOut(.12); action.reset().fadeIn(.12).play(); animator.current = next;
+        }
+        animator.mixer.timeScale = reducedMotion.matches ? 0 : 1; animator.mixer.update(dt);
+        if (obj.userData.activeResident) container.dataset.residentAnimation = next;
+      }
       if (obj.userData.gun) {
         const recoil = obj.userData.recoil || 0; obj.userData.gun.position.x = (obj.userData.team === 0 ? -1 : 1) * recoil;
         obj.userData.recoil = Math.max(0, recoil - dt * .7);

@@ -58,5 +58,25 @@
       0.95
     ],
     "kind": "bouncePad"
+  },
+  {
+    "file": "bp_residentcoral.glb",
+    "name": "BP_ResidentCoral",
+    "size": [
+      1.0,
+      1.65,
+      0.75
+    ],
+    "kind": "resident0"
+  },
+  {
+    "file": "bp_residentteal.glb",
+    "name": "BP_ResidentTeal",
+    "size": [
+      1.0,
+      1.65,
+      0.75
+    ],
+    "kind": "resident1"
   }
 ]
