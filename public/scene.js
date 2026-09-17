@@ -96,8 +96,9 @@ export function createScene(container) {
   const selection = new T.Mesh(new T.TorusGeometry(.68, .035, 6, 36), new T.MeshBasicMaterial({ color: 0xffd376, depthTest: false }));
   selection.renderOrder = 9; selection.visible = false; scene.add(selection);
   const viewTarget = new T.Vector3(0, 2, 0); let viewDistance = 50;
-  const dots = Array.from({ length: 30 }, () => { const dot = sphere(0, 0, 1.45, 0.065, 0xffffff); dot.visible = false; return dot; });
-  const impactMaterial = new T.MeshBasicMaterial({ color: 0x7be0b5, depthTest: false });
+  const dots = Array.from({ length: 15 }, () => { const dot = sphere(0, 0, 1.45, 0.065, 0xffffff); dot.visible = false; return dot; });
+  container.dataset.trajectorySamples = String(dots.length);
+  const impactMaterial = new T.MeshBasicMaterial({ color: 0xffa629, depthTest: false });
   const impactMarker = new T.Mesh(new T.TorusGeometry(.45, .075, 8, 32), impactMaterial);
   impactMarker.renderOrder = 11; impactMarker.visible = false; scene.add(impactMarker);
   // Solid shaft and arrowhead remain legible on the shared screen from a sofa.
@@ -108,7 +109,7 @@ export function createScene(container) {
   const arrowhead = new T.Mesh(new T.ConeGeometry(0.34, 0.72, 12), arrowMaterial);
   arrowhead.rotation.z = -Math.PI / 2; arrowhead.renderOrder = 10; aimArrow.add(arrowhead);
   function aimPreview(team, aim, wind, visible, impact = null) {
-    if (!activeShooter) { aimArrow.visible = false; impactMarker.visible = false; dots.forEach(d => { d.visible = false; }); return; }
+    if (!activeShooter) { aimArrow.visible = false; impactMarker.visible = false; container.dataset.impactMarker = 'false'; dots.forEach(d => { d.visible = false; }); return; }
     const angle = aim.angle * Math.PI / 180, rotation = team === 0 ? angle : Math.PI - angle;
     const velocity = launchVelocity(team, aim.angle, aim.power, activeShooter.weapon);
     const origin = muzzlePosition(activeShooter.p, team, aim.angle);
@@ -128,9 +129,9 @@ export function createScene(container) {
       dot.visible = visible && y > 0 && !passedImpact; dot.position.set(x, y, 1.45);
       dot.scale.setScalar(0.065 * Math.max(.35, 1 - i / 38));
     });
-    impactMarker.visible = visible && Boolean(impact?.p);
+    impactMarker.visible = visible && Boolean(impact?.p) && Boolean(impact?.blockedByOwn);
     if (impactMarker.visible) impactMarker.position.set(impact.p[0], Math.max(.15, impact.p[1]), 1.55);
-    impactMaterial.color.set(impact?.blockedByOwn ? 0xffa629 : impact?.team === 1 - team ? 0xff6e55 : 0x7be0b5);
+    container.dataset.impactMarker = String(impactMarker.visible);
     container.dataset.aimBlocked = String(Boolean(impact?.blockedByOwn));
     container.dataset.aimImpact = impact?.kind || 'none';
   }

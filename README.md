@@ -64,7 +64,7 @@ Mỗi đội có sáu nhân vật không dùng tên riêng; mỗi nhân vật gi
 
 Lượt luân phiên qua các cư dân còn sống, bỏ qua người đã bị loại. Người dùng điện thoại vẫn luân phiên theo đội; số tay cầm độc lập với số cư dân. Tay cầm hiển thị người đang bắn, vị trí và vũ khí, không còn ba nút chọn đạn tự do. Máy chủ xác nhận cả lượt, cư dân và vũ khí để chặn lệnh cũ hoặc đổi súng trái phép.
 
-Camera tiến gần cư dân trong pha di chuyển, rồi lùi sang góc chiến thuật khi ngắm để luôn thấy người bắn, quỹ đạo và phía đối phương. Quỹ đạo dài kết thúc bằng vòng dự báo va chạm; màu cam báo vật cản phe mình. Nhân vật và đường ngắm được dựng trước mặt tiền để không chìm trong kiến trúc. Khi bắn, camera mở về toàn sân và vị trí đạn được dự đoán giữa các snapshot để chuyển động mượt. Nút **Toàn cảnh / Theo người bắn** đổi góc xem; reduced motion giữ góc toàn cảnh.
+Camera tiến gần cư dân trong pha di chuyển, rồi lùi sang góc chiến thuật khi ngắm để luôn thấy người bắn, nửa đầu quỹ đạo và phía đối phương. Phần còn lại của đường bay được ẩn để người chơi phải tự ước lượng; vòng màu cam chỉ xuất hiện khi công trình phe mình chặn đường bắn. Nhân vật và đường ngắm được dựng trước mặt tiền để không chìm trong kiến trúc. Khi bắn, camera mở về toàn sân và vị trí đạn được dự đoán giữa các snapshot để chuyển động mượt. Nút **Toàn cảnh / Theo người bắn** đổi góc xem; reduced motion giữ góc toàn cảnh.
 
 Cư dân đứng ở sân, chòi, ban công lệch tầng, cầu và sân thượng. Mỗi map có 11 node nối hai chiều; người đang bắn có thể chuyển sang node lân cận nếu chưa bị chiếm và support còn an toàn. Node đi theo vị trí và độ nghiêng của support. Tường/mái vẫn chắn đạn; bot tính đường bắn từ vị trí của mình và bù gió khi dùng bazooka. Vụ nổ và khối nhà rơi có thể gây sát thương đồng đội.
 

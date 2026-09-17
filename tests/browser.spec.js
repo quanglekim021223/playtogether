@@ -56,6 +56,7 @@ test('phone-only practice: drag updates TV aim, release fires, bot returns turn'
     await expect(player.phone.locator('#pull-angle')).not.toHaveText('—');
     await expect(page.locator('#aim-readout')).toContainText(`LỰC ${power}%`);
     await expect(page.locator('#scene')).toHaveAttribute('data-aim-impact', /^(block|resident|fuelBarrel|bouncePad|ground|out)$/);
+    await expect(page.locator('#scene')).toHaveAttribute('data-trajectory-samples', '15');
     await release(player);
     await expect(player.phone.locator('#skill-btn')).toBeVisible({ timeout: 2000 });
     await expect(player.phone.locator('#skill-btn')).toContainText('Đạn kép');
