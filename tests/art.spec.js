@@ -34,6 +34,7 @@ test('environment meshes render and a fuel blast produces bounded effects and au
   }, initial);
   await expect(page.locator('#scene')).toHaveAttribute('data-fuel-barrels', '2');
   await expect(page.locator('#scene')).toHaveAttribute('data-bounce-pads', '2');
+  await expect(page.locator('#scene')).toHaveAttribute('data-asset-kit', '6');
   game.damageEnvironment(game.environmentItems.find(i => i.kind === 'fuelBarrel'), 999, 'test');
   await page.evaluate(snapshot => window.environmentScene.update(snapshot), game.snapshot());
   await expect(page.locator('#scene')).toHaveAttribute('data-fuel-barrels', '1');

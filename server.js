@@ -14,6 +14,7 @@ export function createApp({ port = 3000 } = {}) {
   const publicPath = fileURLToPath(new URL('./public/', import.meta.url));
   app.use(express.static(publicPath));
   app.use('/vendor/three', express.static(fileURLToPath(new URL('./node_modules/three/build/', import.meta.url))));
+  app.use('/vendor/three-addons', express.static(fileURLToPath(new URL('./node_modules/three/examples/jsm/', import.meta.url))));
   app.get('/health', (_, res) => res.json({ ok: true }));
   const previews = new Map();
   app.get('/maps', (_, res) => res.json(MAP_CATALOG));

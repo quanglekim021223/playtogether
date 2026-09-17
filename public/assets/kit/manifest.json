@@ -1,0 +1,62 @@
+[
+  {
+    "file": "bp_woodblock.glb",
+    "name": "BP_WoodBlock",
+    "size": [
+      1.4,
+      1.5,
+      1.4
+    ],
+    "kind": "wood"
+  },
+  {
+    "file": "bp_brickblock.glb",
+    "name": "BP_BrickBlock",
+    "size": [
+      1.4,
+      1.5,
+      1.4
+    ],
+    "kind": "brick"
+  },
+  {
+    "file": "bp_stoneblock.glb",
+    "name": "BP_StoneBlock",
+    "size": [
+      1.4,
+      1.5,
+      1.4
+    ],
+    "kind": "stone"
+  },
+  {
+    "file": "bp_glassblock.glb",
+    "name": "BP_GlassBlock",
+    "size": [
+      1.4,
+      1.5,
+      0.13
+    ],
+    "kind": "glass"
+  },
+  {
+    "file": "bp_fuelbarrel.glb",
+    "name": "BP_FuelBarrel",
+    "size": [
+      0.72,
+      1.18,
+      0.72
+    ],
+    "kind": "fuelBarrel"
+  },
+  {
+    "file": "bp_bouncepad.glb",
+    "name": "BP_BouncePad",
+    "size": [
+      1.45,
+      0.34,
+      0.95
+    ],
+    "kind": "bouncePad"
+  }
+]

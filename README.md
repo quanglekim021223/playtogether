@@ -2,6 +2,28 @@
 
 Game party 3D trên web, hai đội bắn phá công trình theo lượt. Máy tính/TV là màn hình chung; điện thoại là tay cầm. Asset được dựng bằng geometry trong code.
 
+### Tạo asset Blender không cần dựng tay
+
+Sau khi cài Blender, script `tools/blender/generate_block_party_kit.py` tạo sáu asset GLB cơ bản: khối gỗ, gạch, đá, kính, thùng xăng và tấm nảy. Mỗi file có gốc tọa độ và kích thước ổn định để map vào đúng collider trong game.
+
+```sh
+blender --background --python tools/blender/generate_block_party_kit.py -- --output public/assets/kit
+```
+
+Trên macOS, file ứng dụng thường không tự thêm lệnh `blender` vào `PATH`. Có thể chạy trực tiếp mà không cần cài thêm môi trường:
+
+```sh
+"/Applications/Blender.app/Contents/MacOS/Blender" --background --python tools/blender/generate_block_party_kit.py -- --output public/assets/kit
+```
+
+Nếu muốn dùng lệnh ngắn trong các Terminal mới, thêm alias vào `~/.zshrc`:
+
+```sh
+alias blender="/Applications/Blender.app/Contents/MacOS/Blender"
+```
+
+Game tải bộ GLB một lần rồi clone asset theo vật liệu của từng khối, trong khi collider và vật lý vẫn dùng dữ liệu server. Nếu một file không tải được, renderer tự giữ geometry tạo bằng code làm dự phòng.
+
 ## Chạy
 
 Cần Node.js 22 trở lên.

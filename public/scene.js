@@ -1,4 +1,5 @@
 import * as T from 'three';
+import { GLTFLoader } from '/vendor/three-addons/loaders/GLTFLoader.js';
 import { createArt } from './art.js';
 import { MATERIALS } from './materials.js';
 import { createEnvironment } from './environment.js';
@@ -6,6 +7,12 @@ import { WEAPONS, launchVelocity, muzzlePosition } from './weapons.js';
 const COLORS = [0xee775f, 0x48aaa5];
 export function createScene(container) {
   const art = createArt();
+  const kit = new Map();
+  const kitFiles = {
+    wood: ['bp_woodblock.glb', [1.4, 1.5, 1.4]], brick: ['bp_brickblock.glb', [1.4, 1.5, 1.4]],
+    stone: ['bp_stoneblock.glb', [1.4, 1.5, 1.4]], glass: ['bp_glassblock.glb', [1.4, 1.5, .13]],
+    fuelBarrel: ['bp_fuelbarrel.glb', [.72, 1.18, .72]], bouncePad: ['bp_bouncepad.glb', [1.45, .34, .95]]
+  };
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   let matchWinner = null, eventBaseline = false;
   const renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
@@ -96,6 +103,26 @@ export function createScene(container) {
   const selection = new T.Mesh(new T.TorusGeometry(.68, .035, 6, 36), new T.MeshBasicMaterial({ color: 0xffd376, depthTest: false }));
   selection.renderOrder = 9; selection.visible = false; scene.add(selection);
   const viewTarget = new T.Vector3(0, 2, 0); let viewDistance = 50;
+  function kitKey(item) { return ['fuelBarrel', 'bouncePad'].includes(item.kind) ? item.kind : item.material; }
+  function applyKit(obj, item) {
+    if (item.kind === 'resident' || obj.userData.assetModel) return;
+    const asset = kit.get(kitKey(item));
+    if (!asset) { obj.userData.assetItem = { kind: item.kind, material: item.material, size: [...item.size] }; return; }
+    for (const child of obj.children) if (!obj.userData.cracks?.includes(child)) child.visible = false;
+    const model = asset.scene.clone(true), [bw, bh, bd] = asset.size, [w, h, d] = item.size;
+    const thinGlass = item.material === 'glass';
+    model.scale.set(w / bw, h / bh, thinGlass ? 1 : d / bd);
+    model.position.set(0, -h / 2, thinGlass ? d / 2 - bd / 2 : 0);
+    model.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+    obj.add(model); obj.userData.assetModel = model; obj.userData.assetItem = null;
+  }
+  const loader = new GLTFLoader();
+  Promise.all(Object.entries(kitFiles).map(async ([key, [file, size]]) => {
+    const loaded = await loader.loadAsync(`/assets/kit/${file}`); kit.set(key, { scene: loaded.scene, size });
+  })).then(() => {
+    container.dataset.assetKit = String(kit.size);
+    for (const obj of objects.values()) if (obj.userData.assetItem) applyKit(obj, obj.userData.assetItem);
+  }).catch(() => { container.dataset.assetKit = 'fallback'; });
   const dots = Array.from({ length: 15 }, () => { const dot = sphere(0, 0, 1.45, 0.065, 0xffffff); dot.visible = false; return dot; });
   container.dataset.trajectorySamples = String(dots.length);
   const impactMaterial = new T.MeshBasicMaterial({ color: 0xffa629, depthTest: false });
@@ -162,6 +189,7 @@ export function createScene(container) {
       if (!obj) {
         obj = item.kind === 'resident' ? art.resident(item.team, item.id, item.weapon)
           : ['fuelBarrel', 'bouncePad'].includes(item.kind) ? art.interactive(item) : art.block(item);
+        applyKit(obj, item);
         scene.add(obj); objects.set(item.id, obj); obj.position.set(item.p[0], item.p[1], item.kind === 'resident' ? 1.3 : item.p[2]); obj.quaternion.fromArray(item.q);
       }
       obj.userData.targetP = new T.Vector3(item.p[0], item.p[1], item.kind === 'resident' ? 1.3 : item.p[2]); obj.userData.targetQ = item.kind === 'resident' ? new T.Quaternion() : new T.Quaternion(...item.q);
