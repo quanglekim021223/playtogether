@@ -31,6 +31,11 @@ test('phone-only practice: drag updates TV aim, release fires, bot returns turn'
   try {
     player.phone.on('pageerror', e => errors.push(e.message));
     await page.locator('#practice').click();
+    await expect(page.locator('#scene')).toHaveAttribute('data-fuel-barrels', '2');
+    await expect(page.locator('#scene')).toHaveAttribute('data-bounce-pads', '2');
+    await expect(page.locator('#wind')).toHaveAttribute('data-direction', /^(left|right|calm)$/);
+    await expect(page.locator('#wind')).toHaveAttribute('aria-label', /Chỉ ảnh hưởng Bazooka/);
+    await expect(player.phone.locator('#wind .wind-track')).toBeVisible();
     await expect(page.locator('input[type="range"], #fire, #aim-pad')).toHaveCount(0);
     await expect(player.phone.locator('.move-btn')).toHaveCount(1);
     await player.phone.locator('.move-btn').click();

@@ -92,7 +92,7 @@ export function createScene(container) {
     birds.push({ bird, left, right });
   }
   const objects = new Map(); const projectileMeshes = new Map(); let shot = null; let particles = []; let lastEvent = 0; let shake = 0; let trailAt = 0; let mode = 'home';
-  let currentMap = null, activeShooter = null, gamePhase = 'aim', overview = false;
+  let currentMap = null, activeShooter = null, gamePhase = 'aim', overview = false, currentWind = 0;
   const selection = new T.Mesh(new T.TorusGeometry(.68, .035, 6, 36), new T.MeshBasicMaterial({ color: 0xffd376, depthTest: false }));
   selection.renderOrder = 9; selection.visible = false; scene.add(selection);
   const viewTarget = new T.Vector3(0, 2, 0); let viewDistance = 50;
@@ -129,14 +129,20 @@ export function createScene(container) {
     container.dataset.map = data.mapId;
     container.setAttribute('aria-label', `Đấu trường 3D · ${data.mapName}`);
     if (currentMap !== data.mapId) { reset(); currentMap = data.mapId; }
-    activeShooter = data.items.find(i => i.id === data.shooterId) || null; gamePhase = data.phase;
+    activeShooter = data.items.find(i => i.id === data.shooterId) || null; gamePhase = data.phase; currentWind = data.wind || 0;
     container.dataset.shooter = String(data.shooterId); container.dataset.weapon = activeShooter?.weapon || '';
-    const ids = new Set(data.items.map(i => i.id));
+    container.dataset.wind = currentWind.toFixed(1);
+    const environmentItems = Array.isArray(data.environment) ? data.environment : [];
+    container.dataset.fuelBarrels = environmentItems.filter(i => i.kind === 'fuelBarrel').length;
+    container.dataset.bouncePads = environmentItems.filter(i => i.kind === 'bouncePad').length;
+    const allItems = [...data.items, ...environmentItems];
+    const ids = new Set(allItems.map(i => i.id));
     for (const [id, obj] of objects) if (!ids.has(id)) { scene.remove(obj); objects.delete(id); }
-    for (const item of data.items) {
+    for (const item of allItems) {
       let obj = objects.get(item.id);
       if (!obj) {
-        obj = item.kind === 'resident' ? art.resident(item.team, item.id, item.weapon) : art.block(item);
+        obj = item.kind === 'resident' ? art.resident(item.team, item.id, item.weapon)
+          : ['fuelBarrel', 'bouncePad'].includes(item.kind) ? art.interactive(item) : art.block(item);
         scene.add(obj); objects.set(item.id, obj); obj.position.fromArray(item.p); obj.quaternion.fromArray(item.q);
       }
       obj.userData.targetP = new T.Vector3(...item.p); obj.userData.targetQ = item.kind === 'resident' ? new T.Quaternion() : new T.Quaternion(...item.q);
@@ -182,6 +188,11 @@ export function createScene(container) {
         for (let i = 0; i < 8; i++) addParticle(sphere(event.x, event.y, .7, .07, 0xffd477), (Math.random() - .5) * 5, 1 + Math.random() * 4, 0, .35);
         window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'bounce' } }));
       }
+      if (event.type === 'padBounce') {
+        for (let i = 0; i < 12; i++) addParticle(sphere(event.x, event.y, .72, .065, i % 2 ? 0xbaffef : 0x67d7c8), (Math.random() - .5) * 8, 2 + Math.random() * 5, (Math.random() - .5) * 2, .45);
+        const ring = new T.Mesh(ringGeometry, padRingMaterial); ring.position.set(event.x, event.y, .85); ring.scale.setScalar(.22); addParticle(ring, 0, 0, 0, .3, false, true);
+        window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'pad' } }));
+      }
       if (event.type === 'pierce') {
         for (let i = 0; i < 7; i++) { const chip = art.fragment('stone', i); chip.position.set(event.x, event.y, .6); addParticle(chip, (Math.random() - .5) * 7, 1 + Math.random() * 4, 0, .7, true); }
         window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'drill' } }));
@@ -219,9 +230,20 @@ export function createScene(container) {
         }
         window.dispatchEvent(new CustomEvent('game-blast'));
       }
+      if (event.type === 'barrelBlast') {
+        shake = reducedMotion.matches ? 0 : .38;
+        for (let i = 0; i < (reducedMotion.matches ? 10 : 34); i++) {
+          const m = sphere(event.x, Math.max(.35, event.y), 0, .14 + Math.random() * .28, [0xffee91, 0xff8b38, 0xd84b32, 0x3d4240][i % 4]);
+          addParticle(m, (Math.random() - .5) * 13, 2 + Math.random() * 10, (Math.random() - .5) * 6, .65 + Math.random() * .45);
+        }
+        const ring = new T.Mesh(ringGeometry, barrelRingMaterial); ring.position.set(event.x, Math.max(.35, event.y), 1); ring.scale.setScalar(.4); addParticle(ring, 0, 0, 0, .48, false, true);
+        container.dataset.lastEnvironmentEvent = 'barrelBlast';
+        window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'barrel' } }));
+      }
     }
   }
   const ringGeometry = new T.TorusGeometry(1, .04, 6, 40), ringMaterial = new T.MeshBasicMaterial({ color: 0xffe4aa }), pulseRingMaterial = new T.MeshBasicMaterial({ color: 0x82d4c8 });
+  const padRingMaterial = new T.MeshBasicMaterial({ color: 0x86f3dc }), barrelRingMaterial = new T.MeshBasicMaterial({ color: 0xff7b38 });
   function addParticle(m, vx, vy, vz, life, debris = false, ring = false) {
     if (particles.length >= 180) scene.remove(particles.shift().mesh);
     scene.add(m); particles.push({ mesh: m, vx, vy, vz, life, debris, ring, spin: (Math.random() - .5) * 7 });
@@ -230,7 +252,7 @@ export function createScene(container) {
     aimArrow.visible = false; dots.forEach(dot => { dot.visible = false; }); lastEvent = 0; eventBaseline = false; matchWinner = null; activeShooter = null; selection.visible = false;
     for (const obj of objects.values()) scene.remove(obj); objects.clear();
     if (shot) scene.remove(shot); shot = null; for (const m of projectileMeshes.values()) scene.remove(m); projectileMeshes.clear(); for (const p of particles) scene.remove(p.mesh); particles = [];
-    container.dataset.cracked = '0'; container.dataset.fragments = '0'; delete container.dataset.lastMaterial;
+    container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; delete container.dataset.lastMaterial; delete container.dataset.lastEnvironmentEvent;
   }
   let width, height;
   function resize() {
@@ -286,7 +308,7 @@ export function createScene(container) {
     container.dataset.fragments = particles.filter(p => p.debris).length;
 
     if (!reducedMotion.matches) {
-      pennants.forEach((f, i) => { f.rotation.y = Math.sin(now / 650 + i) * .12; });
+      pennants.forEach((f, i) => { f.rotation.y = currentWind * .11 + Math.sin(now / 650 + i) * (.04 + Math.abs(currentWind) * .035); });
       treeCrowns.forEach((c, i) => { c.rotation.z = Math.sin(now / 1900 + i) * .025; });
       environment.animate(now);
       birds.forEach(({ bird, left, right }, i) => {

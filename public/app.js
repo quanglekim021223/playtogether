@@ -27,6 +27,18 @@ window.addEventListener('game-blast', () => audio.play('blast'));
 window.addEventListener('game-shot', () => audio.play('shot'));
 window.addEventListener('material-sound', e => audio.play(e.detail.material, e.detail.strength));
 window.addEventListener('weapon-sound', e => audio.play(e.detail.type));
+function updateWindIndicator(element, value) {
+  if (!element) return;
+  const wind = Number.isFinite(value) ? value : 0;
+  const direction = wind < -.05 ? 'left' : wind > .05 ? 'right' : 'calm';
+  const arrow = direction === 'left' ? '←' : direction === 'right' ? '→' : '•';
+  const label = direction === 'left' ? 'sang trái' : direction === 'right' ? 'sang phải' : 'lặng';
+  element.dataset.direction = direction;
+  element.style.setProperty('--wind-strength', `${Math.min(100, Math.abs(wind) / 1.5 * 100)}%`);
+  element.setAttribute('aria-label', `Gió ${label}, cường độ ${Math.abs(wind).toFixed(1)}. Chỉ ảnh hưởng Bazooka.`);
+  element.title = 'Gió chỉ ảnh hưởng Bazooka';
+  element.innerHTML = `<span class="wind-arrow" aria-hidden="true">${arrow}</span><span class="wind-name">GIÓ</span><span class="wind-track" aria-hidden="true"><i></i></span><b>${Math.abs(wind).toFixed(1)}</b>`;
+}
 const brand = `<a class="brand" href="/" aria-label="Block Party trang chủ"><span class="brand-mark">b<span>p</span></span><span>BLOCK<br>PARTY<span class="brand-sub">ĐẠI CHIẾN HÀNG XÓM</span></span></a>`;
 function header() { return `<header>${brand}<div class="header-actions"><span class="connection"><i></i><span id="network-label">Đã kết nối</span></span><button id="sound" class="icon-button" aria-label="Bật hoặc tắt âm thanh">${muted ? 'Âm thanh: tắt' : 'Âm thanh: bật'}</button><button id="fullscreen" class="icon-button" aria-label="Toàn màn hình">⛶</button></div></header>`; }
 function bindHeader() {
@@ -300,7 +312,7 @@ function renderLobby() {
     app.innerHTML = `${header()}<main class="phone-shell"><span class="eyebrow">PHÒNG ${state.code}</span><h1>Đã có mặt!</h1><p>Chọn phe của bạn. Chủ phòng sẽ bắt đầu trên màn hình lớn.</p>${teamsMarkup()}<div class="team-switch"><button class="button coral-button" data-team="0">Vào San Hô</button><button class="button teal-button" data-team="1">Vào Ngọc Lam</button></div><p class="phone-note">Giữ trang này mở để điều khiển khi đến lượt.</p><p id="map-summary" class="phone-map"></p></main>`;
     document.querySelectorAll('[data-team]').forEach(b => b.onclick = () => emit('team', { team: Number(b.dataset.team) }));
   } else {
-    app.innerHTML = `${header()}<main class="lobby-layout"><div class="lobby-copy"><span class="eyebrow">MỜI CẢ HỘI VÀO CHƠI</span><h1>Chọn nhà.<br><span>Rủ hàng xóm.</span></h1><p>Quét QR bằng điện thoại cùng Wi-Fi.<br>Chọn công trình cho cuộc đấu tiếp theo.</p><section class="map-selection" aria-label="Chọn bản đồ"><div id="map-picker"></div><p id="map-summary"></p><p id="map-tip"></p><div class="material-key" aria-label="Độ bền vật liệu"><span><i style="background:#8ee0e5"></i>Kính · dễ vỡ</span><span><i style="background:#b77943"></i>Gỗ · nhẹ</span><span><i style="background:#cd795c"></i>Gạch · vừa</span><span><i style="background:#83969c"></i>Đá · bền</span></div></section></div><section class="lobby-panel"><div class="room-label"><span>PHÒNG CỦA BẠN</span><b id="player-count"></b></div><div class="join-block"><img id="qr" alt="Mã QR để tham gia phòng" width="148" height="148"><div><span class="small-label">QUÉT ĐỂ THAM GIA</span><strong class="room-code">${state.code}</strong><span class="qr-help">Hoặc mở link và nhập mã</span><a id="join-url" target="_blank" rel="noopener"></a></div></div>${teamsMarkup()}<button id="start" class="button primary">Bắt đầu trận <span>↗</span></button><button id="practice" class="button secondary">Một điện thoại + bot</button><p class="panel-note">Đấu nhóm: mỗi đội 1 người. Đấu bot: 1 người ở San Hô.</p></section></main><footer><span>NGẮM CHO CHUẨN. CƯỜI CHO ĐÃ.</span><span>ĐẢO HÀNG XÓM / 01</span></footer>`;
+    app.innerHTML = `${header()}<main class="lobby-layout"><div class="lobby-copy"><span class="eyebrow">MỜI CẢ HỘI VÀO CHƠI</span><h1>Chọn nhà.<br><span>Rủ hàng xóm.</span></h1><p>Quét QR bằng điện thoại cùng Wi-Fi.<br>Chọn công trình cho cuộc đấu tiếp theo.</p><section class="map-selection" aria-label="Chọn bản đồ"><div id="map-picker"></div><p id="map-summary"></p><p id="map-tip"></p><div class="material-key" aria-label="Độ bền vật liệu"><span><i style="background:#8ee0e5"></i>Kính · dễ vỡ</span><span><i style="background:#b77943"></i>Gỗ · nhẹ</span><span><i style="background:#cd795c"></i>Gạch · vừa</span><span><i style="background:#83969c"></i>Đá · bền</span><span><i style="background:#d94b3f"></i>Thùng xăng · nổ</span><span><i style="background:#71d9c9"></i>Tấm nảy · đổi quỹ đạo</span></div></section></div><section class="lobby-panel"><div class="room-label"><span>PHÒNG CỦA BẠN</span><b id="player-count"></b></div><div class="join-block"><img id="qr" alt="Mã QR để tham gia phòng" width="148" height="148"><div><span class="small-label">QUÉT ĐỂ THAM GIA</span><strong class="room-code">${state.code}</strong><span class="qr-help">Hoặc mở link và nhập mã</span><a id="join-url" target="_blank" rel="noopener"></a></div></div>${teamsMarkup()}<button id="start" class="button primary">Bắt đầu trận <span>↗</span></button><button id="practice" class="button secondary">Một điện thoại + bot</button><p class="panel-note">Đấu nhóm: mỗi đội 1 người. Đấu bot: 1 người ở San Hô.</p></section></main><footer><span>NGẮM CHO CHUẨN. CƯỜI CHO ĐÃ.</span><span>ĐẢO HÀNG XÓM / 01</span></footer>`;
     document.querySelector('#start').onclick = () => { unlockAudio(); emit('start', { mode: 'party' }); };
     document.querySelector('#practice').onclick = () => { unlockAudio(); emit('start', { mode: 'practice' }); };
     refreshQr();
@@ -328,8 +340,7 @@ function updateGameUI() {
   const mapLabel = document.querySelector('#match-map'); if (mapLabel) mapLabel.textContent = game.mapName;
   const readout = document.querySelector('#aim-readout');
   if (readout) { readout.hidden = game.phase !== 'aim'; readout.textContent = `${game.team === 0 ? '↗' : '↖'} ${Math.round(game.aim.angle)}° · LỰC ${Math.round(game.aim.power)}%`; }
-  const wind = document.querySelector('#wind');
-  if (wind) wind.textContent = `${game.wind < 0 ? '←' : game.wind > 0 ? '→' : '•'} GIÓ ${Math.abs(game.wind).toFixed(1)}`;
+  updateWindIndicator(document.querySelector('#wind'), game.wind);
   const player = state.players.find(p => p.id === state.activeId);
   const activeName = state.mode === 'practice' && game.team === 1 ? 'Bot' : player?.name || 'Bot thay lượt';
   const mine = controller && state.activeId === playerId;

@@ -163,11 +163,20 @@ const fortressNodes = [
   { id: 'fortress-node-10', label: 'Vọng lâu chính diện', x: 0, y: 8.67, supportId: 'fortress-beam-top', neighbors: ['fortress-node-9', 'fortress-node-2', 'fortress-node-5'] },
 ];
 
+// Shared neutral objects sit in the open middle lane. They use world coordinates,
+// while buildings above are authored locally and mirrored per team.
+const arenaObjects = [
+  { id: 'fuel-left', kind: 'fuelBarrel', x: -2.4, y: .58, size: [.88, 1.16, .88], mass: 1.4, hp: 42 },
+  { id: 'fuel-right', kind: 'fuelBarrel', x: 2.4, y: .58, size: [.88, 1.16, .88], mass: 1.4, hp: 42 },
+  { id: 'pad-left', kind: 'bouncePad', x: -.78, y: .15, size: [1.25, .3, 1.65], mass: 0, angle: .2 },
+  { id: 'pad-right', kind: 'bouncePad', x: .78, y: .15, size: [1.25, .3, 1.65], mass: 0, angle: -.2 },
+];
+
 export const MAPS = {
-  townhouse: { id: 'townhouse', name: 'Nhà phố', tag: 'BỐN GIAN · BA TẦNG', description: 'Khu nhà bốn gian với tầng áp mái và sáu cư dân. Chọn phòng và nhắm từng trụ.', tip: 'Thử phá trụ giữa hai gian nhà.', center: 15, parts: townhouse, nodes: townhouseNodes },
-  tower: { id: 'tower', name: 'Tháp cao', tag: 'ĐỔ DÂY CHUYỀN', description: 'Tháp bốn tầng và cánh phụ hai tầng, sáu cư dân. Phá chân trụ để kéo cả tháp xuống.', tip: 'Bắn từ ban công; phá trụ tạo phản ứng dây chuyền.', center: 13, parts: tower, nodes: towerNodes },
-  bridge: { id: 'bridge', name: 'Cầu trên không', tag: 'HAI THÁP · MỘT CẦU', description: 'Hai tháp ba tầng, sáu cư dân và cầu gỗ trên cao. Cư dân canh trên cầu, mái tháp và sân.', tip: 'Bắn cầu nối để hạ cư dân trên cao.', center: 15, parts: bridge, nodes: bridgeNodes },
-  fortress: { id: 'fortress', name: 'Pháo đài', tag: 'TƯỜNG CHẮN PHÍA TRƯỚC', description: 'Thành ba tầng, sáu cư dân, tháp gác và tường đá. Bắn vòng qua hoặc phá tường.', tip: 'Nâng góc từ chòi gác để vượt tường chắn.', center: 15, parts: fortress, nodes: fortressNodes },
+  townhouse: { id: 'townhouse', name: 'Nhà phố', tag: 'BỐN GIAN · BA TẦNG', description: 'Khu nhà bốn gian với tầng áp mái và sáu cư dân. Chọn phòng và nhắm từng trụ.', tip: 'Thử phá trụ giữa hai gian nhà.', center: 15, parts: townhouse, nodes: townhouseNodes, arenaObjects },
+  tower: { id: 'tower', name: 'Tháp cao', tag: 'ĐỔ DÂY CHUYỀN', description: 'Tháp bốn tầng và cánh phụ hai tầng, sáu cư dân. Phá chân trụ để kéo cả tháp xuống.', tip: 'Bắn từ ban công; phá trụ tạo phản ứng dây chuyền.', center: 13, parts: tower, nodes: towerNodes, arenaObjects },
+  bridge: { id: 'bridge', name: 'Cầu trên không', tag: 'HAI THÁP · MỘT CẦU', description: 'Hai tháp ba tầng, sáu cư dân và cầu gỗ trên cao. Cư dân canh trên cầu, mái tháp và sân.', tip: 'Bắn cầu nối để hạ cư dân trên cao.', center: 15, parts: bridge, nodes: bridgeNodes, arenaObjects },
+  fortress: { id: 'fortress', name: 'Pháo đài', tag: 'TƯỜNG CHẮN PHÍA TRƯỚC', description: 'Thành ba tầng, sáu cư dân, tháp gác và tường đá. Bắn vòng qua hoặc phá tường.', tip: 'Nâng góc từ chòi gác để vượt tường chắn.', center: 15, parts: fortress, nodes: fortressNodes, arenaObjects },
 };
 export const DEFAULT_MAP = 'tower';
-export const MAP_CATALOG = Object.values(MAPS).map(({ parts, nodes, ...map }) => ({ ...map, thumbnail: parts.map(({ kind, x, y, size, material }) => ({ kind, x, y, size, material })) }));
+export const MAP_CATALOG = Object.values(MAPS).map(({ parts, nodes, arenaObjects: _arenaObjects, ...map }) => ({ ...map, thumbnail: parts.map(({ kind, x, y, size, material }) => ({ kind, x, y, size, material })) }));

@@ -14,7 +14,7 @@
 .gamepad-status h1{font-size:20px;line-height:1.2;letter-spacing:-.6px;margin:4px 0 0}
 .gamepad-status p{margin:0 0 0 auto;font-size:10px;max-width:240px;line-height:1.4}
 .gamepad-status .timer{font-size:25px;font-variant-numeric:tabular-nums;min-width:46px;text-align:right}
-.wind{display:inline-block;font-size:8px;font-weight:850;letter-spacing:.8px;color:#537c86;white-space:nowrap}
+.gamepad-status .wind{flex-shrink:0;color:#537c86}
 .gamepad-body{display:grid;grid-template-columns:145px minmax(0,1fr);gap:24px;flex:1;min-height:0;padding-top:10px}
 .controller-weapons{min-height:0;display:flex;flex-direction:column;justify-content:center}
 .move-options{display:flex;flex-direction:column;gap:3px;margin-top:4px;max-height:88px;overflow-y:auto}

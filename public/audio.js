@@ -12,6 +12,8 @@ const profiles = {
   cluster: { frequency: 520, filter: 3200, duration: .18, tone: 'triangle', noise: .65 },
   pulse: { frequency: 58, filter: 480, duration: .58, tone: 'sine', noise: .45 },
   boost: { frequency: 260, filter: 1500, duration: .2, tone: 'sawtooth', noise: .35 },
+  barrel: { frequency: 54, filter: 720, duration: .72, tone: 'triangle', noise: 1 },
+  pad: { frequency: 880, filter: 3100, duration: .2, tone: 'sine', noise: .18 },
 };
 export function synthesize(context, output, type, strength = 1) {
   const p = profiles[type]; if (!p) return;

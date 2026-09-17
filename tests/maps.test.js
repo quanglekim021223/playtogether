@@ -4,7 +4,6 @@ import { Match } from '../game.js';
 import { muzzlePosition, WEAPONS } from '../public/weapons.js';
 import { MAPS } from '../maps.js';
 
-const destructiveShot = [25, 20];
 for (const mapId of Object.keys(MAPS)) {
   test(`${mapId}: movement graph has valid supports and bidirectional neighbors`, () => {
     const map = MAPS[mapId], partIds = new Set(map.parts.map(p => p.id)), nodeIds = new Set(map.nodes.map(n => n.id));
@@ -53,7 +52,8 @@ for (const mapId of Object.keys(MAPS)) {
     for (const item of state.items) assert.ok(Math.abs(item.p[0]) + item.size[0] / 2 < 23, 'expanded homes must stay on the playable island');
   });
   test(`${mapId}: real shots from either team destroy structure and harm residents`, () => {
-    const [angle, power] = destructiveShot;
+    // Bridge needs a little more power to clear the new center-field interactives.
+    const [angle, power] = mapId === 'bridge' ? [25, 30] : [25, 20];
     for (const team of [0, 1]) {
       const game = new Match(mapId); game.team = team; game.shooterCursor[team] = 1; game.wind = 0; game.syncShooter();
       const origin = muzzlePosition(game.shooter.body.position.toArray(), team, angle);

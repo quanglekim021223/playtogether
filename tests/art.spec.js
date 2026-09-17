@@ -5,7 +5,7 @@ test('material audio produces distinct, finite, non-silent waveforms', async ({ 
   await page.goto('/?controller=1');
   const results = await page.evaluate(async () => {
     const { synthesize } = await import('/audio.js'); const results = [];
-    for (const type of ['wood', 'brick', 'stone', 'glass']) {
+    for (const type of ['wood', 'brick', 'stone', 'glass', 'barrel', 'pad']) {
       const ctx = new OfflineAudioContext(1, 44100, 44100);
       synthesize(ctx, ctx.destination, type);
       const buffer = await ctx.startRendering(), data = buffer.getChannelData(0);
@@ -16,8 +16,32 @@ test('material audio produces distinct, finite, non-silent waveforms', async ({ 
     return results;
   });
   for (const result of results) { expect(result.finite).toBe(true); expect(result.energy).toBeGreaterThan(.01); expect(result.peak).toBeLessThan(1); }
-  expect(new Set(results.map(r => r.crossings)).size).toBe(4);
+  expect(new Set(results.filter(r => ['wood', 'brick', 'stone', 'glass'].includes(r.type)).map(r => r.crossings)).size).toBe(4);
   expect(results.find(r => r.type === 'glass').crossings).toBeGreaterThan(results.find(r => r.type === 'stone').crossings * 4);
+});
+
+test('environment meshes render and a fuel blast produces bounded effects and audio', async ({ page }) => {
+  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/?controller=1');
+  const game = new Match('tower'), initial = game.snapshot();
+  await page.evaluate(async snapshot => {
+    const { createScene } = await import('/scene.js');
+    document.querySelector('#app').remove(); document.body.classList.remove('controller');
+    const container = document.querySelector('#scene'); container.style.cssText = 'position:fixed;inset:0';
+    window.environmentScene = createScene(container); window.environmentScene.setMode('game');
+    window.environmentSounds = []; window.addEventListener('weapon-sound', event => window.environmentSounds.push(event.detail.type));
+    window.environmentScene.update(snapshot);
+  }, initial);
+  await expect(page.locator('#scene')).toHaveAttribute('data-fuel-barrels', '2');
+  await expect(page.locator('#scene')).toHaveAttribute('data-bounce-pads', '2');
+  game.damageEnvironment(game.environmentItems.find(i => i.kind === 'fuelBarrel'), 999, 'test');
+  await page.evaluate(snapshot => window.environmentScene.update(snapshot), game.snapshot());
+  await expect(page.locator('#scene')).toHaveAttribute('data-fuel-barrels', '1');
+  await expect(page.locator('#scene')).toHaveAttribute('data-last-environment-event', 'barrelBlast');
+  expect(await page.evaluate(() => window.environmentSounds)).toContain('barrel');
+  await expect.poll(() => page.locator('#scene').getAttribute('data-fragments').then(Number)).toBeLessThanOrEqual(180);
+  await page.screenshot({ path: 'artifacts/environment-barrel-blast.png', scale: 'css' });
+  expect(errors).toEqual([]);
 });
 
 test('cracks, material fragments, event deduplication, expiry and reconnect', async ({ page }) => {

@@ -3,7 +3,7 @@ import { MATERIALS } from './materials.js';
 import { WEAPONS } from './weapons.js';
 
 export function createArt() {
-  const cube = new T.BoxGeometry(1, 1, 1), ball = new T.SphereGeometry(1, 16, 12);
+  const cube = new T.BoxGeometry(1, 1, 1), ball = new T.SphereGeometry(1, 16, 12), cylinder = new T.CylinderGeometry(.5, .5, 1, 18);
   const rock = new T.DodecahedronGeometry(1, 0), shard = new T.TetrahedronGeometry(1, 0);
   const roofProfile = new T.Shape(); roofProfile.moveTo(-.5, 0); roofProfile.lineTo(.5, 0); roofProfile.lineTo(0, .65); roofProfile.closePath();
   const roofGeometry = new T.ExtrudeGeometry(roofProfile, { depth: 1, bevelEnabled: false }); roofGeometry.translate(0, 0, -.5);
@@ -111,6 +111,30 @@ export function createArt() {
     cracks.forEach(c => group.add(c)); group.userData.cracks = cracks;
     return group;
   }
+  function interactive(item) {
+    const group = new T.Group(), [w, h, d] = item.size;
+    group.userData.environmentKind = item.kind;
+    if (item.kind === 'fuelBarrel') {
+      const body = mesh(cylinder, flat(0xd94b3f), group); body.scale.set(w, h, d);
+      for (const y of [-h * .36, h * .36]) {
+        const ring = mesh(new T.TorusGeometry(w * .5, .045, 6, 20), flat(0x5c3531), group);
+        ring.position.y = y; ring.rotation.x = Math.PI / 2;
+      }
+      const top = mesh(new T.CylinderGeometry(w * .38, w * .42, .09, 16), flat(0x633f38), group); top.position.y = h / 2 + .025;
+      const cap = mesh(new T.CylinderGeometry(.1, .12, .1, 10), flat(0xf0c55e), group); cap.position.set(.18, h / 2 + .09, 0);
+      const warning = box(group, 0, .02, d / 2 + .012, .42, .42, .025, 0xffd36e); warning.rotation.z = Math.PI / 4;
+      const flame = orb(group, 0, .02, d / 2 + .035, .095, 0x5a3933); flame.scale.set(.65, 1.35, .24);
+    } else {
+      box(group, 0, 0, 0, w, h, d, 0x314b55);
+      box(group, 0, h / 2 + .035, 0, w * .9, .07, d * .82, 0x71d9c9);
+      for (const x of [-.55, 0, .55]) {
+        const left = box(group, x - .1, h / 2 + .085, .02, .42, .055, .18, 0xe8fff2); left.rotation.y = -.55;
+        const right = box(group, x + .1, h / 2 + .085, .02, .42, .055, .18, 0xe8fff2); right.rotation.y = .55;
+      }
+      for (const x of [-w * .42, w * .42]) box(group, x, -h * .18, 0, .1, h * .75, d * .92, 0xf0aa55);
+    }
+    return group;
+  }
   function resident(team, variant = 0, weapon = 'pebble') {
     const root = new T.Group(), rig = new T.Group(); root.add(rig);
     const body = orb(rig, 0, -.04, 0, .44, palette[team]); body.scale.y *= .9;
@@ -169,5 +193,5 @@ export function createArt() {
     m.userData.bounce = props.bounce; m.userData.fragment = props.fragment;
     return m;
   }
-  return { block, resident, animateResident, fragment };
+  return { block, interactive, resident, animateResident, fragment };
 }

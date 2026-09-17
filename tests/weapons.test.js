@@ -49,7 +49,8 @@ test('weapons: pebble bounces on impact and triggerSkill fires secondShot', () =
   assert.equal(duplicate.ok, false);
 
   const bounceGame = new Match('townhouse'); bounceGame.wind = 0; bounceGame.readyAim();
-  bounceGame.fire({ angle: 10, power: 15, weapon: 'pebble' });
+  // This arc clears the center-field barrel and pad, isolating Pebble's own bounce.
+  bounceGame.fire({ angle: 25, power: 25, weapon: 'pebble' });
   for (let i = 0; i < 300 && !bounceGame.events.some(e => e.type === 'bounce'); i++) bounceGame.step();
   assert.ok(bounceGame.events.some(e => e.type === 'bounce'));
   assert.equal(bounceGame.projectile?.bounces, 1);

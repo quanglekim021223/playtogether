@@ -106,3 +106,13 @@ Bản đầu dùng mô hình tự dựng bằng geometry, chưa có asset nhân 
 - [x] Va chạm được xử lý sau bước vật lý để tránh xóa body ngay trong callback Cannon; âm thanh và hiệu ứng riêng cho nảy, khoan, Rocket, cluster và Pulse.
 - Kiểm chứng cuối: `npm run check` qua; `npm test`: **52/52**; `npm run test:browser`: **8/8** trên Chromium.
 - [ ] Xác minh trên điện thoại vật lý, nhất là Safari/iOS: QR qua Wi-Fi, rung, âm thanh, độ trễ kéo/bẻ lái và FPS khi nhiều mảnh vỡ.
+
+
+## Module 3 — Gió và vật thể môi trường — hoàn thành 2026-09-17
+- [x] Chỉ báo gió trên TV và điện thoại có hướng, trị số, thanh cường độ, mô tả screen reader; cờ trong cảnh phản ứng theo cùng giá trị. Gió chỉ tác động Bazooka và được tạo lại mỗi lượt.
+- [x] Mỗi map có hai thùng xăng động ở trung tâm: 42 HP, nổ khi trúng đạn/va đập/nổ gần, gây sát thương và impulse trong bán kính 2.5. Hỗ trợ nổ dây chuyền khi các thùng bị đẩy đủ gần.
+- [x] Mỗi map có hai tấm nảy tĩnh: phản xạ mọi loại projectile theo pháp tuyến, tăng 12% tốc độ có giới hạn, chống va chạm lặp và không tiêu hao lần nảy riêng của Pebble.
+- [x] Snapshot tách `environment` khỏi `items`, giữ roster/node/công trình không bị lẫn. Three.js có model, hạt, vòng xung kích, rung camera và âm thanh tổng hợp riêng cho thùng xăng/tấm nảy.
+- [x] Vị trí và bán kính đã cân để vụ nổ mặc định không loại cư dân tuyến trước; quỹ đạo cũ của cả bốn map vẫn phá được công trình từ hai phía.
+- Kiểm chứng: `npm run check` qua; `npm test`: **56/56**; `npm run test:browser`: **9/9** trên Chromium. Ảnh QA: `artifacts/environment-barrel-blast.png`.
+- [ ] Chơi thử trên điện thoại vật lý để cân cảm giác nhắm qua tấm nảy, độ dễ nhận biết thùng xăng và âm lượng vụ nổ trên loa nhỏ.

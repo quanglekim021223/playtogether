@@ -25,7 +25,7 @@ export class Match {
     const ground = new C.Body({ mass: 0, shape: new C.Plane() });
     ground.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
     this.world.addBody(ground);
-    this.items = []; this.pendingImpacts = new Map(); this.pendingProjectileCollisions = [];
+    this.items = []; this.environmentItems = []; this.pendingImpacts = new Map(); this.pendingProjectileCollisions = [];
     this.time = 0; this.team = 0; this.turn = 1;
     this.enterPhase('move', 6);
     this.aim = { angle: 42, power: 30, weapon: 'pebble' };
@@ -39,6 +39,7 @@ export class Match {
         Object.assign(this.items.at(-1), { partId: p.id, weapon: p.weapon, name: p.name, spot: p.spot, nodeId: p.nodeId, terrace: p.terrace });
       }
     }
+    for (const object of this.map.arenaObjects || []) this.addArenaObject(object);
     for (let i = 0; i < 120; i++) this.world.step(1 / 60);
     for (const item of this.items) {
       item.previousY = item.body.position.y;
@@ -156,6 +157,23 @@ export class Match {
     });
     this.items.push(item);
   }
+  addArenaObject(def) {
+    const shape = new C.Box(new C.Vec3(def.size[0] / 2, def.size[1] / 2, def.size[2] / 2));
+    const body = new C.Body({ mass: def.mass, shape, position: new C.Vec3(def.x, def.y, 0), linearDamping: .12, angularDamping: .2 });
+    body.linearFactor.set(1, 1, 0); body.angularFactor.set(0, 0, def.kind === 'fuelBarrel' ? 1 : 0);
+    if (def.angle) body.quaternion.setFromEuler(0, 0, def.angle);
+    body.sleepSpeedLimit = .12; body.sleepTimeLimit = .4;
+    const item = { id: `env-${def.id}`, environmentId: def.id, kind: def.kind, team: -1, size: def.size, body, hp: def.hp ?? null, maxHp: def.hp ?? null, destroyed: false, previousY: def.y };
+    if (def.kind === 'fuelBarrel') body.addEventListener('collide', event => {
+      if (!['flight', 'settle'].includes(this.phase) || item.destroyed) return;
+      const impact = Math.abs(event.contact.getImpactVelocityAlongNormal());
+      if (impact > 5.2) this.pendingImpacts.set(item, Math.max(impact, this.pendingImpacts.get(item) || 0));
+    });
+    this.world.addBody(body); this.environmentItems.push(item);
+  }
+  bindProjectile(proj) {
+    proj.body.addEventListener('collide', event => this.pendingProjectileCollisions.push({ proj, hitBody: event.body, normal: event.contact.ni.clone(), velocity: proj.body.velocity.clone() }));
+  }
   get shooter() {
     const roster = this.items.filter(i => i.kind === 'resident' && i.team === this.team);
     for (let offset = 0; offset < roster.length; offset++) {
@@ -211,7 +229,7 @@ export class Match {
       createdAt: this.time,
       initialVelocity: { ...velocity },
     };
-    body.addEventListener('collide', event => this.pendingProjectileCollisions.push({ proj, hitBody: event.body, normal: event.contact.ni.clone(), velocity: body.velocity.clone() }));
+    this.bindProjectile(proj);
     this.world.addBody(body);
     this.projectiles.set(projectileId, proj);
     this.enterPhase('flight', 7);
@@ -224,7 +242,27 @@ export class Match {
   }
   handleProjectileCollision({ proj, hitBody, normal, velocity }) {
     if (!this.projectiles.has(proj.id) || this.time < (proj.ignoreCollisionsUntil || 0)) return;
-    const { body, weapon } = proj, hitItem = this.items.find(i => i.body === hitBody);
+    const { body, weapon } = proj;
+    const hitItem = this.items.find(i => i.body === hitBody);
+    const hitEnvironment = this.environmentItems.find(i => i.body === hitBody);
+    if (hitEnvironment?.kind === 'bouncePad') {
+      if (proj.lastPadId === hitEnvironment.id && this.time - (proj.lastPadAt || 0) < .16) return;
+      if (velocity.dot(normal) > 0) normal.negate(normal);
+      const reflected = velocity.vsub(normal.scale(2 * velocity.dot(normal)));
+      const speed = Math.min(36, Math.max(8, reflected.length() * 1.12));
+      if (reflected.length() > .001) reflected.normalize();
+      body.velocity.copy(reflected.scale(speed));
+      body.position.vadd(normal.scale(.32), body.position);
+      body.collisionResponse = false; proj.ignoreCollisionsUntil = this.time + .08;
+      proj.collided = false; proj.lastPadId = hitEnvironment.id; proj.lastPadAt = this.time;
+      this.event('padBounce', { x: body.position.x, y: body.position.y, itemId: hitEnvironment.id, projectileId: proj.id, weapon });
+      return;
+    }
+    if (hitEnvironment?.kind === 'fuelBarrel') {
+      proj.hitItemId = hitEnvironment.id; proj.collided = true;
+      this.damageEnvironment(hitEnvironment, hitEnvironment.hp, 'projectile');
+      return;
+    }
     if (proj.pierces < proj.maxPierces && hitItem && hitItem.kind !== 'resident' && hitBody !== proj.lastPiercedBody) {
       proj.pierces++; proj.lastPiercedBody = hitBody;
       this.damage(hitItem, 55, 'pierce');
@@ -261,21 +299,40 @@ export class Match {
       this.event('break', data);
     } else this.event('hit', { ...data, damage: amount });
   }
+  damageEnvironment(item, amount, cause = 'blast') {
+    if (!item || item.kind !== 'fuelBarrel' || item.destroyed || !Number.isFinite(amount) || amount <= 0) return;
+    item.hp = Math.max(0, item.hp - amount);
+    if (item.hp <= 0) this.detonateBarrel(item, cause);
+    else this.event('barrelHit', { itemId: item.id, x: item.body.position.x, y: item.body.position.y, damage: amount, cause });
+  }
+  applyRadialBlast(position, stats, cause = 'blast') {
+    for (const item of [...this.items, ...this.environmentItems]) {
+      if (item.destroyed || item.kind === 'bouncePad') continue;
+      const diff = item.body.position.vsub(position); const distance = diff.length();
+      if (distance > stats.radius) continue;
+      const strength = 1 - distance / stats.radius;
+      if (item.kind === 'fuelBarrel') this.damageEnvironment(item, stats.damage * (0.45 + strength), cause);
+      else this.damage(item, stats.damage * (0.45 + strength), cause);
+      if (item.destroyed || item.body.mass <= 0) continue;
+      if (diff.length() < .001) diff.set(0, 1, 0); else diff.normalize();
+      diff.y = Math.max(.3, diff.y); diff.z = 0;
+      item.body.wakeUp(); item.body.applyImpulse(diff.scale(stats.impulse * strength), new C.Vec3(0, .15, 0));
+    }
+  }
+  detonateBarrel(item, cause = 'blast') {
+    if (!item || item.destroyed) return;
+    item.destroyed = true; item.hp = 0;
+    const position = item.body.position.clone();
+    try { this.world.removeBody(item.body); } catch {}
+    this.event('barrelBlast', { itemId: item.id, x: position.x, y: position.y, radius: 2.5, cause });
+    this.applyRadialBlast(position, { radius: 2.5, damage: 82, impulse: 68 }, 'barrel');
+  }
   explode(projectileId) {
     const proj = projectileId ? this.projectiles.get(projectileId) : this.projectile;
     if (!proj) return;
     const { body, weapon } = proj;
     const position = body.position.clone(); const stats = WEAPONS[weapon];
-    for (const item of this.items) {
-      if (item.destroyed) continue;
-      const diff = item.body.position.vsub(position); const distance = diff.length();
-      if (distance > stats.radius) continue;
-      const strength = 1 - distance / stats.radius;
-      this.damage(item, stats.damage * (0.45 + strength));
-      if (item.destroyed) continue;
-      diff.normalize(); diff.y = Math.max(0.3, diff.y); diff.z = 0;
-      item.body.wakeUp(); item.body.applyImpulse(diff.scale(stats.impulse * strength), new C.Vec3(0, 0.15, 0));
-    }
+    this.applyRadialBlast(position, stats);
     this.event('blast', { x: position.x, y: position.y, radius: stats.radius, weapon, projectileId: proj.id, hitItemId: proj.hitItemId ?? null });
     try { this.world.removeBody(body); } catch {}
     this.projectiles.delete(proj.id);
@@ -336,7 +393,7 @@ export class Match {
         createdAt: this.time,
         initialVelocity: { x: secondBody.velocity.x, y: secondBody.velocity.y },
       };
-      secondBody.addEventListener('collide', () => { secondProj.collided = true; });
+      this.bindProjectile(secondProj);
       this.world.addBody(secondBody);
       this.projectiles.set(pId, secondProj);
       this.event('skill', { weapon, action: 'secondShot', x: body.position.x, y: body.position.y, projectileId: pId });
@@ -376,7 +433,7 @@ export class Match {
           createdAt: this.time,
           initialVelocity: { x: cBody.velocity.x, y: cBody.velocity.y },
         };
-        cBody.addEventListener('collide', () => { cProj.collided = true; });
+        this.bindProjectile(cProj);
         this.world.addBody(cBody);
         this.projectiles.set(cId, cProj);
       }
@@ -421,6 +478,7 @@ export class Match {
     for (const [item, impact] of this.pendingImpacts) {
       if (this.time - item.lastImpact < 0.18) continue;
       item.lastImpact = this.time;
+      if (item.kind === 'fuelBarrel') { this.damageEnvironment(item, (impact - 3) * 10, 'impact'); continue; }
       const stats = MATERIALS[item.material];
       this.damage(item, item.kind === 'resident' ? (impact - 3) * 9 : (impact - stats.impactThreshold) * stats.impactDamage, 'impact');
     }
@@ -514,6 +572,7 @@ export class Match {
         available: !mainProj.collided,
       } : null,
       items: this.items.filter(i => !i.destroyed).map(i => ({ id: i.id, kind: i.kind, team: i.team, size: i.size, hp: i.hp, maxHp: i.maxHp, material: i.material, weapon: i.weapon, name: i.name, spot: i.spot, nodeId: i.nodeId, terrace: i.terrace, crack: crackStage(i.hp, i.maxHp), ...pose(i.body) })),
+      environment: this.environmentItems.filter(i => !i.destroyed).map(i => ({ id: i.id, environmentId: i.environmentId, kind: i.kind, size: i.size, hp: i.hp, maxHp: i.maxHp, ...pose(i.body) })),
       projectile: mainProj ? { weapon: mainProj.weapon, ...pose(mainProj.body) } : null,
       projectiles: Array.from(this.projectiles.values()).map(p => ({ id: p.id, weapon: p.weapon, ...pose(p.body) })),
       events: this.events.slice(),

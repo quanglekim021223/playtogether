@@ -17,6 +17,7 @@ Mở http://localhost:3000 trên máy tính, chọn **Tạo cuộc vui**.
 - Chơi nhóm: điện thoại và máy tính cùng Wi-Fi, quét QR, nhập tên. Cần ít nhất một người mỗi đội; tối đa 8 người, 4 mỗi đội. Chủ phòng bấm **Bắt đầu trận**.
 - Cầm điện thoại **nằm ngang**. Trong 6 giây đầu, chọn một điểm đứng lân cận còn an toàn hoặc bấm **Sẵn sàng ngắm**. Sau đó tay phải chạm và kéo trên vùng cảm ứng trong tối đa 18 giây. Đội San Hô kéo xuống trái; Ngọc Lam kéo xuống phải. Kéo càng xa, lực càng mạnh; **thả tay để bắn**.
 - Khi đạn bay, điện thoại hiện kỹ năng riêng của vũ khí. Ná bắn bồi, bazooka tăng tốc, súng cối tách ba bom, tên lửa vuốt dọc để bẻ lái, mũi khoan tăng lần xuyên và súng xung lực kích nổ trên không. TV hiển thị hướng/cường độ gió; gió chỉ làm lệch bazooka.
+- Giữa sân có hai **thùng xăng** và hai **tấm nảy**. Bắn trúng thùng gây nổ diện rộng; các thùng đủ gần có thể nổ dây chuyền. Tấm nảy đổi hướng và tăng nhẹ tốc độ của mọi loại đạn, không tiêu hao lần nảy riêng của Ná.
 - Xoay dọc giữa lượt, mất kết nối, chuyển tab hoặc bị hủy cảm ứng sẽ hủy thao tác kéo đang diễn ra. Khi dựng dọc, game hiện lời nhắc xoay ngang. Nút toàn màn hình thử khóa hướng ngang khi trình duyệt hỗ trợ; không bắt buộc để chơi.
 - Mỗi đội có sáu cư dân (12 nhân vật trên sân, độc lập với số điện thoại tham gia); loại hết cư dân đối phương để thắng. Cư dân mất máu vì nổ, va đập mạnh hoặc rơi khỏi đảo. Đánh sập trụ có thể làm cả tháp đổ.
 - Mỗi lượt đi qua `move (6s) → aim (18s) → flight (tối đa 7s) → settle (2.6s)`. Hết pha di chuyển tự vào ngắm; hết pha ngắm tự bắn. Người chơi trong đội luân phiên điều khiển; khi cả đội mất kết nối, bot thay lượt. Tải lại trang cùng tab để kết nối lại.
@@ -42,7 +43,7 @@ Browser tests dùng Google Chrome đã cài trên máy và touch events qua CDP.
 
 `tests/maps.test.js` kiểm tra từng map đứng vững trong 20 giây, hai đội đối xứng, sáu cư dân mỗi bên, collider không chồng nhau, nhà nằm trong đảo, cư dân có đường bắn ra ngoài, bắn thật từ cả hai đội có phá hủy và sát thương. Browser tests kiểm tra chọn cả bốn map, hiển thị trên điện thoại, chơi lại, ngẫu nhiên và phản hồi preview đến muộn không ghi đè trận đang chơi.
 
-`tests/game.test.js` kiểm tra state machine, settle, đường đạn thật, độ ổn định tháp, sát thương, chuyển lượt và kết quả. `tests/movement.test.js` kiểm tra node lân cận, occupancy, support bị phá/dịch chuyển và quyền Socket. `tests/weapons.test.js` kiểm tra multi-projectile, sáu kỹ năng, phản xạ, xuyên collider thứ hai, gió, impulse và lệnh cũ. `tests/rooms.test.js` mở server và socket thật để kiểm tra quyền chủ phòng, lượt, skill contract, reconnect và QR.
+`tests/game.test.js` kiểm tra state machine, settle, đường đạn thật, độ ổn định tháp, sát thương, chuyển lượt và kết quả. `tests/movement.test.js` kiểm tra node lân cận, occupancy, support bị phá/dịch chuyển và quyền Socket. `tests/weapons.test.js` kiểm tra multi-projectile, sáu kỹ năng, phản xạ, xuyên collider thứ hai, gió, impulse và lệnh cũ. `tests/environment.test.js` kiểm tra bố trí bốn map, độ ổn định, nổ lan/dây chuyền và phản xạ đạn của tấm nảy. `tests/rooms.test.js` mở server và socket thật để kiểm tra quyền chủ phòng, lượt, skill contract, reconnect và QR.
 
 `tests/materials.test.js` kiểm tra độ bền, hai mức vết nứt, vỡ do va đập và khối bên trên rơi khi mất trụ. `tests/art.spec.js` kiểm tra âm thanh tổng hợp, hoạt ảnh nhân vật, reduced motion, mảnh vỡ tự dọn và không phát lại hiệu ứng cũ sau reconnect. Browser test còn bắn bom bằng thao tác kéo trên điện thoại mô phỏng và xác nhận vết nứt/mảnh vỡ xuất hiện trên màn hình chung.
 
@@ -69,6 +70,12 @@ Cư dân đứng ở sân, chòi, ban công lệch tầng, cầu và sân thư�
 
 `tests/shooters.test.js` kiểm tra luân phiên, bỏ qua người chết, vũ khí cố định, lệnh cũ, vị trí nòng súng sau khi di chuyển và đường bắn khả dụng cho cả 48 vị trí trên bốn map. Browser kiểm tra camera qua hai đội/sân thượng, toàn cảnh/reduced motion và reconnect giữ đúng vũ khí.
 
+## Gió và vật thể môi trường
+
+Gió được tạo lại ở đầu mỗi lượt trong khoảng `-1.5…+1.5`. TV và điện thoại hiển thị mũi tên, thanh cường độ và trị số; cờ trong cảnh nghiêng theo cùng giá trị. Đường preview, mô phỏng server và bot cùng dùng hệ số gió của Bazooka. Các vũ khí còn lại không bị gió làm lệch.
+
+Hai thùng xăng là body động có 42 HP. Đạn chạm trực tiếp sẽ kích nổ; va đập mạnh hoặc vụ nổ gần cũng có thể phá thùng. Vụ nổ bán kính 2.5 gây sát thương, lực đẩy và có thể kích hoạt thùng khác nếu người chơi đã đẩy chúng lại gần. Hai tấm nảy là collider tĩnh; chúng phản xạ mọi projectile theo pháp tuyến bề mặt, tăng tốc 12% có giới hạn và chống va chạm lặp trong thời gian ngắn. Server phát sự kiện riêng để TV dựng lửa, tia nảy, rung camera và âm thanh tổng hợp.
+
 ## Vật liệu và hình ảnh
 
 - **Gỗ**: 72% HP cơ sở, tiếng gãy ngắn và dằm dài.
@@ -83,11 +90,11 @@ Nhân vật có thở, chớp mắt, phản ứng bị thương và mừng thắ
 ## Cấu trúc
 
 - `server.js`: HTTP, Socket.IO, phòng và phân quyền; mô phỏng server 60 bước/giây, gửi trạng thái 15 lần/giây.
-- `maps.js`: bốn cấu trúc nhà, kích thước, khối lượng, độ bền, vị trí cư dân, tên, vũ khí và chỗ đứng.
-- `game.js`: Cannon ES, công trình, cư dân, đường đạn, lượt từng cư dân, sáu vũ khí, bot và luật chơi. Ba substep mỗi bước để giảm bỏ sót va chạm.
+- `maps.js`: bốn cấu trúc nhà, kích thước, khối lượng, độ bền, vị trí cư dân, tên, vũ khí, chỗ đứng và vật thể môi trường.
+- `game.js`: Cannon ES, công trình, cư dân, đường đạn, lượt từng cư dân, sáu vũ khí, gió, thùng xăng, tấm nảy, bot và luật chơi. Ba substep mỗi bước để giảm bỏ sót va chạm.
 - `public/scene.js`: Three.js, camera, ánh sáng/bóng, mô hình 3D, hiển thị nội suy và hạt hiệu ứng.
 - `public/materials.js`: thông số dùng chung cho độ bền, va đập, màu và mảnh vỡ.
-- `public/art.js`: texture, chi tiết nhà, vết nứt, nhân vật và hoạt ảnh.
+- `public/art.js`: texture, chi tiết nhà, vết nứt, nhân vật, thùng xăng, tấm nảy và hoạt ảnh.
 - `public/environment.js`: bầu trời, biển, đảo, làng ven bờ, hải đăng và chuyển động cảnh nền.
 - `public/weapons.js`: thông số sáu vũ khí, vận tốc và vị trí nòng súng dùng chung server/client.
 - `public/audio.js`: âm thanh tổng hợp theo vật liệu, giới hạn phát chồng, âm lượng và mute.
