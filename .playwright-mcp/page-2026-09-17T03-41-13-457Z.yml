@@ -1,0 +1,36 @@
+- generic [active] [ref=e1]:
+  - generic "Đấu trường 3D" [ref=e2]
+  - generic:
+    - banner:
+      - link "Block Party trang chủ" [ref=e3] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e4]:
+          - text: b
+          - generic [ref=e5]: p
+        - generic [ref=e6]:
+          - text: BLOCKPARTY
+          - generic [ref=e7]: ĐẠI CHIẾN HÀNG XÓM
+      - generic:
+        - generic: Đã kết nối
+        - button "Bật hoặc tắt âm thanh" [ref=e8] [cursor=pointer]: "Âm thanh: bật"
+        - button "Toàn màn hình" [ref=e9] [cursor=pointer]: ⛶
+    - main:
+      - generic:
+        - text: BẠN BÈ TỐT. HÀNG XÓM KHÓ ƯA.
+        - heading "Chào hàng xóm. Đỡ lấy này!" [level=1]: Chào hàng xóm.Đỡ lấy này!
+        - paragraph: Một màn hình. Cả hội cùng chơi.Kéo góc, lên lực, và cho nhà bên một bất ngờ.
+        - button "Tạo cuộc vui ↗" [ref=e10] [cursor=pointer]:
+          - text: Tạo cuộc vui
+          - generic [ref=e11]: ↗
+        - button "Có mã phòng? Tham gia bằng điện thoại →" [ref=e12] [cursor=pointer]
+        - generic:
+          - generic: 2–8 người
+          - generic: •Điện thoại là tay cầm
+          - generic: •Không cần cài app
+      - generic:
+        - text: ✦ ĐẢO HÀNG XÓM
+        - generic: Đấu trường đầu tiên
+    - contentinfo:
+      - generic: CHƠI GẦN NHAU. VUI HƠN CÙNG NHAU.
+      - generic: BẢN THỬ NGHIỆM 0.1
+  - status
