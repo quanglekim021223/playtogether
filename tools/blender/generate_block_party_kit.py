@@ -33,14 +33,22 @@ def material(name, color, metallic=0.0, roughness=0.75, alpha=1.0):
     return mat
 
 
-WOOD = material("Wood", (0.42, 0.16, 0.055), roughness=0.88)
-BRICK = material("Brick", (0.58, 0.12, 0.07), roughness=0.93)
-STONE = material("Stone", (0.27, 0.31, 0.32), roughness=0.96)
+WOOD = material("Wood", (0.48, 0.20, 0.07), roughness=0.88)
+WOOD_LIGHT = material("Wood Light", (0.68, 0.34, 0.12), roughness=0.84)
+WOOD_DARK = material("Wood Dark", (0.23, 0.09, 0.035), roughness=0.92)
+BRICK = material("Brick", (0.67, 0.18, 0.10), roughness=0.92)
+BRICK_LIGHT = material("Brick Light", (0.79, 0.29, 0.16), roughness=0.90)
+BRICK_DARK = material("Brick Dark", (0.47, 0.09, 0.055), roughness=0.94)
+STONE = material("Stone", (0.31, 0.35, 0.35), roughness=0.96)
+STONE_LIGHT = material("Stone Light", (0.46, 0.49, 0.46), roughness=0.94)
+STONE_DARK = material("Stone Dark", (0.19, 0.23, 0.24), roughness=0.98)
 GLASS = material("Glass", (0.18, 0.78, 0.82), metallic=0.08, roughness=0.13, alpha=0.42)
 MORTAR = material("Mortar", (0.75, 0.62, 0.49), roughness=0.95)
 METAL = material("Metal", (0.10, 0.15, 0.18), metallic=0.78, roughness=0.34)
 CORAL = material("Coral", (0.85, 0.11, 0.06), metallic=0.05, roughness=0.58)
 TEAL = material("Teal", (0.08, 0.62, 0.58), metallic=0.15, roughness=0.42)
+GLOW = material("Glow", (0.60, 1.0, 0.84), metallic=0.1, roughness=0.18)
+WARNING = material("Warning", (1.0, 0.68, 0.12), metallic=0.05, roughness=0.55)
 
 
 def link(obj, root):
@@ -72,6 +80,15 @@ def cylinder(name, root, location, radius, depth, mat, axis="y"):
     return link(obj, root)
 
 
+def stone(name, root, location, scale, mat):
+    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=1, location=location)
+    obj = bpy.context.object
+    obj.name = name
+    obj.scale = scale
+    obj.data.materials.append(mat)
+    return link(obj, root)
+
+
 def root(name):
     obj = bpy.data.objects.new(name, None)
     bpy.context.collection.objects.link(obj)
@@ -83,7 +100,11 @@ def root(name):
 
 def wood_block():
     r = root("BP_WoodBlock")
-    cube("wood_core", r, (0, 0.75, 0), (1.4, 1.5, 1.4), WOOD, .06)
+    cube("wood_core", r, (0, 0.75, 0), (1.4, 1.5, 1.4), WOOD_DARK, .06)
+    for row in range(5):
+        cube("wood_plank", r, (0, .17 + row * .29, .706), (1.30, .245, .055), WOOD_LIGHT if row % 3 == 1 else WOOD, .035)
+    brace = cube("wood_brace", r, (0, .75, .75), (.16, 1.28, .075), WOOD_DARK, .025)
+    brace.rotation_euler.z = -.58
     for x in (-.52, .52):
         cylinder("wood_bolt", r, (x, .75, .715), .055, .04, METAL, axis="z")
     return r, (1.4, 1.5, 1.4), "wood"
@@ -91,24 +112,24 @@ def wood_block():
 
 def brick_block():
     r = root("BP_BrickBlock")
-    cube("brick_core", r, (0, 0.75, 0), (1.4, 1.5, 1.4), BRICK, .035)
-    for y in (.23, .60, .98, 1.36): cube("mortar_row", r, (0, y, .706), (1.37, .032, .018), MORTAR, 0)
-    for index, y in enumerate((.41, .79, 1.17)):
-        offset = -.34 if index % 2 else 0
-        for x in (-.34 + offset, .34 + offset): cube("mortar_joint", r, (x, y, .706), (.025, .34, .018), MORTAR, 0)
+    cube("brick_mortar", r, (0, 0.75, 0), (1.4, 1.5, 1.4), MORTAR, .045)
+    brick_mats = (BRICK, BRICK_LIGHT, BRICK_DARK)
+    for row in range(4):
+        count, width = (3, .42) if row % 2 == 0 else (4, .30)
+        for column in range(count):
+            x = (column - (count - 1) / 2) * (width + .035)
+            cube("brick_face", r, (x, .205 + row * .375, .72), (width, .315, .075), brick_mats[(row + column) % 3], .025)
     return r, (1.4, 1.5, 1.4), "brick"
 
 
 def stone_block():
     r = root("BP_StoneBlock")
-    cube("stone_core", r, (0, 0.75, 0), (1.4, 1.5, 1.4), STONE, .08)
-    for x, y, scale in ((-.42, .38, .18), (.35, .79, .13), (-.10, 1.23, .16), (.49, 1.33, .09)):
-        bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=scale, location=(x, y, .72))
-        chip = bpy.context.object
-        chip.name = "stone_chip"
-        chip.scale.z = .22
-        chip.data.materials.append(MORTAR)
-        link(chip, r)
+    cube("stone_mortar", r, (0, 0.75, 0), (1.4, 1.5, 1.4), STONE_DARK, .07)
+    stones = ((-.43,.25,.34,.22),(.02,.22,.30,.19),(.44,.27,.26,.23),(-.50,.72,.25,.28),(-.10,.68,.34,.24),(.40,.72,.29,.25),(-.42,1.18,.31,.22),(.05,1.18,.32,.27),(.47,1.20,.24,.20))
+    stone_mats = (STONE, STONE_LIGHT, STONE_DARK)
+    for index, (x, y, sx, sy) in enumerate(stones):
+        rock = stone("stone_face", r, (x, y, .73), (sx, sy, .09), stone_mats[index % 3])
+        rock.rotation_euler.z = (index % 3 - 1) * .14
     return r, (1.4, 1.5, 1.4), "stone"
 
 
@@ -118,6 +139,8 @@ def glass_block():
     for x in (-.68, .68): cube("glass_frame", r, (x, .75, 0), (.07, 1.58, .13), METAL, .01)
     for y in (.02, 1.48): cube("glass_frame", r, (0, y, 0), (1.47, .07, .13), METAL, .01)
     cube("glass_crossbar", r, (0, .75, 0), (1.32, .045, .11), METAL, .01)
+    glint = cube("glass_glint", r, (-.20, .82, .075), (.055, 1.05, .018), GLOW, .005)
+    glint.rotation_euler.z = -.32
     return r, (1.4, 1.5, .13), "glass"
 
 
@@ -126,6 +149,9 @@ def fuel_barrel():
     cylinder("barrel_body", r, (0, .55, 0), .34, 1.1, CORAL)
     for y in (.24, .86): cylinder("barrel_ring", r, (0, y, 0), .355, .06, METAL)
     cylinder("barrel_cap", r, (.12, 1.13, 0), .075, .08, METAL)
+    warning = cube("warning_plate", r, (0, .55, .345), (.31, .31, .025), WARNING, .025)
+    warning.rotation_euler.z = math.pi / 4
+    cube("warning_mark", r, (0, .55, .362), (.055, .20, .018), METAL, .008)
     return r, (.72, 1.18, .72), "fuelBarrel"
 
 
@@ -134,8 +160,9 @@ def bounce_pad():
     cube("pad_base", r, (0, .12, 0), (1.45, .24, .95), METAL, .08)
     cube("pad_glow", r, (0, .27, 0), (1.20, .07, .70), TEAL, .05)
     for x in (-.48, 0, .48):
-        chevron = cube("pad_chevron", r, (x, .33, 0), (.24, .035, .45), MORTAR, .01)
+        chevron = cube("pad_chevron", r, (x, .33, 0), (.24, .035, .45), GLOW, .01)
         chevron.rotation_euler.y = .62
+    for x in (-.66, .66): cube("pad_warning", r, (x, .20, .43), (.08, .20, .08), WARNING, .018)
     return r, (1.45, .34, .95), "bouncePad"
 
 

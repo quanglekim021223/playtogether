@@ -103,10 +103,14 @@ export function createScene(container) {
   const selection = new T.Mesh(new T.TorusGeometry(.68, .035, 6, 36), new T.MeshBasicMaterial({ color: 0xffd376, depthTest: false }));
   selection.renderOrder = 9; selection.visible = false; scene.add(selection);
   const viewTarget = new T.Vector3(0, 2, 0); let viewDistance = 50;
-  function kitKey(item) { return ['fuelBarrel', 'bouncePad'].includes(item.kind) ? item.kind : item.material; }
+  function kitKey(item) {
+    if (['fuelBarrel', 'bouncePad'].includes(item.kind)) return item.kind;
+    return item.kind === 'block' ? item.material : null;
+  }
   function applyKit(obj, item) {
     if (item.kind === 'resident' || obj.userData.assetModel) return;
-    const asset = kit.get(kitKey(item));
+    const key = kitKey(item); if (!key) return;
+    const asset = kit.get(key);
     if (!asset) { obj.userData.assetItem = { kind: item.kind, material: item.material, size: [...item.size] }; return; }
     for (const child of obj.children) if (!obj.userData.cracks?.includes(child)) child.visible = false;
     const model = asset.scene.clone(true), [bw, bh, bd] = asset.size, [w, h, d] = item.size;

@@ -4,7 +4,7 @@ Game party 3D trên web, hai đội bắn phá công trình theo lượt. Máy t
 
 ### Tạo asset Blender không cần dựng tay
 
-Sau khi cài Blender, script `tools/blender/generate_block_party_kit.py` tạo sáu asset GLB cơ bản: khối gỗ, gạch, đá, kính, thùng xăng và tấm nảy. Mỗi file có gốc tọa độ và kích thước ổn định để map vào đúng collider trong game.
+Sau khi cài Blender, script `tools/blender/generate_block_party_kit.py` tạo sáu asset GLB stylized: khối gỗ có ván và đinh, tường gạch xây từng viên, đá ghép, kính có ánh phản chiếu, thùng xăng và tấm nảy. Mỗi file có gốc tọa độ và kích thước ổn định để map vào đúng collider trong game.
 
 ```sh
 blender --background --python tools/blender/generate_block_party_kit.py -- --output public/assets/kit
@@ -22,7 +22,7 @@ Nếu muốn dùng lệnh ngắn trong các Terminal mới, thêm alias vào `~/
 alias blender="/Applications/Blender.app/Contents/MacOS/Blender"
 ```
 
-Game tải bộ GLB một lần rồi clone asset theo vật liệu của từng khối, trong khi collider và vật lý vẫn dùng dữ liệu server. Nếu một file không tải được, renderer tự giữ geometry tạo bằng code làm dự phòng.
+Game tải bộ GLB một lần rồi clone asset cho các khối vật liệu và đạo cụ môi trường, trong khi collider và vật lý vẫn dùng dữ liệu server. Mái, cầu và dầm tiếp tục dùng geometry riêng để giữ hình dáng kiến trúc. Nếu một file không tải được, renderer tự giữ geometry tạo bằng code làm dự phòng.
 
 ## Chạy
 
