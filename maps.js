@@ -74,11 +74,9 @@ const landing = bridge.find(p => p.kind === 'beam' && p.x === 3 && p.y < 3);
 landing.x = 3.7; landing.size[0] = 4.3; landing.id = 'bridge-beam-front-1'; bridge.push(pillar(5.3, .95));
 function lookout(parts, x, height, id) { parts.push(withId(part('block', x, height / 2, [1.35, height, 1.8], 4, 65, 'wood'), id)); }
 lookout(tower, -6.6, 1.4, 'tower-lookout'); lookout(townhouse, -6.6, 1, 'townhouse-lookout'); lookout(bridge, 6.6, 1.4, 'bridge-lookout'); lookout(fortress, 6.5, 1.4, 'fortress-lookout');
-const roster = [
-  ['Tú', 'pebble'], ['Bảo', 'heavy'], ['Mây', 'bloom'], ['Khoa', 'rocket'], ['Linh', 'drill'], ['Sóc', 'pulse'],
-];
+const roster = ['pebble', 'heavy', 'bloom', 'rocket', 'drill', 'pulse'];
 function populate(parts, spots, mapPrefix) {
-  spots.forEach(([x, y, spot], i) => parts.push({ ...resident(x, y), name: roster[i][0], weapon: roster[i][1], spot, residentIndex: i, nodeId: `${mapPrefix}-node-${i}` }));
+  spots.forEach(([x, y, spot], i) => parts.push({ ...resident(x, y), weapon: roster[i], spot, residentIndex: i, nodeId: `${mapPrefix}-node-${i}` }));
   for (const p of parts) if (p.kind === 'roof') {
     p.terrace = spots.some(([x, y]) => Math.abs(x - p.x) < p.size[0] / 2 && Math.abs(y - (p.y + p.size[1] / 2 + .46)) < .2);
   }

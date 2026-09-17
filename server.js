@@ -5,7 +5,7 @@ import { randomBytes, randomInt } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
 import QRCode from 'qrcode';
-import { Match } from './game.js';
+import { Match, PHASE_DURATIONS } from './game.js';
 import { MAPS, MAP_CATALOG, DEFAULT_MAP } from './maps.js';
 
 export function createApp({ port = 3000 } = {}) {
@@ -67,20 +67,19 @@ export function createApp({ port = 3000 } = {}) {
       if (room.hostSocket) io.sockets.sockets.get(room.hostSocket)?.disconnect(true);
       room.hostSocket = socket.id; socket.join(code); broadcast(room); return { code };
     });
-    handle('join', ({ code, token, name }) => {
+    handle('join', ({ code, token }) => {
       if (room || !validToken(token) || typeof code !== 'string') return { error: 'Phiên không hợp lệ.' };
       const found = rooms.get(code.toUpperCase());
       if (!found) return { error: 'Không tìm thấy phòng. Kiểm tra lại mã.' };
       const existing = found.players.find(p => p.token === token);
       if (!existing && found.game) return { error: 'Trận đã bắt đầu. Hãy chờ ván tiếp theo.' };
       if (!existing && found.players.length >= 8) return { error: 'Phòng đủ 8 người.' };
-      if (!existing && (typeof name !== 'string' || !name.trim())) return { error: 'Nhập tên để tham gia.' };
       room = found;
       if (existing) {
         io.sockets.sockets.get(existing.id)?.disconnect(true); player = existing; player.id = socket.id; player.connected = true;
       } else {
         const count = room.players.filter(p => p.team === 0).length;
-        player = { id: socket.id, token, name: name.trim().slice(0, 20), team: count <= room.players.length - count ? 0 : 1, connected: true };
+        player = { id: socket.id, token, team: count <= room.players.length - count ? 0 : 1, connected: true };
         room.players.push(player);
       }
       socket.join(room.code); broadcast(room); return { id: player.id, code: room.code };
@@ -124,6 +123,14 @@ export function createApp({ port = 3000 } = {}) {
     handle('aim', input => {
       if (!canAim() || !currentActor(input)) return { error: 'Lượt hoặc nhân vật đã thay đổi.' };
       if (!room.game.setAim(input)) return { error: 'Góc, lực hoặc vũ khí không hợp lệ.' };
+      io.to(room.code).volatile.emit('aimPreview', {
+        turn: room.game.turn,
+        shooterId: room.game.shooter.id,
+        team: room.game.team,
+        aim: room.game.aim,
+        wind: room.game.wind,
+        impact: room.game.traceAim(),
+      });
     });
     handle('fire', input => {
       if (!canAim() || !currentActor(input)) return { error: 'Lượt hoặc nhân vật đã thay đổi.' };
@@ -168,9 +175,9 @@ export function createApp({ port = 3000 } = {}) {
         room.game.step();
         const bot = room.mode === 'practice' ? room.game.team === 1 : !activePlayer(room);
         if (bot) {
-          if (room.game.phase === 'move' && room.game.deadline - room.game.time < 5.2) {
+          if (room.game.phase === 'move' && room.game.deadline - room.game.time < PHASE_DURATIONS.move - .8) {
             room.game.readyAim();
-          } else if (room.game.phase === 'aim' && room.game.deadline - room.game.time < 16) {
+          } else if (room.game.phase === 'aim' && room.game.deadline - room.game.time < PHASE_DURATIONS.aim - 2) {
             room.game.fire(room.game.botAim());
           }
         }

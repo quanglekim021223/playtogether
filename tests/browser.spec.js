@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test';
 
-async function joinPhone(browser, code, name, viewport = { width: 844, height: 390 }) {
+async function joinPhone(browser, code, _label, viewport = { width: 844, height: 390 }) {
   const context = await browser.newContext({ viewport, isMobile: true, hasTouch: true });
   const phone = await context.newPage();
   await phone.goto(`http://localhost:3000/?room=${code}`);
-  await phone.locator('#name').fill(name); await phone.getByRole('button', { name: 'Vào phòng' }).click();
-  await expect(phone.getByRole('heading', { name: 'Đã có mặt!' })).toBeVisible();
+  await expect(phone.getByRole('heading', { name: 'Tay cầm đã kết nối.' })).toBeVisible();
+  await expect(phone.locator('#join-form')).toHaveCount(0);
   const touch = await context.newCDPSession(phone);
   return { context, phone, touch };
 }
@@ -44,19 +44,22 @@ test('phone-only practice: drag updates TV aim, release fires, bot returns turn'
     await expect(player.phone.locator('#shooter-spot')).toHaveText('Sân trước');
     await player.phone.locator('#ready-aim').click();
     await expect(player.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'false');
-    await expect(player.phone.locator('#shooter-name')).toHaveText('Tú');
+    await expect(player.phone.locator('#shooter-name')).toHaveCount(0);
     await expect(player.phone.locator('#shooter-weapon')).toHaveText('Ná cao su');
-    await expect(page.locator('#scene')).toHaveAttribute('data-camera-mode', 'shooter');
+    await expect(page.locator('#scene')).toHaveAttribute('data-camera-mode', 'tactical');
     await expect.poll(() => page.locator('#scene').getAttribute('data-camera-x').then(Number)).toBeLessThan(-1);
     await page.screenshot({ path: 'artifacts/resident-aim.png', scale: 'css' });
     await player.phone.screenshot({ path: 'artifacts/resident-controller.png', scale: 'css' });
     await pullStart(player, -35, 100);
     await expect(player.phone.locator('#aim-pad')).toHaveClass(/armed/);
     const power = await player.phone.locator('#pull-power').textContent();
+    await expect(player.phone.locator('#pull-angle')).not.toHaveText('—');
     await expect(page.locator('#aim-readout')).toContainText(`LỰC ${power}%`);
+    await expect(page.locator('#scene')).toHaveAttribute('data-aim-impact', /^(block|resident|fuelBarrel|bouncePad|ground|out)$/);
     await release(player);
     await expect(player.phone.locator('#skill-btn')).toBeVisible({ timeout: 2000 });
     await expect(player.phone.locator('#skill-btn')).toContainText('Đạn kép');
+    await expect(page.locator('#scene')).toHaveAttribute('data-projectile-interpolation', 'prediction');
     await player.phone.locator('#skill-btn').click();
     await expect(player.phone.locator('#skill-btn')).toBeHidden();
     await expect(page.locator('#aim-readout')).toBeHidden();
@@ -64,7 +67,6 @@ test('phone-only practice: drag updates TV aim, release fires, bot returns turn'
     await expect(page.locator('#round-label')).toHaveText('LƯỢT 3', { timeout: 15_000 });
     await player.phone.locator('#ready-aim').click();
     await expect(player.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'false');
-    await expect(player.phone.locator('#shooter-name')).toHaveText('Bảo');
     await expect(player.phone.locator('#shooter-weapon')).toHaveText('Bazooka');
     await expect(page.locator('#scene')).toHaveAttribute('data-weapon', 'heavy');
     await player.phone.reload();
@@ -81,11 +83,16 @@ test('landscape controllers: orientation, cancel, mirrored pull, turns, reconnec
     players.push(await joinPhone(browser, code, 'Linh'));
     const [a, b] = players;
     await page.locator('#start').click();
-    await expect(a.phone.getByRole('heading', { name: 'Xoay ngang điện thoại' })).toBeVisible();
     await expect(a.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'true');
-    await a.phone.setViewportSize({ width: 844, height: 390 });
-    await expect(a.phone.locator('.rotate-prompt')).toBeHidden();
+    await expect.poll(() => a.phone.locator('#app').evaluate(element => getComputedStyle(element).transform)).not.toBe('none');
+    await a.phone.screenshot({ path: 'artifacts/controller-auto-landscape.png', scale: 'css' });
     await a.phone.locator('#ready-aim').click();
+    await expect(a.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'false');
+    await pullStart(a, -35, -40);
+    await expect(a.phone.locator('#aim-pad')).toHaveClass(/armed/);
+    await cancel(a);
+    await a.phone.setViewportSize({ width: 844, height: 390 });
+    await expect.poll(() => a.phone.locator('#app').evaluate(element => getComputedStyle(element).transform)).toBe('none');
     await expect(a.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'false');
     await expect(b.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'true');
     expect(await a.phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight)).toBe(true);
@@ -113,7 +120,7 @@ test('landscape controllers: orientation, cancel, mirrored pull, turns, reconnec
     await release(b);
     await expect(page.locator('#aim-readout')).toBeHidden();
     await page.locator('#back-lobby').click();
-    await expect(a.phone.getByRole('heading', { name: 'Đã có mặt!' })).toBeVisible();
+    await expect(a.phone.getByRole('heading', { name: 'Tay cầm đã kết nối.' })).toBeVisible();
     await expect(page.locator('#player-count')).toHaveText('2/8 người đã vào');
   } finally { for (const player of players) await player.context.close(); }
 });
@@ -158,9 +165,8 @@ test('four maps: shared selection, correct 3D geometry, replay, random and slow 
       await page.locator('#practice').click();
       await player.phone.locator('#ready-aim').click();
       await expect(page.locator('#match-map')).toHaveText(name);
-      await expect(player.phone.locator('#phone-team')).toContainText(name);
-      await expect(player.phone.locator('#phone-health')).toContainText('San Hô: 6/6 cư dân');
-      await expect(player.phone.locator('#phone-health')).toContainText('Ngọc Lam: 6/6 cư dân');
+      await expect(player.phone.locator('#phone-team')).toContainText('SAN HÔ');
+      await expect(player.phone.locator('#phone-health')).toHaveCount(0);
       await expect(page.locator('#health-0 .life')).toHaveCount(6);
       await expect(page.locator('#health-1 .life')).toHaveCount(6);
       await expect(page.locator('#scene')).toHaveAttribute('data-map', mapId);

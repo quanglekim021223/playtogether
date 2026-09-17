@@ -108,6 +108,12 @@ test('camera follows the active resident across teams and rooftops; overview and
   await expect(page.locator('#scene')).toHaveAttribute('data-camera-mode', 'shooter');
   await expect.poll(() => page.locator('#scene').getAttribute('data-camera-x').then(Number)).toBeCloseTo(game.shooter.body.position.x + 3, 1);
   await page.screenshot({ path: 'artifacts/shooter-closeup.png', scale: 'css' });
+  game.readyAim();
+  await page.evaluate(snapshot => window.focusScene.update(snapshot), game.snapshot());
+  await expect(page.locator('#scene')).toHaveAttribute('data-camera-mode', 'tactical');
+  await expect.poll(() => page.locator('#scene').getAttribute('data-camera-x').then(Number)).toBeGreaterThan(game.shooter.body.position.x + 4);
+  await page.screenshot({ path: 'artifacts/tactical-aim.png', scale: 'css' });
+  game.enterPhase('move', 12);
   game.team = 1; game.shooterCursor[1] = 2; game.syncShooter();
   await page.evaluate(snapshot => window.focusScene.update(snapshot), game.snapshot());
   await expect(page.locator('#scene')).toHaveAttribute('data-weapon', 'bloom');

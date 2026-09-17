@@ -9,7 +9,7 @@ export function createScene(container) {
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   let matchWinner = null, eventBaseline = false;
   const renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.8));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFSoftShadowMap;
   renderer.outputColorSpace = T.SRGBColorSpace; renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
   container.append(renderer.domElement);
@@ -17,7 +17,7 @@ export function createScene(container) {
   const camera = new T.PerspectiveCamera(36, 1, 0.1, 400);
   const hemisphere = new T.HemisphereLight(0xe7faff, 0x809085, 2.2); scene.add(hemisphere);
   const sun = new T.DirectionalLight(0xffdfad, 3.3); sun.position.set(-15, 28, 18); sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 22, bottom: -22, near: 1, far: 80 });
+  sun.shadow.mapSize.set(1024, 1024); Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 22, bottom: -22, near: 1, far: 80 });
   sun.shadow.normalBias = 0.035; scene.add(sun);
   const materials = new Map();
   function material(color) {
@@ -92,11 +92,14 @@ export function createScene(container) {
     birds.push({ bird, left, right });
   }
   const objects = new Map(); const projectileMeshes = new Map(); let shot = null; let particles = []; let lastEvent = 0; let shake = 0; let trailAt = 0; let mode = 'home';
-  let currentMap = null, activeShooter = null, gamePhase = 'aim', overview = false, currentWind = 0;
+  let currentMap = null, activeShooter = null, gamePhase = 'aim', overview = false, currentWind = 0, tacticalTarget = new T.Vector3();
   const selection = new T.Mesh(new T.TorusGeometry(.68, .035, 6, 36), new T.MeshBasicMaterial({ color: 0xffd376, depthTest: false }));
   selection.renderOrder = 9; selection.visible = false; scene.add(selection);
   const viewTarget = new T.Vector3(0, 2, 0); let viewDistance = 50;
-  const dots = Array.from({ length: 20 }, () => { const dot = sphere(0, 0, 0.15, 0.065, 0xffffff); dot.visible = false; return dot; });
+  const dots = Array.from({ length: 30 }, () => { const dot = sphere(0, 0, 1.45, 0.065, 0xffffff); dot.visible = false; return dot; });
+  const impactMaterial = new T.MeshBasicMaterial({ color: 0x7be0b5, depthTest: false });
+  const impactMarker = new T.Mesh(new T.TorusGeometry(.45, .075, 8, 32), impactMaterial);
+  impactMarker.renderOrder = 11; impactMarker.visible = false; scene.add(impactMarker);
   // Solid shaft and arrowhead remain legible on the shared screen from a sofa.
   const aimArrow = new T.Group(); scene.add(aimArrow); aimArrow.visible = false;
   const arrowMaterial = new T.MeshBasicMaterial({ color: 0xffcf78, depthTest: false });
@@ -104,25 +107,36 @@ export function createScene(container) {
   shaft.rotation.z = -Math.PI / 2; shaft.renderOrder = 10; aimArrow.add(shaft);
   const arrowhead = new T.Mesh(new T.ConeGeometry(0.34, 0.72, 12), arrowMaterial);
   arrowhead.rotation.z = -Math.PI / 2; arrowhead.renderOrder = 10; aimArrow.add(arrowhead);
-  function aimPreview(team, aim, wind, visible) {
-    if (!activeShooter) { aimArrow.visible = false; dots.forEach(d => { d.visible = false; }); return; }
+  function aimPreview(team, aim, wind, visible, impact = null) {
+    if (!activeShooter) { aimArrow.visible = false; impactMarker.visible = false; dots.forEach(d => { d.visible = false; }); return; }
     const angle = aim.angle * Math.PI / 180, rotation = team === 0 ? angle : Math.PI - angle;
     const velocity = launchVelocity(team, aim.angle, aim.power, activeShooter.weapon);
     const origin = muzzlePosition(activeShooter.p, team, aim.angle);
     const obj = objects.get(activeShooter.id);
     if (obj?.userData.gun) obj.userData.gun.rotation.z = rotation;
     aimArrow.visible = visible;
-    aimArrow.position.set(origin[0], origin[1], .7); aimArrow.rotation.z = rotation;
+    aimArrow.position.set(origin[0], origin[1], 1.5); aimArrow.rotation.z = rotation;
     const length = 1.8 + aim.power / 100 * 3.5;
     shaft.scale.set(0.105, length - 0.72, 0.105); shaft.position.x = (length - 0.72) / 2;
     arrowhead.position.x = length - 0.36;
     arrowMaterial.color.set(team === 0 ? 0xe45b3a : 0x167b79);
     dots.forEach((dot, i) => {
-      const t = (i + 1) * .085; const y = origin[1] + velocity.y * t - 4.91 * t * t;
+      const t = (i + 1) * .095; const y = origin[1] + velocity.y * t - 4.91 * t * t;
       const windX = activeShooter.weapon === 'heavy' ? .5 * wind * (WEAPONS.heavy.windFactor || 1) * t * t : 0;
-      dot.visible = visible && y > 0; dot.position.set(origin[0] + velocity.x * t + windX, y, .5);
-      dot.scale.setScalar(0.065 * (1 - i / 28));
+      const x = origin[0] + velocity.x * t + windX;
+      const passedImpact = impact?.p && (team === 0 ? x > impact.p[0] + .15 : x < impact.p[0] - .15);
+      dot.visible = visible && y > 0 && !passedImpact; dot.position.set(x, y, 1.45);
+      dot.scale.setScalar(0.065 * Math.max(.35, 1 - i / 38));
     });
+    impactMarker.visible = visible && Boolean(impact?.p);
+    if (impactMarker.visible) impactMarker.position.set(impact.p[0], Math.max(.15, impact.p[1]), 1.55);
+    impactMaterial.color.set(impact?.blockedByOwn ? 0xffa629 : impact?.team === 1 - team ? 0xff6e55 : 0x7be0b5);
+    container.dataset.aimBlocked = String(Boolean(impact?.blockedByOwn));
+    container.dataset.aimImpact = impact?.kind || 'none';
+  }
+  function updateAim(data) {
+    currentWind = data.wind ?? currentWind;
+    aimPreview(data.team, data.aim, currentWind, gamePhase === 'aim' && mode === 'game', data.impact);
   }
   function update(data) {
     if (!data) return;
@@ -130,6 +144,10 @@ export function createScene(container) {
     container.setAttribute('aria-label', `Đấu trường 3D · ${data.mapName}`);
     if (currentMap !== data.mapId) { reset(); currentMap = data.mapId; }
     activeShooter = data.items.find(i => i.id === data.shooterId) || null; gamePhase = data.phase; currentWind = data.wind || 0;
+    const enemies = data.items.filter(i => i.kind === 'resident' && i.team !== data.team && i.hp > 0);
+    const enemyX = enemies.length ? enemies.reduce((sum, item) => sum + item.p[0], 0) / enemies.length : 0;
+    const enemyY = enemies.length ? enemies.reduce((sum, item) => sum + item.p[1], 0) / enemies.length : 2;
+    tacticalTarget.set(activeShooter ? (activeShooter.p[0] + enemyX) / 2 : 0, activeShooter ? Math.max(2.5, (activeShooter.p[1] + enemyY) / 2 + 1.1) : 2, 0);
     container.dataset.shooter = String(data.shooterId); container.dataset.weapon = activeShooter?.weapon || '';
     container.dataset.wind = currentWind.toFixed(1);
     const environmentItems = Array.isArray(data.environment) ? data.environment : [];
@@ -143,9 +161,9 @@ export function createScene(container) {
       if (!obj) {
         obj = item.kind === 'resident' ? art.resident(item.team, item.id, item.weapon)
           : ['fuelBarrel', 'bouncePad'].includes(item.kind) ? art.interactive(item) : art.block(item);
-        scene.add(obj); objects.set(item.id, obj); obj.position.fromArray(item.p); obj.quaternion.fromArray(item.q);
+        scene.add(obj); objects.set(item.id, obj); obj.position.set(item.p[0], item.p[1], item.kind === 'resident' ? 1.3 : item.p[2]); obj.quaternion.fromArray(item.q);
       }
-      obj.userData.targetP = new T.Vector3(...item.p); obj.userData.targetQ = item.kind === 'resident' ? new T.Quaternion() : new T.Quaternion(...item.q);
+      obj.userData.targetP = new T.Vector3(item.p[0], item.p[1], item.kind === 'resident' ? 1.3 : item.p[2]); obj.userData.targetQ = item.kind === 'resident' ? new T.Quaternion() : new T.Quaternion(...item.q);
       if (obj.userData.cracks) obj.userData.cracks.forEach((c, i) => { c.visible = item.crack === i + 1; });
       if (obj.userData.hp !== undefined && item.hp < obj.userData.hp) obj.userData.hurtUntil = performance.now() / 1000 + .65;
       obj.userData.hp = item.hp; obj.userData.team = item.team;
@@ -169,15 +187,21 @@ export function createScene(container) {
         mesh.userData.weapon = p.weapon;
         scene.add(mesh);
         projectileMeshes.set(p.id, mesh);
+        mesh.position.set(p.p[0], p.p[1], 1.45);
       }
-      mesh.position.fromArray(p.p);
+      const serverP = new T.Vector3(p.p[0], p.p[1], 1.45);
+      if (mesh.position.distanceTo(serverP) > 5) mesh.position.copy(serverP);
+      mesh.userData.serverP = serverP;
+      mesh.userData.velocity = new T.Vector3(...(p.v || [0, 0, 0]));
+      mesh.userData.snapshotAt = performance.now();
     }
     if (!hasProjectileList && data.projectile) {
       if (!shot) shot = sphere(0, 0, 0, 0.29, WEAPONS[data.projectile.weapon].color);
-      shot.position.fromArray(data.projectile.p);
+      shot.position.set(data.projectile.p[0], data.projectile.p[1], 1.45);
     } else if (shot) { scene.remove(shot); shot = null; }
     matchWinner = data.winner;
-    aimPreview(data.team, data.aim, data.wind || 0, data.phase === 'aim' && mode === 'game');
+    aimPreview(data.team, data.aim, data.wind || 0, data.phase === 'aim' && mode === 'game', data.aimImpact);
+    container.dataset.projectileInterpolation = 'prediction';
     container.dataset.cracked = [...objects.values()].filter(obj => obj.userData.cracks?.some(crack => crack.visible)).length;
     if (!eventBaseline) { lastEvent = data.events.at(-1)?.id || 0; eventBaseline = true; }
     for (const event of data.events) {
@@ -249,7 +273,7 @@ export function createScene(container) {
     scene.add(m); particles.push({ mesh: m, vx, vy, vz, life, debris, ring, spin: (Math.random() - .5) * 7 });
   }
   function reset() {
-    aimArrow.visible = false; dots.forEach(dot => { dot.visible = false; }); lastEvent = 0; eventBaseline = false; matchWinner = null; activeShooter = null; selection.visible = false;
+    aimArrow.visible = false; impactMarker.visible = false; dots.forEach(dot => { dot.visible = false; }); lastEvent = 0; eventBaseline = false; matchWinner = null; activeShooter = null; selection.visible = false;
     for (const obj of objects.values()) scene.remove(obj); objects.clear();
     if (shot) scene.remove(shot); shot = null; for (const m of projectileMeshes.values()) scene.remove(m); projectileMeshes.clear(); for (const p of particles) scene.remove(p.mesh); particles = [];
     container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; delete container.dataset.lastMaterial; delete container.dataset.lastEnvironmentEvent;
@@ -264,18 +288,20 @@ export function createScene(container) {
     requestAnimationFrame(render); const dt = Math.min(0.05, (now - lastTime) / 1000); lastTime = now;
     const portrait = width / height < 1.15;
     const distance = Math.max(43, 79.5 / (width / height));
-    const focusing = mode === 'game' && ['move', 'aim'].includes(gamePhase) && activeShooter && !overview && !reducedMotion.matches;
-    const target = focusing ? new T.Vector3(activeShooter.p[0] + (activeShooter.team === 0 ? 3 : -3), activeShooter.p[1] + 1.2, 0)
+    const closeMove = mode === 'game' && gamePhase === 'move' && activeShooter && !overview && !reducedMotion.matches;
+    const tacticalAim = mode === 'game' && gamePhase === 'aim' && activeShooter && !overview && !reducedMotion.matches;
+    const target = closeMove ? new T.Vector3(activeShooter.p[0] + (activeShooter.team === 0 ? 3 : -3), activeShooter.p[1] + 1.2, 0)
+      : tacticalAim ? tacticalTarget
       : new T.Vector3(mode === 'lobby' && !portrait ? -4.6 : 0, mode === 'home' ? 10 : 2, 0);
-    const desiredDistance = focusing ? Math.max(22, 34 / (width / height)) : mode === 'home' ? Math.max(distance, 57) : distance;
+    const desiredDistance = closeMove ? Math.max(22, 34 / (width / height)) : tacticalAim ? Math.max(41, 72 / (width / height)) : mode === 'home' ? Math.max(distance, 57) : distance;
     const blend = reducedMotion.matches ? 1 : 1 - Math.exp(-dt * 5);
     viewTarget.lerp(target, blend); viewDistance += (desiredDistance - viewDistance) * blend;
     camera.position.set(viewTarget.x + (mode === 'lobby' && !portrait ? 6.6 : 0), viewTarget.y + Math.max(10, viewDistance * .32), viewDistance);
     scene.fog.near = Math.max(80, viewDistance + 30); scene.fog.far = Math.max(190, viewDistance + 140);
     camera.lookAt(viewTarget);
-    container.dataset.cameraMode = focusing ? 'shooter' : 'overview'; container.dataset.cameraX = viewTarget.x.toFixed(2);
+    container.dataset.cameraMode = closeMove ? 'shooter' : tacticalAim ? 'tactical' : 'overview'; container.dataset.cameraX = viewTarget.x.toFixed(2);
     selection.visible = mode === 'game' && ['move', 'aim'].includes(gamePhase) && Boolean(activeShooter);
-    if (selection.visible) selection.position.set(activeShooter.p[0], activeShooter.p[1] + .12, .8);
+    if (selection.visible) selection.position.set(activeShooter.p[0], activeShooter.p[1] + .12, 1.55);
     if (shake > 0 && !reducedMotion.matches) { camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake; shake *= 0.88; }
     for (const obj of objects.values()) {
       obj.position.lerp(obj.userData.targetP, Math.min(1, dt * 22)); obj.quaternion.slerp(obj.userData.targetQ, Math.min(1, dt * 22));
@@ -284,6 +310,14 @@ export function createScene(container) {
         const recoil = obj.userData.recoil || 0; obj.userData.gun.position.x = (obj.userData.team === 0 ? -1 : 1) * recoil;
         obj.userData.recoil = Math.max(0, recoil - dt * .7);
       }
+    }
+    for (const mesh of projectileMeshes.values()) {
+      if (!mesh.userData.serverP) continue;
+      const age = Math.min(.12, Math.max(0, (now - mesh.userData.snapshotAt) / 1000));
+      const predicted = mesh.userData.serverP.clone().addScaledVector(mesh.userData.velocity, age);
+      predicted.y -= 4.91 * age * age;
+      if (mesh.userData.weapon === 'heavy') predicted.x += .5 * currentWind * (WEAPONS.heavy.windFactor || 1) * age * age;
+      mesh.position.lerp(predicted, reducedMotion.matches ? 1 : 1 - Math.exp(-dt * 28));
     }
     if (now - trailAt > 45 && !reducedMotion.matches) {
       const trails = [...projectileMeshes.values()].filter(m => m.userData.weapon === 'rocket');
@@ -319,5 +353,5 @@ export function createScene(container) {
     renderer.render(scene, camera);
   }
   requestAnimationFrame(render);
-  return { update, reset, aimPreview, setOverview: value => { overview = value; }, setMode: value => { mode = value; } };
+  return { update, updateAim, reset, aimPreview, setOverview: value => { overview = value; }, setMode: value => { mode = value; } };
 }

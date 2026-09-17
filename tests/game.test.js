@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Match, launchVelocity } from '../game.js';
+import { Match, PHASE_DURATIONS, launchVelocity } from '../game.js';
+
+test('turn pacing gives players enough time to move and aim', () => {
+  const game = new Match();
+  assert.equal(PHASE_DURATIONS.move, 12);
+  assert.equal(game.snapshot().remaining, 12);
+  assert.equal(game.readyAim(), true);
+  assert.equal(PHASE_DURATIONS.aim, 30);
+  assert.equal(game.snapshot().remaining, 30);
+});
 
 test('tower remains stable before a shot; all twelve residents are healthy', () => {
   const game = new Match();

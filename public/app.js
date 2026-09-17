@@ -11,6 +11,7 @@ let token = sessionStorage.getItem('bp-token');
 if (!token) { token = globalThis.crypto?.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(24)), v => v.toString(16).padStart(2, '0')).join(''); sessionStorage.setItem('bp-token', token); }
 let state = null, scene = null, playerId = null, screenKey = '', qrCode = '', connection = null, lastTurn = null;
 let mapCatalog = [], previewRequest = 0, previewMap = null;
+let autoJoinFailed = false;
 let draft = { angle: 42, power: 30, weapon: 'pebble' };
 let gesture = null, steerGesture = null, aimTimer = null, shotPending = false, skillSequence = 0, lastSteerSentAt = 0;
 const audio = createGameAudio();
@@ -45,9 +46,16 @@ function bindHeader() {
   document.querySelector('#sound')?.addEventListener('click', () => { muted = !muted; localStorage.setItem('bp-muted', muted); audio.mute(muted); unlockAudio(); document.querySelector('#sound').textContent = muted ? 'Âm thanh: tắt' : 'Âm thanh: bật'; });
   document.querySelector('#fullscreen')?.addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else { await document.documentElement.requestFullscreen(); if (controller && screen.orientation?.lock) await screen.orientation.lock('landscape').catch(() => {}); } } catch { toast('Trình duyệt không hỗ trợ toàn màn hình.'); } });
 }
+async function requestLandscapeLock() {
+  if (!controller) return;
+  try {
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    await screen.orientation?.lock?.('landscape');
+  } catch {}
+}
 function controls() {
-  return `<section class="controller-weapons"><span class="grip-label">NGƯỜI ĐANG BẮN</span><div class="shooter-card"><span id="shooter-icon" class="shooter-icon"></span><strong id="shooter-name"></strong><span id="shooter-spot"></span><b id="shooter-weapon"></b><small id="shooter-hint"></small></div><div id="move-options" class="move-options" hidden></div><button id="ready-aim" class="button primary compact ready-aim-button" style="margin-top:8px" hidden>Sẵn sàng ngắm 🎯</button><button id="skill-btn" class="button primary compact skill-button" style="margin-top:8px" hidden>⚡ Kích hoạt</button><span class="grip-dots" aria-hidden="true">••••••<br>••••••</span></section>
-  <section class="controller-touch"><div class="pull-heading"><span id="pull-status">CHẠM · KÉO · THẢ</span><span class="pull-power"><output id="pull-power">0</output><small>% LỰC</small></span></div>
+  return `<section class="controller-weapons"><div class="shooter-card"><span id="shooter-icon" class="shooter-icon"></span><div><strong id="shooter-weapon"></strong><span id="shooter-spot"></span><small id="shooter-hint"></small></div></div><div id="move-options" class="move-options" hidden></div><button id="ready-aim" class="button primary compact ready-aim-button" hidden>Sẵn sàng ngắm</button><button id="skill-btn" class="button primary compact skill-button" hidden>⚡ Kích hoạt</button></section>
+  <section class="controller-touch"><div class="pull-heading"><span id="pull-status">CHẠM · KÉO · THẢ</span><span class="pull-power"><output id="pull-angle">—</output><small>°</small><output id="pull-power">0</output><small>% LỰC</small></span></div>
     <div id="aim-pad" role="application" aria-label="Vùng kéo ná để ngắm và thả để bắn" aria-disabled="true">
       <div class="pad-grid" aria-hidden="true"></div><div id="pull-cord" aria-hidden="true"></div><div id="pull-anchor" aria-hidden="true"></div><div id="pull-knob" aria-hidden="true">✦</div>
       <div class="pad-cue"><span id="pull-direction">↙</span><span id="pull-hint">Kéo xuống trái</span><small>Nhìn mũi tên trên màn hình lớn</small></div>
@@ -55,8 +63,14 @@ function controls() {
   </section>`;
 }
 function landscape() { return matchMedia('(orientation: landscape)').matches; }
-function canControl() { return Boolean(socket.connected && controller && landscape() && !document.hidden && state?.game?.phase === 'aim' && state.activeId === playerId); }
-function canSteer() { return Boolean(socket.connected && controller && landscape() && !document.hidden && state?.game?.phase === 'flight' && state.activeId === playerId && state.game.activeSkill?.weapon === 'rocket' && state.game.activeSkill.available); }
+function canControl() { return Boolean(socket.connected && controller && !document.hidden && state?.game?.phase === 'aim' && state.activeId === playerId); }
+function canSteer() { return Boolean(socket.connected && controller && !document.hidden && state?.game?.phase === 'flight' && state.activeId === playerId && state.game.activeSkill?.weapon === 'rocket' && state.game.activeSkill.available); }
+function padPoint(event, pad) {
+  const bounds = pad.getBoundingClientRect();
+  return landscape()
+    ? { x: event.clientX - bounds.left, y: event.clientY - bounds.top }
+    : { x: event.clientY - bounds.top, y: bounds.right - event.clientX };
+}
 function skillInput(action = state?.game?.activeSkill?.action, value) {
   const skill = state?.game?.activeSkill;
   return { turn: state.game.turn, shooterId: state.game.shooterId, projectileId: skill.projectileId, action, ...(value === undefined ? {} : { value }), sequence: ++skillSequence };
@@ -68,7 +82,7 @@ function sendSteer(value) {
 }
 function sendAim() {
   if (aimTimer) return;
-  aimTimer = setTimeout(() => { aimTimer = null; if (canControl() && !shotPending) socket.emit('aim', { ...draft, turn: state.game.turn, shooterId: state.game.shooterId }); }, 50);
+  aimTimer = setTimeout(() => { aimTimer = null; if (canControl() && !shotPending) socket.volatile.emit('aim', { ...draft, turn: state.game.turn, shooterId: state.game.shooterId }); }, 33);
 }
 function clearSteerGesture() {
   const pad = document.querySelector('#aim-pad'), previous = steerGesture; steerGesture = null;
@@ -82,13 +96,15 @@ function clearGesture({ steer = true } = {}) {
   pad?.classList.remove('dragging', 'armed');
   for (const id of ['pull-anchor', 'pull-knob', 'pull-cord']) document.getElementById(id)?.removeAttribute('style');
   const power = document.querySelector('#pull-power'); if (power) power.textContent = '0';
+  const angle = document.querySelector('#pull-angle'); if (angle) angle.textContent = '—';
   if (steer) clearSteerGesture();
 }
 function cancelGesture() { clearGesture(); updateControls(); }
 function moveGesture(event) {
   if (!gesture || event.pointerId !== gesture.id) return;
   if (!canControl() || gesture.turn !== state.game.turn) { cancelGesture(); return; }
-  const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
+  const point = padPoint(event, document.querySelector('#aim-pad'));
+  const dx = point.x - gesture.x, dy = point.y - gesture.y;
   const distance = Math.hypot(dx, dy); const scale = Math.min(1, gesture.maxPull / Math.max(1, distance));
   const pad = document.querySelector('#aim-pad');
   const aim = dragAim(dx, dy, state.game.team, gesture.maxPull);
@@ -98,6 +114,7 @@ function moveGesture(event) {
   cord.style.width = `${Math.min(distance, gesture.maxPull)}px`; cord.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
   pad.classList.toggle('armed', Boolean(aim));
   document.querySelector('#pull-power').textContent = aim ? Math.round(aim.power) : '0';
+  document.querySelector('#pull-angle').textContent = aim ? Math.round(aim.angle) : '—';
   document.querySelector('#pull-status').textContent = aim ? 'THẢ TAY ĐỂ BẮN' : 'KÉO NGƯỢC HƯỚNG BẮN';
   if (aim) { draft = { ...draft, ...aim }; sendAim(); }
 }
@@ -105,14 +122,14 @@ function bindControls() {
   const pad = document.querySelector('#aim-pad'); if (!pad) return;
   pad.addEventListener('contextmenu', e => e.preventDefault());
   pad.addEventListener('pointerdown', event => {
-    if (canSteer() && !steerGesture && event.isPrimary && event.button === 0) {
-      event.preventDefault(); unlockAudio(); steerGesture = { id: event.pointerId, y: event.clientY, lastY: event.clientY };
+    if (canSteer() && !steerGesture && event.isPrimary !== false && (event.pointerType === 'touch' || event.button === 0)) {
+      event.preventDefault(); unlockAudio(); const point = padPoint(event, pad); steerGesture = { id: event.pointerId, y: point.y, lastY: point.y };
       pad.setPointerCapture(event.pointerId); pad.classList.add('steering'); return;
     }
-    if (!canControl() || shotPending || gesture || !event.isPrimary || event.button !== 0) return;
+    if (!canControl() || shotPending || gesture || event.isPrimary === false || (event.pointerType !== 'touch' && event.button !== 0)) return;
     event.preventDefault(); unlockAudio();
-    const bounds = pad.getBoundingClientRect();
-    gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, localX: event.clientX - bounds.left, localY: event.clientY - bounds.top, maxPull: Math.min(140, bounds.height * 0.62, bounds.width * 0.34), turn: state.game.turn, aim: null };
+    const point = padPoint(event, pad);
+    gesture = { id: event.pointerId, x: point.x, y: point.y, localX: point.x, localY: point.y, maxPull: Math.min(140, pad.clientHeight * 0.62, pad.clientWidth * 0.34), turn: state.game.turn, aim: null };
     pad.setPointerCapture(event.pointerId); pad.classList.add('dragging');
     for (const id of ['pull-anchor', 'pull-knob', 'pull-cord']) {
       const element = document.getElementById(id); element.style.left = `${gesture.localX}px`; element.style.top = `${gesture.localY}px`;
@@ -121,8 +138,9 @@ function bindControls() {
   });
   pad.addEventListener('pointermove', event => {
     if (steerGesture && event.pointerId === steerGesture.id) {
-      const delta = (steerGesture.lastY - event.clientY) / 42;
-      steerGesture.lastY = event.clientY; sendSteer(delta); return;
+      const y = padPoint(event, pad).y;
+      const delta = (steerGesture.lastY - y) / 42;
+      steerGesture.lastY = y; sendSteer(delta); return;
     }
     moveGesture(event);
   });
@@ -226,7 +244,7 @@ function teamLists() {
   for (const team of [0, 1]) {
     const list = document.querySelector(`#team-${team}`); if (!list) continue;
     const players = state.players.filter(p => p.team === team);
-    list.innerHTML = players.length ? players.map(p => `<div class="player"><span class="avatar">${escape(p.name[0].toUpperCase())}</span><span>${escape(p.name)}${p.id === playerId ? ' <small>(bạn)</small>' : ''}</span><small>${p.connected ? 'Sẵn sàng' : 'Mất kết nối'}</small></div>`).join('') : '<div class="empty-player">Đang chờ hàng xóm…</div>';
+    list.innerHTML = players.length ? players.map((p, index) => `<div class="player"><span class="avatar">${index + 1}</span><span>Tay cầm ${index + 1}${p.id === playerId ? ' <small>(bạn)</small>' : ''}</span><small>${p.connected ? 'Sẵn sàng' : 'Mất kết nối'}</small></div>`).join('') : '<div class="empty-player">Đang chờ tay cầm…</div>';
   }
   const count = document.querySelector('#player-count'); if (count) count.textContent = `${state.players.filter(p => p.connected).length}/8 người đã vào`;
   updateMapUI();
@@ -276,7 +294,7 @@ async function setupScene() {
     const response = await fetch('/maps'); if (!response.ok) throw new Error('Map catalog failed');
     mapCatalog = await response.json(); updateMapUI();
   } catch { toast('Không tải được danh sách bản đồ. Hãy tải lại trang.'); }
-  if (controller) { document.body.classList.add('controller'); return; }
+  if (controller) { document.body.classList.add('controller'); screen.orientation?.lock?.('landscape').catch(() => {}); return; }
   try {
     const { createScene } = await import('./scene.js'); scene = createScene(document.querySelector('#scene'));
     if (state?.game) { scene.update(state.game); scene.setMode('game'); }
@@ -292,9 +310,14 @@ function renderHome() {
 }
 function renderJoin() {
   screenKey = 'join';
-  app.innerHTML = `${header()}<main class="phone-shell"><span class="eyebrow">HỘI HÀNG XÓM ĐANG ĐỢI</span><h1>Nhập hội nào.</h1><p>Nhập mã trên màn hình lớn để vào phòng.</p><form id="join-form"><label>Tên của bạn<input id="name" autocomplete="nickname" maxlength="20" required placeholder="Ví dụ: Quang" value="${escape(sessionStorage.getItem('bp-name') || '')}"></label><label>Mã phòng<input id="room-code" autocapitalize="characters" autocomplete="off" maxlength="6" minlength="6" required placeholder="A1B2C3" value="${escape(params.get('room') || '')}"></label><button class="button primary" type="submit">Vào phòng <span>→</span></button></form><a class="text-button" href="/">Mở màn hình chung</a></main>`;
+  const scannedCode = params.get('room')?.toUpperCase();
+  if (scannedCode && !autoJoinFailed) {
+    app.innerHTML = `<main class="controller-connect"><span class="connect-mark">↻</span><h1>Đang kết nối tay cầm</h1><p>Giữ điện thoại nằm ngang.</p></main>`;
+    return;
+  }
+  app.innerHTML = `${header()}<main class="phone-shell"><span class="eyebrow">KẾT NỐI TAY CẦM</span><h1>Nhập mã phòng.</h1><form id="join-form"><label>Mã phòng<input id="room-code" autocapitalize="characters" autocomplete="off" maxlength="6" minlength="6" required placeholder="A1B2C3" value="${escape(scannedCode || '')}"></label><button class="button primary" type="submit">Kết nối <span>→</span></button></form><a class="text-button" href="/">Mở màn hình chung</a></main>`;
   bindHeader();
-  document.querySelector('#join-form').onsubmit = async event => { event.preventDefault(); unlockAudio(); const name = document.querySelector('#name').value.trim(); const code = document.querySelector('#room-code').value.trim().toUpperCase(); sessionStorage.setItem('bp-name', name); const result = await emit('join', { code, token, name }); if (result?.id) { playerId = result.id; sessionStorage.setItem('bp-room', code); render(); } };
+  document.querySelector('#join-form').onsubmit = async event => { event.preventDefault(); unlockAudio(); requestLandscapeLock(); const code = document.querySelector('#room-code').value.trim().toUpperCase(); const result = await emit('join', { code, token }); if (result?.id) { playerId = result.id; sessionStorage.setItem('bp-room', code); render(); } };
 }
 async function refreshQr() {
   if (qrCode === state.code && connection) { showQr(); return; }
@@ -309,7 +332,7 @@ function renderLobby() {
   clearGesture(); document.body.classList.remove('controller-playing');
   screenKey = 'lobby'; scene?.setMode('lobby');
   if (controller) {
-    app.innerHTML = `${header()}<main class="phone-shell"><span class="eyebrow">PHÒNG ${state.code}</span><h1>Đã có mặt!</h1><p>Chọn phe của bạn. Chủ phòng sẽ bắt đầu trên màn hình lớn.</p>${teamsMarkup()}<div class="team-switch"><button class="button coral-button" data-team="0">Vào San Hô</button><button class="button teal-button" data-team="1">Vào Ngọc Lam</button></div><p class="phone-note">Giữ trang này mở để điều khiển khi đến lượt.</p><p id="map-summary" class="phone-map"></p></main>`;
+    app.innerHTML = `${header()}<main class="phone-shell"><span class="eyebrow">PHÒNG ${state.code}</span><h1>Tay cầm đã kết nối.</h1><p>Chọn phe. Trận đấu sẽ bắt đầu trên màn hình lớn.</p>${teamsMarkup()}<div class="team-switch"><button class="button coral-button" data-team="0">Phe San Hô</button><button class="button teal-button" data-team="1">Phe Ngọc Lam</button></div><p id="map-summary" class="phone-map"></p></main>`;
     document.querySelectorAll('[data-team]').forEach(b => b.onclick = () => emit('team', { team: Number(b.dataset.team) }));
   } else {
     app.innerHTML = `${header()}<main class="lobby-layout"><div class="lobby-copy"><span class="eyebrow">MỜI CẢ HỘI VÀO CHƠI</span><h1>Chọn nhà.<br><span>Rủ hàng xóm.</span></h1><p>Quét QR bằng điện thoại cùng Wi-Fi.<br>Chọn công trình cho cuộc đấu tiếp theo.</p><section class="map-selection" aria-label="Chọn bản đồ"><div id="map-picker"></div><p id="map-summary"></p><p id="map-tip"></p><div class="material-key" aria-label="Độ bền vật liệu"><span><i style="background:#8ee0e5"></i>Kính · dễ vỡ</span><span><i style="background:#b77943"></i>Gỗ · nhẹ</span><span><i style="background:#cd795c"></i>Gạch · vừa</span><span><i style="background:#83969c"></i>Đá · bền</span><span><i style="background:#d94b3f"></i>Thùng xăng · nổ</span><span><i style="background:#71d9c9"></i>Tấm nảy · đổi quỹ đạo</span></div></section></div><section class="lobby-panel"><div class="room-label"><span>PHÒNG CỦA BẠN</span><b id="player-count"></b></div><div class="join-block"><img id="qr" alt="Mã QR để tham gia phòng" width="148" height="148"><div><span class="small-label">QUÉT ĐỂ THAM GIA</span><strong class="room-code">${state.code}</strong><span class="qr-help">Hoặc mở link và nhập mã</span><a id="join-url" target="_blank" rel="noopener"></a></div></div>${teamsMarkup()}<button id="start" class="button primary">Bắt đầu trận <span>↗</span></button><button id="practice" class="button secondary">Một điện thoại + bot</button><p class="panel-note">Đấu nhóm: mỗi đội 1 người. Đấu bot: 1 người ở San Hô.</p></section></main><footer><span>NGẮM CHO CHUẨN. CƯỜI CHO ĐÃ.</span><span>ĐẢO HÀNG XÓM / 01</span></footer>`;
@@ -322,7 +345,7 @@ function renderLobby() {
 function renderGame() {
   screenKey = 'game'; scene?.setMode('game'); document.body.classList.toggle('controller-playing', controller);
   if (controller) {
-    app.innerHTML = `${header()}<main class="gamepad"><div class="gamepad-status"><div><span class="eyebrow" id="phone-team"></span><h1 id="turn-heading"></h1></div><p id="turn-detail"></p><span class="wind" id="wind"></span><span class="timer" id="timer"></span></div><div class="gamepad-body">${controls()}</div><div class="phone-health" id="phone-health"></div></main><div class="rotate-prompt"><span aria-hidden="true">▯ ↻ ▭</span><h2>Xoay ngang điện thoại</h2><p>Cầm bằng hai tay, như tay cầm game.<br>Kéo trên điện thoại · Nhìn màn hình lớn.</p></div>`;
+    app.innerHTML = `<main class="gamepad"><div class="gamepad-status"><span class="eyebrow" id="phone-team"></span><strong id="turn-heading"></strong><span class="wind" id="wind"></span><span class="timer" id="timer"></span></div><div class="gamepad-body">${controls()}</div></main>`;
   } else {
     app.innerHTML = `${header()}<div class="match-hud"><div class="score coral"><span>SAN HÔ</span><div id="health-0"></div></div><div class="round"><span id="round-label"></span><small class="wind" id="wind"></small><strong id="timer"></strong></div><div class="score teal"><span>NGỌC LAM</span><div id="health-1"></div></div></div><div class="turn-banner"><span class="turn-dot"></span><span id="turn-heading"></span><small id="turn-detail"></small><div id="aim-readout" class="aim-readout"></div></div><div class="bottom-game"><button id="back-lobby" class="button secondary compact">← Về sảnh</button><div class="spectator-note">Kéo trên điện thoại · Bắn từ nhân vật</div><button id="camera-toggle" class="button secondary compact" aria-pressed="false">Toàn cảnh</button><span class="room-badge"><span id="match-map"></span> · PHÒNG <b>${state.code}</b></span></div>`;
     document.querySelector('#back-lobby').onclick = () => emit('lobby');
@@ -334,37 +357,47 @@ function renderGame() {
   }
   bindHeader(); bindControls(); updateGameUI();
 }
+function updateAimReadout(game = state?.game) {
+  if (!game) return;
+  const blocked = Boolean(game.aimImpact?.blockedByOwn);
+  const readout = document.querySelector('#aim-readout');
+  if (readout) {
+    readout.hidden = game.phase !== 'aim';
+    readout.classList.toggle('blocked', blocked);
+    readout.textContent = `${game.team === 0 ? '↗' : '↖'} ${Math.round(game.aim.angle)}° · LỰC ${Math.round(game.aim.power)}%${blocked ? ' · ⚠ NHÀ MÌNH ĐANG CHE' : ''}`;
+  }
+  const pad = document.querySelector('#aim-pad');
+  pad?.classList.toggle('blocked', blocked && game.phase === 'aim');
+  if (gesture && blocked) document.querySelector('#pull-status').textContent = '⚠ ĐƯỜNG BẮN BỊ CHE';
+}
 function updateGameUI() {
   const game = state.game;
   const shooter = game.items.find(i => i.id === game.shooterId), weapon = WEAPONS[shooter?.weapon];
   const mapLabel = document.querySelector('#match-map'); if (mapLabel) mapLabel.textContent = game.mapName;
-  const readout = document.querySelector('#aim-readout');
-  if (readout) { readout.hidden = game.phase !== 'aim'; readout.textContent = `${game.team === 0 ? '↗' : '↖'} ${Math.round(game.aim.angle)}° · LỰC ${Math.round(game.aim.power)}%`; }
+  updateAimReadout(game);
   updateWindIndicator(document.querySelector('#wind'), game.wind);
-  const player = state.players.find(p => p.id === state.activeId);
-  const activeName = state.mode === 'practice' && game.team === 1 ? 'Bot' : player?.name || 'Bot thay lượt';
+  const activeLabel = state.mode === 'practice' && game.team === 1 ? 'Máy' : `Phe ${teams[game.team]}`;
   const mine = controller && state.activeId === playerId;
   const isMove = game.phase === 'move';
   const isFlight = game.phase === 'flight';
   const isSettle = game.phase === 'settle';
-  document.querySelector('#turn-heading').textContent = isFlight ? 'Đỡ lấy này!' : isSettle ? 'Chờ công trình ổn định…' : isMove ? (mine ? 'Bấm Sẵn sàng để ngắm!' : `${activeName} đang di chuyển`) : mine ? 'Đến lượt bạn!' : `${activeName} đang ngắm`;
-  document.querySelector('#turn-detail').textContent = isFlight || isSettle ? 'Chờ công trình ổn định…' : `${shooter?.name || ''} · ${weapon?.name || ''} · ${shooter?.spot || ''}`;
+  document.querySelector('#turn-heading').textContent = isFlight ? 'Đạn đang bay' : isSettle ? 'Đang ổn định' : isMove ? (mine ? 'Chọn vị trí' : `${activeLabel} di chuyển`) : mine ? 'Kéo để ngắm' : `${activeLabel} đang ngắm`;
+  const detail = document.querySelector('#turn-detail');
+  if (detail) detail.textContent = isFlight || isSettle ? 'Chờ công trình ổn định…' : `${weapon?.name || ''} · ${shooter?.spot || ''}`;
   document.querySelector('#timer').textContent = ['move', 'aim'].includes(game.phase) ? `${game.remaining}s` : '•••';
   document.querySelector('#round-label')?.replaceChildren(`LƯỢT ${game.turn}`);
   for (let team = 0; team < 2; team++) {
     const residents = game.items.filter(i => i.kind === 'resident' && i.team === team);
     const el = document.querySelector(`#health-${team}`);
-    if (el) el.innerHTML = residents.map(i => `<span class="life ${i.hp <= 0 ? 'lost' : ''} ${i.id === game.shooterId ? 'active' : ''}" title="${i.name} · ${WEAPONS[i.weapon]?.name} · ${Math.ceil(i.hp)} máu">${i.hp > 0 ? '●' : '×'}<i style="width:${Math.max(0, i.hp)}%"></i></span>`).join('');
+    if (el) el.innerHTML = residents.map(i => `<span class="life ${i.hp <= 0 ? 'lost' : ''} ${i.id === game.shooterId ? 'active' : ''}" title="${WEAPONS[i.weapon]?.name} · ${Math.ceil(i.hp)} máu">${i.hp > 0 ? '●' : '×'}<i style="width:${Math.max(0, i.hp)}%"></i></span>`).join('');
   }
   if (controller) {
-    document.querySelector('#shooter-name').textContent = shooter?.name || '—';
     document.querySelector('#shooter-spot').textContent = shooter?.spot || '';
     document.querySelector('#shooter-weapon').textContent = weapon?.name || '';
     document.querySelector('#shooter-icon').textContent = weapon?.icon || '';
     document.querySelector('#shooter-hint').textContent = weapon?.hint || '';
     const me = state.players.find(p => p.id === playerId);
-    document.querySelector('#phone-team').textContent = `ĐỘI ${teams[me?.team || 0].toUpperCase()} · ${game.mapName} · LƯỢT ${game.turn}`;
-    document.querySelector('#phone-health').textContent = [0, 1].map(t => `${teams[t]}: ${game.items.filter(i => i.kind === 'resident' && i.team === t && i.hp > 0).length}/${game.items.filter(i => i.kind === 'resident' && i.team === t).length} cư dân`).join('  ·  ');
+    document.querySelector('#phone-team').textContent = `${teams[me?.team || 0].toUpperCase()} · LƯỢT ${game.turn}`;
     document.body.dataset.team = me?.team || 0;
   }
   updateControls();
@@ -396,13 +429,22 @@ socket.on('state', next => {
   } else if (changedMatch) loadPreview(next.mapId === 'random' ? 'tower' : next.mapId);
   render();
 });
+socket.on('aimPreview', preview => {
+  if (!state?.game || state.game.phase !== 'aim' || preview.turn !== state.game.turn || preview.shooterId !== state.game.shooterId) return;
+  state.game.aim = preview.aim;
+  state.game.aimImpact = preview.impact;
+  scene?.updateAim(preview);
+  updateAimReadout(state.game);
+});
 socket.on('connect', async () => {
   const label = document.querySelector('#network-label'); if (label) label.textContent = 'Đã kết nối';
   if (controller) {
-    const code = sessionStorage.getItem('bp-room'); const name = sessionStorage.getItem('bp-name');
-    if (code && name && (!params.get('room') || params.get('room').toUpperCase() === code)) {
-      const result = await emit('join', { code, token, name });
-      if (result?.id) { playerId = result.id; render(); } else { state = null; playerId = null; renderJoin(); }
+    const scannedCode = params.get('room')?.toUpperCase();
+    const code = scannedCode || sessionStorage.getItem('bp-room');
+    if (code) {
+      const result = await emit('join', { code, token });
+      if (result?.id) { playerId = result.id; sessionStorage.setItem('bp-room', code); screen.orientation?.lock?.('landscape').catch(() => {}); render(); }
+      else { autoJoinFailed = true; state = null; playerId = null; renderJoin(); }
     }
   } else {
     const code = sessionStorage.getItem('bp-host');

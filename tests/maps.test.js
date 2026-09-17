@@ -41,12 +41,12 @@ for (const mapId of Object.keys(MAPS)) {
       assert.equal(state.items.filter(i => i.kind === 'resident' && i.team === team).length, 6);
       const roster = state.items.filter(i => i.kind === 'resident' && i.team === team);
       assert.equal(new Set(roster.map(i => i.weapon)).size, 6);
-      assert.ok(roster.every(i => WEAPONS[i.weapon] && i.name && i.spot));
+      assert.ok(roster.every(i => WEAPONS[i.weapon] && !Object.hasOwn(i, 'name') && i.spot));
       assert.ok(new Set(roster.map(i => Math.round(i.p[1]))).size >= 4);
       for (const actor of roster) for (const block of state.items.filter(i => i.kind !== 'resident')) {
         const dx = Math.max(0, Math.abs(actor.p[0] - block.p[0]) - block.size[0] / 2);
         const dy = Math.max(0, Math.abs(actor.p[1] - block.p[1]) - block.size[1] / 2);
-        assert.ok(Math.hypot(dx, dy) > .42, `${actor.name} must not start inside a wall`);
+        assert.ok(Math.hypot(dx, dy) > .42, `${actor.weapon} must not start inside a wall`);
       }
     }
     for (const item of state.items) assert.ok(Math.abs(item.p[0]) + item.size[0] / 2 < 23, 'expanded homes must stay on the playable island');

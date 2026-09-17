@@ -50,6 +50,9 @@ test('a wall in front of the muzzle blocks the shot instead of teleporting throu
   const game = new Match(); const p = game.shooter.body.position;
   game.add('block', 0, p.x + .55, p.y + .45, [.18, 1.5, 1], 2, 150, 'stone');
   game.readyAim();
+  const impact = game.traceAim({ angle: 30, power: 40, weapon: game.shooter.weapon });
+  assert.equal(impact.blockedByOwn, true);
+  assert.equal(impact.kind, 'block');
   assert.equal(game.fire({ angle: 30, power: 40, weapon: game.shooter.weapon }), true);
   assert.equal(game.projectile, null);
   const blast = game.events.find(e => e.type === 'blast');
@@ -62,12 +65,12 @@ for (const map of Object.keys(MAPS)) test(`${map}: every resident can launch fro
     assert.equal(aim.weapon, game.shooter.weapon);
     game.readyAim();
     assert.equal(game.fire(aim), true);
-    assert.ok(game.projectile, `${game.shooter.name} has a wall directly across the muzzle`);
+    assert.ok(game.projectile, `${game.shooter.weapon} has a wall directly across the muzzle`);
     // Clear the immediate firing position without hitting a ceiling or another resident.
     for (let n = 0; n < 15; n++) game.step();
-    assert.ok(game.projectile, `${game.shooter.name} needs an open overhead firing lane`);
+    assert.ok(game.projectile, `${game.shooter.weapon} needs an open overhead firing lane`);
     for (let n = 0; n < 600 && game.projectile; n++) game.step();
     const blast = game.events.find(e => e.type === 'blast');
-    assert.ok(blast && blast.x * (team === 0 ? 1 : -1) > 0, `${game.shooter.name} must have a viable arc to the enemy side`);
+    assert.ok(blast && blast.x * (team === 0 ? 1 : -1) > 0, `${game.shooter.weapon} must have a viable arc to the enemy side`);
   }
 });

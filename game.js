@@ -12,6 +12,7 @@ export const SKILL_LABELS = {
   drill: '◆ Khoan sâu',
   pulse: '◎ Sóng chấn',
 };
+export const PHASE_DURATIONS = Object.freeze({ move: 12, aim: 30, flight: 7, settle: 2.6 });
 export class Match {
   constructor(mapId = DEFAULT_MAP) {
     if (!Object.hasOwn(MAPS, mapId)) throw new Error('Unknown map');
@@ -27,7 +28,7 @@ export class Match {
     this.world.addBody(ground);
     this.items = []; this.environmentItems = []; this.pendingImpacts = new Map(); this.pendingProjectileCollisions = [];
     this.time = 0; this.team = 0; this.turn = 1;
-    this.enterPhase('move', 6);
+    this.enterPhase('move', PHASE_DURATIONS.move);
     this.aim = { angle: 42, power: 30, weapon: 'pebble' };
     this.projectiles = new Map(); this.projectileIdSeq = 0; this.wind = this.rollWind();
     this.events = []; this.eventSeq = 0; this.winner = null;
@@ -36,7 +37,7 @@ export class Match {
       const center = team === 0 ? -this.map.center : this.map.center;
       for (const p of this.map.parts) {
         this.add(p.kind, team, center + p.x * direction, p.y, p.size, p.mass, p.hp, p.material);
-        Object.assign(this.items.at(-1), { partId: p.id, weapon: p.weapon, name: p.name, spot: p.spot, nodeId: p.nodeId, terrace: p.terrace });
+        Object.assign(this.items.at(-1), { partId: p.id, weapon: p.weapon, spot: p.spot, nodeId: p.nodeId, terrace: p.terrace });
       }
     }
     for (const object of this.map.arenaObjects || []) this.addArenaObject(object);
@@ -69,7 +70,7 @@ export class Match {
   }
   readyAim() {
     if (this.phase !== 'move') return false;
-    this.enterPhase('aim', 18);
+    this.enterPhase('aim', PHASE_DURATIONS.aim);
     this.syncShooter();
     return true;
   }
@@ -197,6 +198,38 @@ export class Match {
   setAim(input) {
     if (this.phase !== 'aim' || !this.validAim(input)) return false;
     this.aim = { angle: input.angle, power: input.power, weapon: this.shooter.weapon }; return true;
+  }
+  traceAim(aim = this.aim) {
+    const shooter = this.shooter;
+    if (!shooter || !this.validAim(aim)) return null;
+    const origin = muzzlePosition(shooter.body.position.toArray(), this.team, aim.angle);
+    const velocity = launchVelocity(this.team, aim.angle, aim.power, shooter.weapon);
+    const bodyInfo = body => {
+      const item = [...this.items, ...this.environmentItems].find(candidate => candidate.body === body);
+      return item ? { itemId: item.id, kind: item.kind, team: item.team ?? null, blockedByOwn: item.team === this.team } : { itemId: null, kind: 'ground', team: null, blockedByOwn: false };
+    };
+    const cast = (from, to) => {
+      let nearest = Infinity, result = null;
+      this.world.raycastAll(from, to, {}, hit => {
+        if (hit.body !== shooter.body && hit.distance < nearest) {
+          nearest = hit.distance;
+          result = { p: [hit.hitPointWorld.x, hit.hitPointWorld.y, 0], ...bodyInfo(hit.body) };
+        }
+      });
+      return result;
+    };
+    const muzzleHit = cast(new C.Vec3(shooter.body.position.x, shooter.body.position.y + .18, 0), new C.Vec3(...origin));
+    if (muzzleHit) return muzzleHit;
+    let from = new C.Vec3(...origin);
+    for (let t = .08; t <= 4; t += .08) {
+      const windX = shooter.weapon === 'heavy' ? .5 * this.wind * WEAPONS.heavy.windFactor * t * t : 0;
+      const to = new C.Vec3(origin[0] + velocity.x * t + windX, origin[1] + velocity.y * t - 4.91 * t * t, 0);
+      const hit = cast(from, to);
+      if (hit) return hit;
+      if (Math.abs(to.x) > 28 || to.y < -1) return { p: [to.x, Math.max(0, to.y), 0], itemId: null, kind: 'out', team: null, blockedByOwn: false };
+      from = to;
+    }
+    return { p: [from.x, Math.max(0, from.y), 0], itemId: null, kind: 'out', team: null, blockedByOwn: false };
   }
   fire(input = this.aim) {
     if (!this.setAim(input)) return false;
@@ -460,7 +493,7 @@ export class Match {
     if (this.finishIfEliminated()) return;
     const roster = this.items.filter(i => i.kind === 'resident' && i.team === this.team);
     this.shooterCursor[this.team] = (roster.findIndex(i => i.id === this.firedShooterId) + 1) % roster.length;
-    this.team = 1 - this.team; this.turn++; this.wind = this.rollWind(); this.enterPhase('move', 6); this.syncShooter();
+    this.team = 1 - this.team; this.turn++; this.wind = this.rollWind(); this.enterPhase('move', PHASE_DURATIONS.move); this.syncShooter();
   }
   step(dt = 1 / 60) {
     this.time += dt;
@@ -561,7 +594,8 @@ export class Match {
     const mainProj = this.projectile;
     return {
       time: this.time, mapId: this.map.id, mapName: this.map.name, shooterId: ['flight', 'settle'].includes(this.phase) ? this.firedShooterId : this.shooter?.id ?? null,
-      phase: this.phase, team: this.team, turn: this.turn, remaining: Math.max(0, Math.ceil(this.deadline - this.time)), aim: this.aim, winner: this.winner,
+      phase: this.phase, team: this.team, turn: this.turn, remaining: Math.max(0, Math.ceil(this.deadline - this.time)), aim: this.aim,
+      aimImpact: this.phase === 'aim' ? this.traceAim() : null, winner: this.winner,
       availableMoves: this.getAvailableMoves(),
       wind: Math.round(this.wind * 10) / 10,
       activeSkill: (this.phase === 'flight' && mainProj && (mainProj.weapon === 'rocket' || !mainProj.skillUsed)) ? {
@@ -571,10 +605,10 @@ export class Match {
         action: { pebble: 'secondShot', heavy: 'boost', bloom: 'cluster', rocket: 'steer', drill: 'overdrive', pulse: 'airburst' }[mainProj.weapon],
         available: !mainProj.collided,
       } : null,
-      items: this.items.filter(i => !i.destroyed).map(i => ({ id: i.id, kind: i.kind, team: i.team, size: i.size, hp: i.hp, maxHp: i.maxHp, material: i.material, weapon: i.weapon, name: i.name, spot: i.spot, nodeId: i.nodeId, terrace: i.terrace, crack: crackStage(i.hp, i.maxHp), ...pose(i.body) })),
+      items: this.items.filter(i => !i.destroyed).map(i => ({ id: i.id, kind: i.kind, team: i.team, size: i.size, hp: i.hp, maxHp: i.maxHp, material: i.material, weapon: i.weapon, spot: i.spot, nodeId: i.nodeId, terrace: i.terrace, crack: crackStage(i.hp, i.maxHp), ...pose(i.body) })),
       environment: this.environmentItems.filter(i => !i.destroyed).map(i => ({ id: i.id, environmentId: i.environmentId, kind: i.kind, size: i.size, hp: i.hp, maxHp: i.maxHp, ...pose(i.body) })),
-      projectile: mainProj ? { weapon: mainProj.weapon, ...pose(mainProj.body) } : null,
-      projectiles: Array.from(this.projectiles.values()).map(p => ({ id: p.id, weapon: p.weapon, ...pose(p.body) })),
+      projectile: mainProj ? { id: mainProj.id, weapon: mainProj.weapon, v: mainProj.body.velocity.toArray(), ...pose(mainProj.body) } : null,
+      projectiles: Array.from(this.projectiles.values()).map(p => ({ id: p.id, weapon: p.weapon, v: p.body.velocity.toArray(), ...pose(p.body) })),
       events: this.events.slice(),
     };
   }

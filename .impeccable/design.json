@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-17T00:00:00.000Z",
+  "title": "Design System: Block Party",
+  "extensions": {
+    "colorMeta": {
+      "ink": { "role": "neutral", "displayName": "Mực đảo", "canonical": "#253b48" },
+      "coral-team": { "role": "primary", "displayName": "San Hô", "canonical": "#ef745e" },
+      "teal-team": { "role": "secondary", "displayName": "Ngọc Lam", "canonical": "#51b5ac" },
+      "sky": { "role": "neutral", "displayName": "Trời ven biển", "canonical": "#c6e2e8" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Trebuchet Display", "purpose": "Tên game và tiêu đề." },
+      "body": { "displayName": "System UI", "purpose": "HUD, tay cầm và nội dung." }
+    },
+    "shadows": [
+      { "name": "control-edge", "value": "0 5px 0 #172a33", "purpose": "Phản hồi nút chính." },
+      { "name": "panel-low", "value": "0 5px 8px #253b4810", "purpose": "Tách HUD khỏi cảnh." }
+    ],
+    "motion": [
+      { "name": "state-fast", "value": "150ms ease-out", "purpose": "Hover và trạng thái điều khiển." },
+      { "name": "camera-smooth", "value": "exponential interpolation", "purpose": "Chuyển góc camera và vật lý hiển thị." }
+    ],
+    "breakpoints": [
+      { "name": "phone", "value": "620px" },
+      { "name": "compact-landscape", "value": "360px height" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Hành động chính có cạnh nhấn rõ.",
+      "html": "<button class=\"ds-primary\">Bắt đầu trận</button>",
+      "css": ".ds-primary{background:#253b48;color:#fff8e9;border:0;border-radius:15px;padding:17px 23px;font:800 14px system-ui;box-shadow:0 5px 0 #172a33;transition:transform .15s}.ds-primary:hover{transform:translateY(-2px)}.ds-primary:focus-visible{outline:3px solid #234e88;outline-offset:5px}"
+    },
+    {
+      "name": "Aim Pad",
+      "kind": "custom",
+      "description": "Vùng kéo tối trên tay cầm ngang.",
+      "html": "<div class=\"ds-aim\">↙<strong>KÉO ĐỂ NGẮM</strong></div>",
+      "css": ".ds-aim{display:grid;place-items:center;gap:8px;min-height:120px;background:#243b45;color:#fff8e9;border:2px solid #425962;border-radius:20px;font:700 13px system-ui}.ds-aim:first-line{font-size:32px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Sa bàn hàng xóm sống động",
+    "overview": "Chiến trường đọc được từ TV, điều khiển phản hồi ngay và camera hỗ trợ quyết định chiến thuật.",
+    "keyCharacteristics": ["geometry rõ khối", "màu đội dễ đọc", "chuyển động vật lý liên tục"],
+    "rules": [{ "name": "Một khung chiến thuật", "body": "Khi ngắm phải thấy người bắn, quỹ đạo và phía đối phương.", "section": "components" }],
+    "dos": ["Do nội suy projectile và camera."],
+    "donts": ["Don't dí camera sát người bắn hoặc để cư dân chìm trong công trình."]
+  }
+}

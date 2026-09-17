@@ -160,7 +160,9 @@ test('weapons: wind affects only bazooka trajectory and bot aim compensates', ()
 
 test('weapons: snapshot exposes an actionable skill and rejects stale commands', () => {
   const game = new Match('townhouse'); game.readyAim(); game.fire({ angle: 55, power: 40, weapon: 'pebble' });
-  const skill = game.snapshot().activeSkill;
+  const snapshot = game.snapshot(), skill = snapshot.activeSkill;
   assert.deepEqual({ available: skill.available, action: skill.action, projectileId: skill.projectileId }, { available: true, action: 'secondShot', projectileId: game.projectile.id });
+  assert.deepEqual(snapshot.projectile.v, game.projectile.body.velocity.toArray());
+  assert.equal(snapshot.projectiles[0].id, game.projectile.id);
   assert.equal(game.triggerSkill({ turn: game.turn + 1, shooterId: game.firedShooterId, projectileId: skill.projectileId, action: skill.action }).ok, false);
 });
