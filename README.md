@@ -1,0 +1,110 @@
+# Block Party
+
+Game party 3D trên web, hai đội bắn phá công trình theo lượt. Máy tính/TV là màn hình chung; điện thoại là tay cầm. Asset được dựng bằng geometry trong code.
+
+## Chạy
+
+Cần Node.js 22 trở lên.
+
+```sh
+npm install
+npm start
+```
+
+Mở http://localhost:3000 trên máy tính, chọn **Tạo cuộc vui**.
+- Chọn công trình ở sảnh: **Nhà phố**, **Tháp cao**, **Cầu trên không** hoặc **Pháo đài**. Hình 3D đổi theo lựa chọn. **Ngẫu nhiên mỗi ván** chọn map khi bắt đầu (có thể trùng ván trước). Chỉ chủ phòng được đổi map và chỉ khi ở sảnh.
+- Đấu bot: quét QR bằng một điện thoại cùng Wi-Fi, nhập tên và vào đội **San Hô**. Trên máy tính chọn **Một điện thoại + bot**. Máy tính chỉ hiển thị trận đấu.
+- Chơi nhóm: điện thoại và máy tính cùng Wi-Fi, quét QR, nhập tên. Cần ít nhất một người mỗi đội; tối đa 8 người, 4 mỗi đội. Chủ phòng bấm **Bắt đầu trận**.
+- Cầm điện thoại **nằm ngang**. Bên trái hiển thị cư dân và vũ khí đang đến lượt; tay phải chạm và kéo trên vùng cảm ứng. Đội San Hô kéo xuống trái; Ngọc Lam kéo xuống phải. Kéo càng xa, lực càng mạnh. Mũi tên 3D và đường ngắm trên máy tính cập nhật theo thao tác; **thả tay để bắn**. Kéo về điểm chạm để hủy. Chạm nhẹ hoặc kéo sai hướng không bắn.
+- Xoay dọc giữa lượt, mất kết nối, chuyển tab hoặc bị hủy cảm ứng sẽ hủy thao tác kéo đang diễn ra. Khi dựng dọc, game hiện lời nhắc xoay ngang. Nút toàn màn hình thử khóa hướng ngang khi trình duyệt hỗ trợ; không bắt buộc để chơi.
+- Mỗi đội có sáu cư dân (12 nhân vật trên sân, độc lập với số điện thoại tham gia); loại hết cư dân đối phương để thắng. Cư dân mất máu vì nổ, va đập mạnh hoặc rơi khỏi đảo. Đánh sập trụ có thể làm cả tháp đổ.
+- Mỗi lượt 25 giây. Hết giờ tự bắn với thông số hiện tại. Người chơi trong đội luân phiên điều khiển; khi cả đội mất kết nối, bot thay lượt. Tải lại trang cùng tab để kết nối lại.
+- Nút **Về sảnh** kết thúc ván hiện tại; mở ván mới từ sảnh.
+
+QR tự lấy IP LAN. Nếu máy có VPN/nhiều card mạng, có thể cần chọn địa chỉ đúng bằng biến môi trường:
+
+```sh
+PUBLIC_URL=http://192.168.1.10:3000 npm start
+```
+
+Cho phép Node truy cập mạng nội bộ nếu hệ điều hành hỏi. Wi-Fi khách có client isolation có thể chặn kết nối giữa các thiết bị. Điện thoại khác mạng cần triển khai server có HTTPS/WSS; localhost không phải link dùng được trên điện thoại. Muốn đổi cổng: `PORT=3001 npm start`.
+
+## Kiểm tra
+
+```sh
+npm run check
+npm test
+npm run test:browser
+```
+
+Browser tests dùng Google Chrome đã cài trên máy và touch events qua CDP. Kiểm tra một điện thoại đấu bot, hai tay cầm ngang, mũi tên/lực cập nhật trên TV, thả để bắn, hủy kéo, nhắc xoay máy, đảo hướng kéo giữa hai đội và reconnect. `tests/aim.test.js` kiểm tra chuyển đổi vector kéo thành hướng/lực và vùng chết chống bắn nhầm.
+
+`tests/maps.test.js` kiểm tra từng map đứng vững trong 20 giây, hai đội đối xứng, sáu cư dân mỗi bên, collider không chồng nhau, nhà nằm trong đảo, cư dân có đường bắn ra ngoài, bắn thật từ cả hai đội có phá hủy và sát thương. Browser tests kiểm tra chọn cả bốn map, hiển thị trên điện thoại, chơi lại, ngẫu nhiên và phản hồi preview đến muộn không ghi đè trận đang chơi.
+
+`tests/game.test.js` kiểm tra đường đạn thật, độ ổn định tháp, sát thương/di chuyển, chuyển lượt, timeout và kết quả. `tests/rooms.test.js` mở server và socket thật để kiểm tra quyền chủ phòng, giới hạn người, sai lượt, reconnect và QR.
+
+`tests/materials.test.js` kiểm tra độ bền, hai mức vết nứt, vỡ do va đập và khối bên trên rơi khi mất trụ. `tests/art.spec.js` kiểm tra âm thanh tổng hợp, hoạt ảnh nhân vật, reduced motion, mảnh vỡ tự dọn và không phát lại hiệu ứng cũ sau reconnect. Browser test còn bắn bom bằng thao tác kéo trên điện thoại mô phỏng và xác nhận vết nứt/mảnh vỡ xuất hiện trên màn hình chung.
+
+## Khu phố mở rộng
+
+- **Nhà phố:** bốn gian, ba tầng với mái bậc thang.
+- **Tháp cao:** tháp chính bốn tầng, cánh phụ hai tầng có thể sụp riêng.
+- **Cầu trên không:** hai tháp ba tầng và cầu gỗ có hai cư dân đứng trên.
+- **Pháo đài:** thành chính ba tầng, tháp gác hai phía và tường đá.
+
+Mỗi bên có sáu cư dân. Phải loại hết sáu người mới thắng; điện thoại luân phiên điều khiển cư dân đang đến lượt của đội. HUD hiển thị đủ cư dân và vừa màn hình hẹp; hình thu nhỏ tự căn theo kích thước nhà.
+
+Cảnh nền là vịnh biển với đảo, làng nhỏ, núi xa, hải đăng, thuyền buồm, mây trôi và gợn nước. Nhà thêm mái dốc, ống khói, gờ sàn và bồn hoa gắn theo từng khối. Chi tiết trang trí không có collider riêng; hình khối chịu lực vẫn theo dữ liệu map. Cảnh nền không tham gia va chạm và dừng chuyển động khi bật reduced motion.
+
+## Cư dân tự bắn và vũ khí riêng
+
+Mỗi đội có Tú (ná), Bảo (bazooka), Mây (súng cối), Khoa (tên lửa), Linh (súng phá giáp), Sóc (súng xung lực). Sáu loại khác tốc độ, khối lượng, bán kính nổ, sát thương và lực đẩy; mỗi người giữ một vũ khí suốt ván. Súng phá giáp tập trung sát thương tại điểm chạm, chưa xuyên qua nhiều khối. Súng xung lực đẩy mạnh nhưng gây ít sát thương.
+
+Lượt luân phiên qua các cư dân còn sống, bỏ qua người đã bị loại. Người dùng điện thoại vẫn luân phiên theo đội; số tay cầm độc lập với số cư dân. Tay cầm hiển thị người đang bắn, vị trí và vũ khí, không còn ba nút chọn đạn tự do. Máy chủ xác nhận cả lượt, cư dân và vũ khí để chặn lệnh cũ hoặc đổi súng trái phép.
+
+Camera tiến gần cư dân đang ngắm; vòng sáng và bảng máu đánh dấu người đó. Đạn bắn từ nòng súng và vị trí hiện tại, kể cả sau khi người đó rơi xuống. Khi bắn, camera mở về toàn sân. Nút **Toàn cảnh / Theo người bắn** đổi góc xem; reduced motion giữ góc toàn cảnh.
+
+Cư dân đứng ở sân, chòi, ban công lệch tầng, cầu và sân thượng. Chưa có điều khiển đi bộ hoặc chọn chỗ đứng trong trận. Tường/mái vẫn chắn đạn; vị trí phía sau thường cần góc cao. Bot tính đường bắn từ vị trí của mình và thử tránh nhà bên mình. Vụ nổ và khối nhà rơi có thể gây sát thương đồng đội.
+
+`tests/shooters.test.js` kiểm tra luân phiên, bỏ qua người chết, vũ khí cố định, lệnh cũ, vị trí nòng súng sau khi di chuyển và đường bắn khả dụng cho cả 48 vị trí trên bốn map. Browser kiểm tra camera qua hai đội/sân thượng, toàn cảnh/reduced motion và reconnect giữ đúng vũ khí.
+
+## Vật liệu và hình ảnh
+
+- **Gỗ**: 72% HP cơ sở, tiếng gãy ngắn và dằm dài.
+- **Gạch**: 100% HP cơ sở, tiếng vỡ khô và mẩu vụn vuông.
+- **Đá**: 150% HP cơ sở, chịu va đập tốt hơn, tiếng trầm và mảnh thô.
+- **Kính**: 30% HP cơ sở, dễ vỡ, bề mặt trong và mảnh mỏng kèm tiếng ngân.
+
+Khối xuất hiện vết nứt khi còn dưới 85% HP, nứt nặng khi còn tối đa 45%; cú đánh đủ mạnh có thể phá ngay. Khối còn nguyên chịu vật lý tại server; khi vỡ, collider bị bỏ và những tầng bên trên được đánh thức để sụp. Mảnh vụn là hiệu ứng hình ảnh, không gây thêm sát thương. Hiệu ứng giới hạn 180 hạt cùng lúc, tự dọn sau vài giây và dùng chung geometry/material.
+
+Nhân vật có thở, chớp mắt, phản ứng bị thương và mừng thắng bằng hoạt ảnh nhóm bộ phận. Nhà có vân gỗ, mạch gạch, kính, mái ngói và chi tiết gắn theo khối vật lý. Cây, cờ, mây, chim chuyển động nhẹ; pháo có giật lùi, vệt đạn, khói và vòng xung kích. Tùy chọn giảm chuyển động của hệ điều hành tắt rung camera, chuyển động nền và giảm số hạt. Texture và âm thanh đều tạo trong code; âm thanh mở sau thao tác người dùng, có nút tắt tiếng.
+
+## Cấu trúc
+
+- `server.js`: HTTP, Socket.IO, phòng và phân quyền; mô phỏng server 60 bước/giây, gửi trạng thái 15 lần/giây.
+- `maps.js`: bốn cấu trúc nhà, kích thước, khối lượng, độ bền, vị trí cư dân, tên, vũ khí và chỗ đứng.
+- `game.js`: Cannon ES, công trình, cư dân, đường đạn, lượt từng cư dân, sáu vũ khí, bot và luật chơi. Ba substep mỗi bước để giảm bỏ sót va chạm.
+- `public/scene.js`: Three.js, camera, ánh sáng/bóng, mô hình 3D, hiển thị nội suy và hạt hiệu ứng.
+- `public/materials.js`: thông số dùng chung cho độ bền, va đập, màu và mảnh vỡ.
+- `public/art.js`: texture, chi tiết nhà, vết nứt, nhân vật và hoạt ảnh.
+- `public/environment.js`: bầu trời, biển, đảo, làng ven bờ, hải đăng và chuyển động cảnh nền.
+- `public/weapons.js`: thông số sáu vũ khí, vận tốc và vị trí nòng súng dùng chung server/client.
+- `public/audio.js`: âm thanh tổng hợp theo vật liệu, giới hạn phát chồng, âm lượng và mute.
+- `public/app.js`, `public/style.css`: màn hình chung, kết nối và vòng đời thao tác cảm ứng.
+- `public/aim.js`, `public/controller.css`: tính hướng/lực kéo và tay cầm ngang.
+- `PLAN.md`: phạm vi và tiến độ nghiệm thu.
+
+## Giới hạn bản đầu
+
+Bốn kiểu công trình trên cùng đảo; nhân vật dựng bằng geometry và hoạt ảnh đơn giản, chưa có asset rig chuyên nghiệp hoặc chế độ best-of. Vật lý là 3D nhưng chuyển động gameplay được khóa trên mặt phẳng ngang. Khối vỡ toàn phần, chưa cắt geometry tại điểm trúng đạn; mảnh vụn chỉ là hiệu ứng. Các loại đạn nổ khi va chạm; chưa có kích hoạt kỹ năng giữa không trung. Phòng lưu trong RAM; server khởi động lại sẽ mất phòng. Token ở sessionStorage phục hồi cùng tab, không phải hệ thống tài khoản. Chưa có cơ sở dữ liệu, matchmaking, chống lạm dụng quy mô internet hoặc triển khai production.
+
+Tài liệu thư viện: [Three.js](https://threejs.org/docs/), [Cannon ES](https://pmndrs.github.io/cannon-es/), [Socket.IO](https://socket.io/docs/v4/).
+
+Tay cầm ngang đã kiểm tra bằng trình duyệt mô phỏng; chưa xác minh trên điện thoại vật lý/Safari iOS. Tham khảo API: [Pointer capture](https://developer.mozilla.org/en-US/docs/Web/API/Element/setPointerCapture), [khóa hướng màn hình](https://developer.mozilla.org/en-US/docs/Web/API/ScreenOrientation/lock).
+
+## Thêm một công trình
+
+Thêm entry vào `MAPS` trong `maps.js`. Mỗi `part` có `kind`, `x`, `y`, `size`, `mass`, `hp`, `material`. `hp` là độ bền cơ sở trước khi nhân hệ số vật liệu; `material` là `wood`, `brick`, `stone`, `glass` (cư dân dùng `null`). Khối lượng do map quy định độc lập với độ bền để giữ cấu trúc ổn định. Tọa độ X cục bộ dương hướng về phía đối phương; đội thứ hai được lật đối xứng tự động. Bốn map hiện dùng sáu `resident` mỗi bên; HUD và điều kiện thắng lấy số cư dân từ trạng thái trận đấu. `center` là khoảng cách tâm nhà tới giữa sân. Cư dân có `name`, `weapon`, `spot`; `weapon` phải thuộc `public/weapons.js`. Đạn xuất phát từ vị trí hiện tại của cư dân cộng khoảng cách nòng súng, không có pháo cố định. Đánh dấu `terrace: true` trên mái có người đứng để dùng sân thượng phẳng. Renderer dùng cùng kích thước từ snapshot, hình thu nhỏ dùng cùng dữ liệu khối. Không cần thêm điều kiện riêng vào luật chơi.
+
+Sau khi thêm map, bổ sung cú bắn kiểm chứng trong `tests/maps.test.js` rồi chạy bộ test. Kiểm tra cả độ ổn định khi không bắn và khả năng phá hủy; không chỉ nhìn ảnh đẹp. Lan can của cầu là trang trí, mặt cầu là khối có va chạm.
+# playtogether
