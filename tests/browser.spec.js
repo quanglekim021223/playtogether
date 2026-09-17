@@ -35,6 +35,8 @@ test('phone-only practice: drag updates TV aim, release fires, bot returns turn'
     await expect(player.phone.locator('.move-btn')).toHaveCount(1);
     await player.phone.locator('.move-btn').click();
     await expect(player.phone.locator('#shooter-spot')).toHaveText('Chân tháp trước');
+    await player.phone.getByRole('button', { name: /Sân trước/ }).click();
+    await expect(player.phone.locator('#shooter-spot')).toHaveText('Sân trước');
     await player.phone.locator('#ready-aim').click();
     await expect(player.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'false');
     await expect(player.phone.locator('#shooter-name')).toHaveText('Tú');
@@ -43,11 +45,15 @@ test('phone-only practice: drag updates TV aim, release fires, bot returns turn'
     await expect.poll(() => page.locator('#scene').getAttribute('data-camera-x').then(Number)).toBeLessThan(-1);
     await page.screenshot({ path: 'artifacts/resident-aim.png', scale: 'css' });
     await player.phone.screenshot({ path: 'artifacts/resident-controller.png', scale: 'css' });
-    await pullStart(player, -40, 35);
+    await pullStart(player, -35, 100);
     await expect(player.phone.locator('#aim-pad')).toHaveClass(/armed/);
     const power = await player.phone.locator('#pull-power').textContent();
     await expect(page.locator('#aim-readout')).toContainText(`LỰC ${power}%`);
     await release(player);
+    await expect(player.phone.locator('#skill-btn')).toBeVisible({ timeout: 2000 });
+    await expect(player.phone.locator('#skill-btn')).toContainText('Đạn kép');
+    await player.phone.locator('#skill-btn').click();
+    await expect(player.phone.locator('#skill-btn')).toBeHidden();
     await expect(page.locator('#aim-readout')).toBeHidden();
     await expect(page.locator('#round-label')).toHaveText('LƯỢT 2', { timeout: 12_000 });
     await expect(page.locator('#round-label')).toHaveText('LƯỢT 3', { timeout: 15_000 });

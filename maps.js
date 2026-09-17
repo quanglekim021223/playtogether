@@ -137,7 +137,7 @@ const townhouseNodes = [
 
 const bridgeNodes = [
   { id: 'bridge-node-0', label: 'Bờ sân', x: 7.8, y: 0.53, supportId: null, neighbors: ['bridge-node-6', 'bridge-node-4', 'bridge-node-1'] },
-  { id: 'bridge-node-1', label: 'Ban công', x: 5, y: 2.94, supportId: 'bridge-beam-front-1', neighbors: ['bridge-node-0', 'bridge-node-6', 'bridge-node-8'] },
+  { id: 'bridge-node-1', label: 'Ban công', x: 5, y: 2.94, supportId: 'bridge-beam-front-1', neighbors: ['bridge-node-0', 'bridge-node-4', 'bridge-node-6', 'bridge-node-8'] },
   { id: 'bridge-node-2', label: 'Đỉnh tháp trước', x: 3, y: 8.39, supportId: 'bridge-roof-front', neighbors: ['bridge-node-8'] },
   { id: 'bridge-node-3', label: 'Đỉnh tháp sau', x: -3, y: 8.39, supportId: 'bridge-roof-back', neighbors: ['bridge-node-9'] },
   { id: 'bridge-node-4', label: 'Chòi vườn', x: 6.6, y: 1.93, supportId: 'bridge-lookout', neighbors: ['bridge-node-0', 'bridge-node-1'] },
@@ -171,4 +171,3 @@ export const MAPS = {
 };
 export const DEFAULT_MAP = 'tower';
 export const MAP_CATALOG = Object.values(MAPS).map(({ parts, nodes, ...map }) => ({ ...map, thumbnail: parts.map(({ kind, x, y, size, material }) => ({ kind, x, y, size, material })) }));
-

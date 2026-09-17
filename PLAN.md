@@ -6,7 +6,7 @@ Game riêng lấy cảm hứng từ thể loại bắn phá công trình theo l�
 ## Phạm vi bản đầu
 - 2–8 người, hai đội; tập một mình với bot. Bốn kiểu công trình trên cùng đảo; thắng khi đội đối phương mất cả sáu cư dân.
 - Vật lý mô phỏng tại server: đường đạn, va chạm, nổ, công trình sụp. Client chỉ hiển thị và gửi thao tác.
-- Sáu cư dân mỗi đội, mỗi người giữ một trong sáu vũ khí riêng. Kéo–thả trên tay cầm ngang để chỉnh hướng/lực và bắn; mỗi lượt 25 giây.
+- Sáu cư dân mỗi đội, mỗi người giữ một trong sáu vũ khí riêng. Mỗi lượt đi qua `move (6s) → aim (18s) → flight (tối đa 7s) → settle (2.6s)`; điện thoại dùng để chọn điểm đứng, kéo ngắm, thả bắn và điều khiển kỹ năng khi đạn bay.
 - Phòng riêng có mã và QR, tên người chơi, đổi đội ở sảnh, luân phiên người chơi trong đội, kết nối lại.
 - Chạy local/LAN; chưa triển khai internet, không cần tài khoản hoặc cơ sở dữ liệu.
 
@@ -15,7 +15,7 @@ Diorama đồ chơi: đảo cỏ, đá phân tầng, tháp gạch, mái ngói, c
 
 ## Các bước
 - [x] 1. Dựng server, mô phỏng vật lý và cảnh 3D.
-- [x] 2. Lượt chơi, ba loại đạn, bot, thắng/thua và chơi lại.
+- [x] 2. Lượt chơi chiến thuật, sáu vũ khí, bot, thắng/thua và chơi lại.
 - [x] 3. Phòng, QR LAN, tay cầm responsive, phân quyền và reconnect.
 - [x] 4. Kiểm thử logic, socket, kiểm tra trình duyệt desktop/mobile và hướng dẫn chạy.
 
@@ -92,6 +92,17 @@ Bản đầu dùng mô hình tự dựng bằng geometry, chưa có asset nhân 
 - [x] Phân bố cư dân ra sân, chòi, ban công lệch tầng, mái phẳng và cầu; vẫn có va chạm, rơi và sát thương thật.
 - [x] Camera tiến tới người ngắm, đánh dấu bằng vòng sáng; trở về toàn sân khi bắn, có nút toàn cảnh và hỗ trợ reduced motion.
 - [x] Đường ngắm dùng cùng công thức vận tốc/nòng súng; chặn đạn sinh xuyên tường sát nòng. Bot tính đường bắn từ chính vị trí và vũ khí đang có.
-- [ ] Chơi thử trực tiếp để cân bằng sáu vũ khí và cảm giác camera. Chưa có đi bộ/chọn vị trí trong trận hoặc đạn xuyên nhiều khối.
+- [ ] Chơi thử trực tiếp để cân bằng sáu vũ khí và cảm giác camera. Di chuyển hiện dùng các node liền kề có kiểm tra chỗ trống và khối đỡ; chưa có đi bộ tự do.
 - Kiểm chứng: `npm run check`, **32/32** test logic/socket và **8/8** test trình duyệt qua. Kiểm tra thật đường bắn từ toàn bộ 48 vị trí, nòng súng sau khi cư dân đổi vị trí, chặn tường sát nòng, bỏ qua người chết, chặn vũ khí/lượt giả và reconnect sang cư dân kế tiếp.
 - Đã xem ảnh `artifacts/shooter-closeup.png`, `artifacts/rooftop-shooter.png`, `artifacts/resident-positions.png`, `artifacts/resident-controller.png`. Camera đổi đội và độ cao theo người bắn, góc toàn cảnh/reduced motion được kiểm tra trong Chrome. Chưa xác minh trực tiếp trên điện thoại vật lý.
+
+
+## Tactical Turn v1 — hoàn thành triển khai 2026-09-17
+- [x] Bốn pha có thẩm quyền tại server: `move`, `aim`, `flight`, `settle`; cú bắn kết liễu vẫn chờ hết pha settle trước khi công bố kết quả.
+- [x] Mỗi map có 11 node hai chiều. Chỉ đi tới node liền kề còn trống và có support hợp lệ; điểm đứng đi theo support khi khối dịch chuyển hoặc xoay, và bị khóa nếu support lệch quá giới hạn an toàn.
+- [x] Sáu vũ khí có cơ chế riêng: Pebble phản xạ và bắn bồi; Heavy chịu gió và tăng tốc; Bloom tách ba bom rơi xuống; Rocket vuốt dọc để bẻ lái; Drill xuyên collider đầu rồi nổ ở collider kế tiếp; Pulse tạo sóng xung lực và airburst.
+- [x] Lệnh kỹ năng mang đủ `turn`, `shooterId`, `projectileId`, `action`; server kiểm tra quyền sở hữu, pha, thứ tự gói Rocket và giới hạn tần suất bẻ lái.
+- [x] Điện thoại hiển thị điểm di chuyển, nút sẵn sàng, kỹ năng đúng lúc, thao tác bẻ lái và gió. TV hiển thị gió; preview Heavy dùng cùng thành phần gió với mô phỏng.
+- [x] Va chạm được xử lý sau bước vật lý để tránh xóa body ngay trong callback Cannon; âm thanh và hiệu ứng riêng cho nảy, khoan, Rocket, cluster và Pulse.
+- Kiểm chứng cuối: `npm run check` qua; `npm test`: **52/52**; `npm run test:browser`: **8/8** trên Chromium.
+- [ ] Xác minh trên điện thoại vật lý, nhất là Safari/iOS: QR qua Wi-Fi, rung, âm thanh, độ trễ kéo/bẻ lái và FPS khi nhiều mảnh vỡ.

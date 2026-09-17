@@ -4,8 +4,19 @@ import { Match } from '../game.js';
 import { muzzlePosition, WEAPONS } from '../public/weapons.js';
 import { MAPS } from '../maps.js';
 
-const shots = { townhouse: [35, 20], tower: [34, 22], bridge: [34, 24], fortress: [35, 50] };
+const destructiveShot = [25, 20];
 for (const mapId of Object.keys(MAPS)) {
+  test(`${mapId}: movement graph has valid supports and bidirectional neighbors`, () => {
+    const map = MAPS[mapId], partIds = new Set(map.parts.map(p => p.id)), nodeIds = new Set(map.nodes.map(n => n.id));
+    assert.equal(map.nodes.length, 11);
+    for (const node of map.nodes) {
+      if (node.supportId) assert.ok(partIds.has(node.supportId), `${node.id} support is missing`);
+      for (const neighborId of node.neighbors) {
+        assert.ok(nodeIds.has(neighborId), `${neighborId} is missing`);
+        assert.ok(map.nodes.find(n => n.id === neighborId).neighbors.includes(node.id), `${node.id} -> ${neighborId} must be bidirectional`);
+      }
+    }
+  });
   test(`${mapId}: stable for 20 seconds, mirrored teams, varied firing positions`, () => {
     const blocks = MAPS[mapId].parts.filter(p => p.kind !== 'resident');
     for (let a = 0; a < blocks.length; a++) for (let b = a + 1; b < blocks.length; b++) {
@@ -42,9 +53,9 @@ for (const mapId of Object.keys(MAPS)) {
     for (const item of state.items) assert.ok(Math.abs(item.p[0]) + item.size[0] / 2 < 23, 'expanded homes must stay on the playable island');
   });
   test(`${mapId}: real shots from either team destroy structure and harm residents`, () => {
-    const [angle, power] = shots[mapId];
+    const [angle, power] = destructiveShot;
     for (const team of [0, 1]) {
-      const game = new Match(mapId); game.team = team; game.syncShooter();
+      const game = new Match(mapId); game.team = team; game.shooterCursor[team] = 1; game.wind = 0; game.syncShooter();
       const origin = muzzlePosition(game.shooter.body.position.toArray(), team, angle);
       game.readyAim();
       assert.equal(game.fire({ angle, power, weapon: game.shooter.weapon }), true);

@@ -104,7 +104,7 @@ export function createScene(container) {
   shaft.rotation.z = -Math.PI / 2; shaft.renderOrder = 10; aimArrow.add(shaft);
   const arrowhead = new T.Mesh(new T.ConeGeometry(0.34, 0.72, 12), arrowMaterial);
   arrowhead.rotation.z = -Math.PI / 2; arrowhead.renderOrder = 10; aimArrow.add(arrowhead);
-  function aimPreview(team, aim, visible) {
+  function aimPreview(team, aim, wind, visible) {
     if (!activeShooter) { aimArrow.visible = false; dots.forEach(d => { d.visible = false; }); return; }
     const angle = aim.angle * Math.PI / 180, rotation = team === 0 ? angle : Math.PI - angle;
     const velocity = launchVelocity(team, aim.angle, aim.power, activeShooter.weapon);
@@ -119,7 +119,8 @@ export function createScene(container) {
     arrowMaterial.color.set(team === 0 ? 0xe45b3a : 0x167b79);
     dots.forEach((dot, i) => {
       const t = (i + 1) * .085; const y = origin[1] + velocity.y * t - 4.91 * t * t;
-      dot.visible = visible && y > 0; dot.position.set(origin[0] + velocity.x * t, y, .5);
+      const windX = activeShooter.weapon === 'heavy' ? .5 * wind * (WEAPONS.heavy.windFactor || 1) * t * t : 0;
+      dot.visible = visible && y > 0; dot.position.set(origin[0] + velocity.x * t + windX, y, .5);
       dot.scale.setScalar(0.065 * (1 - i / 28));
     });
   }
@@ -144,7 +145,8 @@ export function createScene(container) {
       obj.userData.hp = item.hp; obj.userData.team = item.team;
       obj.visible = item.kind !== 'resident' || item.hp > 0;
     }
-    const currentProjList = Array.isArray(data.projectiles) && data.projectiles.length > 0
+    const hasProjectileList = Array.isArray(data.projectiles) && data.projectiles.length > 0;
+    const currentProjList = hasProjectileList
       ? data.projectiles
       : (data.projectile ? [data.projectile] : []);
     const activeProjIds = new Set(currentProjList.map(p => p.id));
@@ -158,17 +160,18 @@ export function createScene(container) {
       let mesh = projectileMeshes.get(p.id);
       if (!mesh) {
         mesh = sphere(0, 0, 0, 0.28, WEAPONS[p.weapon]?.color || '#ffc667');
+        mesh.userData.weapon = p.weapon;
         scene.add(mesh);
         projectileMeshes.set(p.id, mesh);
       }
       mesh.position.fromArray(p.p);
     }
-    if (data.projectile) {
+    if (!hasProjectileList && data.projectile) {
       if (!shot) shot = sphere(0, 0, 0, 0.29, WEAPONS[data.projectile.weapon].color);
       shot.position.fromArray(data.projectile.p);
     } else if (shot) { scene.remove(shot); shot = null; }
     matchWinner = data.winner;
-    aimPreview(data.team, data.aim, data.phase === 'aim' && mode === 'game');
+    aimPreview(data.team, data.aim, data.wind || 0, data.phase === 'aim' && mode === 'game');
     container.dataset.cracked = [...objects.values()].filter(obj => obj.userData.cracks?.some(crack => crack.visible)).length;
     if (!eventBaseline) { lastEvent = data.events.at(-1)?.id || 0; eventBaseline = true; }
     for (const event of data.events) {
@@ -176,13 +179,17 @@ export function createScene(container) {
       lastEvent = event.id;
       if (data.time - event.time > 1) continue; // Skip old effects after reconnect or a sleeping tab.
       if (event.type === 'bounce') {
-        window.dispatchEvent(new CustomEvent('material-sound', { detail: { material: 'brick', strength: 0.5 } }));
+        for (let i = 0; i < 8; i++) addParticle(sphere(event.x, event.y, .7, .07, 0xffd477), (Math.random() - .5) * 5, 1 + Math.random() * 4, 0, .35);
+        window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'bounce' } }));
       }
       if (event.type === 'pierce') {
-        window.dispatchEvent(new CustomEvent('material-sound', { detail: { material: 'glass', strength: 0.7 } }));
+        for (let i = 0; i < 7; i++) { const chip = art.fragment('stone', i); chip.position.set(event.x, event.y, .6); addParticle(chip, (Math.random() - .5) * 7, 1 + Math.random() * 4, 0, .7, true); }
+        window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'drill' } }));
       }
       if (event.type === 'skill') {
-        window.dispatchEvent(new CustomEvent('game-shot'));
+        const sound = event.action === 'cluster' ? 'cluster' : event.action === 'steer' ? 'rocket' : event.action === 'airburst' ? 'pulse' : event.action === 'boost' ? 'boost' : 'shot';
+        if (event.action === 'cluster') for (let i = 0; i < 12; i++) addParticle(sphere(event.x, event.y, .6, .08, 0xdc93bd), (Math.random() - .5) * 7, (Math.random() - .5) * 7, 0, .45);
+        window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: sound } }));
       }
       if (event.type === 'break' || event.type === 'hit') {
         const count = event.type === 'break' ? MATERIALS[event.material].fragments : 3;
@@ -207,14 +214,14 @@ export function createScene(container) {
           addParticle(m, (Math.random() - .5) * 10, Math.random() * 7, (Math.random() - .5) * 4, .5 + Math.random());
         }
         if (!reducedMotion.matches) {
-          const ring = new T.Mesh(ringGeometry, ringMaterial); ring.position.set(event.x, Math.max(.3, event.y), 1); ring.scale.setScalar(.3);
+          const ring = new T.Mesh(ringGeometry, event.weapon === 'pulse' ? pulseRingMaterial : ringMaterial); ring.position.set(event.x, Math.max(.3, event.y), 1); ring.scale.setScalar(event.weapon === 'pulse' ? .55 : .3);
           addParticle(ring, 0, 0, 0, .38, false, true);
         }
         window.dispatchEvent(new CustomEvent('game-blast'));
       }
     }
   }
-  const ringGeometry = new T.TorusGeometry(1, .04, 6, 40), ringMaterial = new T.MeshBasicMaterial({ color: 0xffe4aa });
+  const ringGeometry = new T.TorusGeometry(1, .04, 6, 40), ringMaterial = new T.MeshBasicMaterial({ color: 0xffe4aa }), pulseRingMaterial = new T.MeshBasicMaterial({ color: 0x82d4c8 });
   function addParticle(m, vx, vy, vz, life, debris = false, ring = false) {
     if (particles.length >= 180) scene.remove(particles.shift().mesh);
     scene.add(m); particles.push({ mesh: m, vx, vy, vz, life, debris, ring, spin: (Math.random() - .5) * 7 });
@@ -256,9 +263,13 @@ export function createScene(container) {
         obj.userData.recoil = Math.max(0, recoil - dt * .7);
       }
     }
-    if (shot && now - trailAt > 45 && !reducedMotion.matches) {
-      trailAt = now; const puff = sphere(shot.position.x, shot.position.y, 0, .13, 0xf6d8a3);
-      addParticle(puff, 0, .3, 0, .45);
+    if (now - trailAt > 45 && !reducedMotion.matches) {
+      const trails = [...projectileMeshes.values()].filter(m => m.userData.weapon === 'rocket');
+      if (shot) trails.push(shot);
+      if (trails.length) {
+        trailAt = now;
+        for (const projectile of trails) addParticle(sphere(projectile.position.x, projectile.position.y, 0, .13, 0xf6d8a3), 0, .3, 0, .45);
+      }
     }
     particles = particles.filter(p => {
       p.life -= dt; if (p.life <= 0) { scene.remove(p.mesh); return false; }

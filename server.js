@@ -43,7 +43,7 @@ export function createApp({ port = 3000 } = {}) {
   function broadcast(room) { io.to(room.code).emit('state', state(room)); }
   const validToken = t => typeof t === 'string' && /^[a-zA-Z0-9-]{20,80}$/.test(t);
   io.on('connection', socket => {
-    let room = null; let player = null; let host = false; let windowAt = 0; let count = 0;
+    let room = null; let player = null; let host = false; let windowAt = 0; let count = 0; let lastSteerAt = 0;
     function limited() { const now = Date.now(); if (now - windowAt > 1000) { windowAt = now; count = 0; } return ++count > 45; }
     function handle(event, fn) {
       socket.on(event, (data = {}, ack = () => {}) => {
@@ -131,7 +131,18 @@ export function createApp({ port = 3000 } = {}) {
       broadcast(room);
     });
     handle('skill', input => {
-      if (!canSkill()) return { error: 'Chỉ kích hoạt kỹ năng khi đạn đang bay và tới lượt của bạn.' };
+      if (!canSkill() || !currentActor(input)) return { error: 'Chỉ kích hoạt kỹ năng khi đạn đang bay và tới lượt của bạn.' };
+      if (!Number.isInteger(input.projectileId) || typeof input.action !== 'string') return { error: 'Đạn hoặc kỹ năng không hợp lệ.' };
+      const projectile = room.game.projectiles.get(input.projectileId);
+      if (!projectile || projectile.turn !== room.game.turn || projectile.shooterId !== input.shooterId || projectile.team !== room.game.team) return { error: 'Đạn không thuộc lượt hiện tại.' };
+      if (input.action === 'steer') {
+        if (!Number.isInteger(input.sequence) || !Number.isFinite(input.value)) return { error: 'Lệnh bẻ lái không hợp lệ.' };
+        const now = Date.now();
+        if (now - lastSteerAt < 50) return { error: 'Lệnh bẻ lái quá nhanh.' };
+        const result = room.game.triggerSkill(input);
+        if (!result.ok) return { error: result.error };
+        lastSteerAt = now; broadcast(room); return result;
+      }
       const result = room.game.triggerSkill(input);
       if (!result.ok) return { error: result.error };
       broadcast(room);

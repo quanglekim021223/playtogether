@@ -6,6 +6,12 @@ const profiles = {
   glass: { frequency: 2100, filter: 6500, duration: .58, tone: 'sine', noise: .32 },
   blast: { frequency: 85, filter: 550, duration: .5, tone: 'triangle', noise: 1 },
   shot: { frequency: 210, filter: 900, duration: .16, tone: 'triangle', noise: .5 },
+  bounce: { frequency: 720, filter: 2200, duration: .12, tone: 'sine', noise: .22 },
+  drill: { frequency: 115, filter: 1800, duration: .3, tone: 'sawtooth', noise: .8 },
+  rocket: { frequency: 145, filter: 1050, duration: .2, tone: 'sawtooth', noise: .45 },
+  cluster: { frequency: 520, filter: 3200, duration: .18, tone: 'triangle', noise: .65 },
+  pulse: { frequency: 58, filter: 480, duration: .58, tone: 'sine', noise: .45 },
+  boost: { frequency: 260, filter: 1500, duration: .2, tone: 'sawtooth', noise: .35 },
 };
 export function synthesize(context, output, type, strength = 1) {
   const p = profiles[type]; if (!p) return;

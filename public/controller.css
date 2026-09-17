@@ -14,12 +14,13 @@
 .gamepad-status h1{font-size:20px;line-height:1.2;letter-spacing:-.6px;margin:4px 0 0}
 .gamepad-status p{margin:0 0 0 auto;font-size:10px;max-width:240px;line-height:1.4}
 .gamepad-status .timer{font-size:25px;font-variant-numeric:tabular-nums;min-width:46px;text-align:right}
+.wind{display:inline-block;font-size:8px;font-weight:850;letter-spacing:.8px;color:#537c86;white-space:nowrap}
 .gamepad-body{display:grid;grid-template-columns:145px minmax(0,1fr);gap:24px;flex:1;min-height:0;padding-top:10px}
 .controller-weapons{min-height:0;display:flex;flex-direction:column;justify-content:center}
 .move-options{display:flex;flex-direction:column;gap:3px;margin-top:4px;max-height:88px;overflow-y:auto}
 .move-btn{border-radius:10px;font-size:10px;padding:5px 8px;min-height:28px;text-align:left;justify-content:flex-start}
-.skill-button{background:linear-gradient(135deg,#ff9d00,#ff4b2b)!important;border-color:#ff9d00!important;color:#fff!important;box-shadow:0 0 12px #ff6a0088;animation:pulse-skill 1.2s infinite alternate;font-weight:700}
-@keyframes pulse-skill{from{transform:scale(1)}to{transform:scale(1.04)}}
+.skill-button{background:linear-gradient(135deg,#ff9d00,#ff4b2b)!important;border-color:#ff9d00!important;color:#fff!important;box-shadow:0 0 10px #ff6a0066;animation:pulse-skill 1.2s infinite alternate;font-weight:700}
+@keyframes pulse-skill{from{box-shadow:0 0 8px #ff6a0055}to{box-shadow:0 0 18px #ff6a00bb}}
 .grip-label{font-size:8px;letter-spacing:1.5px;color:#778880;margin-bottom:6px}
 .gamepad .weapon-row{display:flex;flex-direction:column;gap:5px;margin:0}
 .gamepad .weapon{padding:7px 10px;min-height:42px;flex:0;justify-content:flex-start;border:1px solid #dce1d8;border-bottom:3px solid #dce1d8;border-radius:11px;font-size:11px;background:#f3f3e9}
@@ -36,6 +37,7 @@
 #aim-pad{position:relative;background:#243b45;border:2px solid #425962;border-bottom:4px solid #152a32;border-radius:20px;min-height:100px;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;overflow:hidden;cursor:grab;color:#fff8e9}
 #aim-pad[aria-disabled="true"]{opacity:.5;cursor:default}
 #aim-pad.dragging{cursor:grabbing}
+#aim-pad.steering{border-color:#ef9a43;box-shadow:inset 0 0 28px #ef9a4338;cursor:ns-resize}
 #aim-pad.armed{border-color:var(--team-color)}
 .pad-grid{position:absolute;inset:0;background-image:radial-gradient(#aabeb828 1px,transparent 1px);background-size:18px 18px;pointer-events:none}
 .pad-cue{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:12px;font-weight:700;gap:5px;pointer-events:none}

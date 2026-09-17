@@ -61,8 +61,19 @@ test('six-person teams keep playing until the last resident is eliminated', () =
   assert.equal(game.phase, 'over'); assert.equal(game.winner, 0);
 });
 
+test('a finishing shot keeps the full settle phase before declaring the winner', () => {
+  const game = new Match();
+  for (const item of game.items) if (item.kind === 'resident' && item.team === 1) item.hp = 0;
+  game.readyAim(); game.fire({ angle: 80, power: 15, weapon: 'pebble' }); game.explode();
+  assert.equal(game.phase, 'settle');
+  for (let i = 0; i < 120; i++) game.step();
+  assert.equal(game.phase, 'settle');
+  for (let i = 0; i < 50; i++) game.step();
+  assert.equal(game.phase, 'over'); assert.equal(game.winner, 0);
+});
+
 test('heavy bomb breaks support blocks and the enemy roof physically collapses', () => {
-  const game = new Match(); game.shooterCursor[0] = 1; game.syncShooter();
+  const game = new Match(); game.wind = 0; game.shooterCursor[0] = 1; game.syncShooter();
   game.readyAim();
   assert.equal(game.fire({ angle: 35, power: 60, weapon: 'heavy' }), true);
   for (let i = 0; i < 600 && game.turn === 1; i++) game.step();

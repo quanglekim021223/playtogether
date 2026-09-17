@@ -25,11 +25,11 @@ export class Match {
     const ground = new C.Body({ mass: 0, shape: new C.Plane() });
     ground.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
     this.world.addBody(ground);
-    this.items = []; this.pendingImpacts = new Map();
+    this.items = []; this.pendingImpacts = new Map(); this.pendingProjectileCollisions = [];
     this.time = 0; this.team = 0; this.turn = 1;
     this.enterPhase('move', 6);
     this.aim = { angle: 42, power: 30, weapon: 'pebble' };
-    this.projectiles = new Map(); this.projectileIdSeq = 0; this.wind = 0;
+    this.projectiles = new Map(); this.projectileIdSeq = 0; this.wind = this.rollWind();
     this.events = []; this.eventSeq = 0; this.winner = null;
     for (let team = 0; team < 2; team++) {
       const direction = team === 0 ? 1 : -1;
@@ -40,9 +40,14 @@ export class Match {
       }
     }
     for (let i = 0; i < 120; i++) this.world.step(1 / 60);
-    for (const item of this.items) item.previousY = item.body.position.y;
+    for (const item of this.items) {
+      item.previousY = item.body.position.y;
+      item.homeP = item.body.position.clone();
+      item.homeQ = item.body.quaternion.clone();
+    }
     this.syncShooter();
   }
+  rollWind() { return Math.round((Math.random() * 3 - 1.5) * 10) / 10; }
   get projectile() {
     return this.projectiles.values().next().value || null;
   }
@@ -74,10 +79,24 @@ export class Match {
     if (!nodeDef.supportId) return true;
     const supportItem = this.items.find(i => i.team === team && i.partId === nodeDef.supportId);
     if (!supportItem || supportItem.hp <= 0 || supportItem.destroyed) return false;
-    if (Math.abs(supportItem.body.position.y - supportItem.previousY) > 1.2) return false;
-    const angle = 2 * Math.acos(Math.max(-1, Math.min(1, supportItem.body.quaternion.w)));
+    if (supportItem.body.position.distanceTo(supportItem.homeP) > 1.2) return false;
+    const q = supportItem.body.quaternion, h = supportItem.homeQ;
+    const angle = 2 * Math.acos(Math.min(1, Math.abs(q.x * h.x + q.y * h.y + q.z * h.z + q.w * h.w)));
     if (Math.abs(angle) > 0.45) return false;
     return true;
+  }
+  nodePosition(nodeDef, team) {
+    const direction = team === 0 ? 1 : -1;
+    const center = team === 0 ? -this.map.center : this.map.center;
+    const authored = new C.Vec3(center + nodeDef.x * direction, nodeDef.y, 0);
+    if (!nodeDef.supportId) return authored;
+    const support = this.items.find(i => i.team === team && i.partId === nodeDef.supportId);
+    if (!support?.homeP || !support?.homeQ) return authored;
+    const inverseHome = support.homeQ.conjugate();
+    const local = authored.vsub(support.homeP);
+    inverseHome.vmult(local, local);
+    support.body.quaternion.vmult(local, local);
+    return support.body.position.vadd(local);
   }
   getAvailableMoves() {
     if (this.phase !== 'move' || !this.map.nodes) return [];
@@ -85,8 +104,6 @@ export class Match {
     if (!shooter || shooter.hp <= 0) return [];
     const currentNode = this.map.nodes.find(n => n.id === shooter.nodeId);
     if (!currentNode) return [];
-    const direction = this.team === 0 ? 1 : -1;
-    const center = this.team === 0 ? -this.map.center : this.map.center;
     const moves = [];
     for (const neighborId of currentNode.neighbors) {
       const neighborDef = this.map.nodes.find(n => n.id === neighborId);
@@ -94,12 +111,8 @@ export class Match {
       if (!this.isNodeAvailable(neighborId, this.team)) continue;
       const occupied = this.items.some(i => i.kind === 'resident' && i.team === this.team && i.hp > 0 && i.id !== shooter.id && i.nodeId === neighborId);
       if (occupied) continue;
-      moves.push({
-        id: neighborDef.id,
-        label: neighborDef.label,
-        x: center + neighborDef.x * direction,
-        y: neighborDef.y,
-      });
+      const target = this.nodePosition(neighborDef, this.team);
+      moves.push({ id: neighborDef.id, label: neighborDef.label, x: target.x, y: target.y });
     }
     return moves;
   }
@@ -113,14 +126,11 @@ export class Match {
     const nodeDef = this.map.nodes.find(n => n.id === targetNodeId);
     if (!nodeDef) return { ok: false, error: 'Node không tồn tại.' };
 
-    const direction = this.team === 0 ? 1 : -1;
-    const center = this.team === 0 ? -this.map.center : this.map.center;
-    const targetX = center + nodeDef.x * direction;
-    const targetY = nodeDef.y;
+    const target = this.nodePosition(nodeDef, this.team);
 
     shooter.nodeId = targetNodeId;
     shooter.spot = nodeDef.label;
-    shooter.body.position.set(targetX, targetY, 0);
+    shooter.body.position.copy(target);
     shooter.body.velocity.set(0, 0, 0);
     shooter.body.angularVelocity.set(0, 0, 0);
     shooter.body.wakeUp();
@@ -195,38 +205,13 @@ export class Match {
       pierces: 0,
       maxPierces: weapon === 'drill' ? 1 : 0,
       skillUsed: false,
+      turn: this.turn,
+      lastSteerAt: -Infinity,
+      lastSteerSequence: -1,
       createdAt: this.time,
       initialVelocity: { ...velocity },
     };
-    body.addEventListener('collide', (event) => {
-      if (proj.pierces < proj.maxPierces) {
-        const hitBody = event.body;
-        const hitItem = this.items.find(i => i.body === hitBody);
-        if (hitItem && hitItem.kind !== 'resident') {
-          proj.pierces++;
-          this.damage(hitItem, 55, 'pierce');
-          body.velocity.scale(0.75, body.velocity);
-          const dir = body.velocity.clone();
-          if (dir.length() > 0.001) dir.normalize();
-          body.position.vadd(dir.scale(0.35), body.position);
-          this.event('pierce', { x: body.position.x, y: body.position.y, weapon });
-          return;
-        }
-      }
-      if (proj.bounces < proj.maxBounces) {
-        const hitBody = event.body;
-        const hitItem = this.items.find(i => i.body === hitBody);
-        if (!hitItem || hitItem.kind !== 'resident') {
-          proj.bounces++;
-          if (hitItem) this.damage(hitItem, 40, 'bounce');
-          body.velocity.y = Math.max(3.2, -body.velocity.y * 0.5);
-          body.velocity.x *= 0.65;
-          this.event('bounce', { x: body.position.x, y: body.position.y, weapon });
-          return;
-        }
-      }
-      proj.collided = true;
-    });
+    body.addEventListener('collide', event => this.pendingProjectileCollisions.push({ proj, hitBody: event.body, normal: event.contact.ni.clone(), velocity: body.velocity.clone() }));
     this.world.addBody(body);
     this.projectiles.set(projectileId, proj);
     this.enterPhase('flight', 7);
@@ -236,6 +221,32 @@ export class Match {
     this.event('shot', { team: this.team, shooterId: shooter.id, weapon, p: body.position.toArray(), projectileId });
     if (obstruction) this.explode(projectileId);
     return true;
+  }
+  handleProjectileCollision({ proj, hitBody, normal, velocity }) {
+    if (!this.projectiles.has(proj.id) || this.time < (proj.ignoreCollisionsUntil || 0)) return;
+    const { body, weapon } = proj, hitItem = this.items.find(i => i.body === hitBody);
+    if (proj.pierces < proj.maxPierces && hitItem && hitItem.kind !== 'resident' && hitBody !== proj.lastPiercedBody) {
+      proj.pierces++; proj.lastPiercedBody = hitBody;
+      this.damage(hitItem, 55, 'pierce');
+      body.velocity.copy(velocity.scale(.75));
+      const dir = body.velocity.clone(); if (dir.length() > .001) dir.normalize();
+      const exitDistance = Math.abs(dir.x) * hitItem.size[0] + Math.abs(dir.y) * hitItem.size[1] + .5;
+      body.position.vadd(dir.scale(exitDistance), body.position);
+      body.collisionResponse = false; proj.ignoreCollisionsUntil = this.time + .06;
+      this.event('pierce', { x: body.position.x, y: body.position.y, weapon, itemId: hitItem.id });
+      return;
+    }
+    if (proj.bounces < proj.maxBounces && (!hitItem || hitItem.kind !== 'resident')) {
+      proj.bounces++;
+      if (hitItem) this.damage(hitItem, 40, 'bounce');
+      if (velocity.dot(normal) > 0) normal.negate(normal);
+      body.velocity.copy(velocity.vsub(normal.scale(2 * velocity.dot(normal))).scale(.7));
+      body.position.vadd(normal.scale(.28), body.position);
+      body.collisionResponse = false; proj.ignoreCollisionsUntil = this.time + .06;
+      this.event('bounce', { x: body.position.x, y: body.position.y, weapon });
+      return;
+    }
+    proj.hitItemId = hitItem?.id ?? null; proj.collided = true;
   }
   event(type, data) { this.events.push({ id: ++this.eventSeq, time: this.time, type, ...data }); this.events = this.events.slice(-96); }
   damage(item, amount, cause = 'blast') {
@@ -265,7 +276,7 @@ export class Match {
       diff.normalize(); diff.y = Math.max(0.3, diff.y); diff.z = 0;
       item.body.wakeUp(); item.body.applyImpulse(diff.scale(stats.impulse * strength), new C.Vec3(0, 0.15, 0));
     }
-    this.event('blast', { x: position.x, y: position.y, radius: stats.radius, weapon, projectileId: proj.id });
+    this.event('blast', { x: position.x, y: position.y, radius: stats.radius, weapon, projectileId: proj.id, hitItemId: proj.hitItemId ?? null });
     try { this.world.removeBody(body); } catch {}
     this.projectiles.delete(proj.id);
     if (this.projectiles.size === 0) {
@@ -275,18 +286,28 @@ export class Match {
   }
   triggerSkill(input = {}) {
     if (this.phase !== 'flight') return { ok: false, error: 'Chỉ kích hoạt kỹ năng khi đạn đang bay.' };
-    const proj = input.projectileId ? this.projectiles.get(input.projectileId) : this.projectile;
+    if (input.turn !== this.turn || input.shooterId !== this.firedShooterId || !Number.isInteger(input.projectileId)) return { ok: false, error: 'Lượt, xạ thủ hoặc đạn không hợp lệ.' };
+    const proj = this.projectiles.get(input.projectileId);
     if (!proj) return { ok: false, error: 'Không tìm thấy đạn đang bay.' };
     const { weapon, body, team, shooterId } = proj;
+    if (proj.turn !== this.turn || shooterId !== this.firedShooterId || proj.team !== this.team) return { ok: false, error: 'Đạn không thuộc lượt hiện tại.' };
+    const actionByWeapon = { pebble: 'secondShot', heavy: 'boost', bloom: 'cluster', rocket: 'steer', drill: 'overdrive', pulse: 'airburst' };
+    if (input.action !== actionByWeapon[weapon]) return { ok: false, error: 'Kỹ năng không phù hợp với vũ khí.' };
 
-    if (weapon === 'rocket' && (typeof input.steer === 'number' || input.action === 'steer' || input.action === 'dive')) {
+    if (weapon === 'rocket') {
       if (proj.collided) return { ok: false, error: 'Tên lửa đã va chạm.' };
-      const steerVal = typeof input.steer === 'number' ? Math.max(-1, Math.min(1, input.steer)) : (input.action === 'dive' ? -1 : 0.5);
+      if (!Number.isInteger(input.sequence) || input.sequence <= proj.lastSteerSequence || this.time - proj.lastSteerAt < .05) return { ok: false, error: 'Lệnh bẻ lái quá nhanh hoặc đã cũ.' };
+      if (!Number.isFinite(input.value)) return { ok: false, error: 'Giá trị bẻ lái không hợp lệ.' };
+      const steerVal = Math.max(-1, Math.min(1, input.value));
       const currentSpeed = body.velocity.length();
       let currentAngle = Math.atan2(body.velocity.y, body.velocity.x);
       const forwardDir = team === 0 ? 1 : -1;
-      currentAngle += steerVal * 0.5 * forwardDir;
+      currentAngle += steerVal * 0.16 * forwardDir;
+      const forwardAngle = team === 0 ? 0 : Math.PI;
+      const relative = Math.atan2(Math.sin(currentAngle - forwardAngle), Math.cos(currentAngle - forwardAngle));
+      currentAngle = forwardAngle + Math.max(-1.15, Math.min(1.15, relative));
       body.velocity.set(Math.cos(currentAngle) * currentSpeed, Math.sin(currentAngle) * currentSpeed, 0);
+      proj.lastSteerAt = this.time; proj.lastSteerSequence = input.sequence;
       this.event('skill', { weapon, action: 'steer', steer: steerVal, x: body.position.x, y: body.position.y });
       return { ok: true, action: 'steer', steer: steerVal };
     }
@@ -311,6 +332,7 @@ export class Match {
         pierces: 0,
         maxPierces: 0,
         skillUsed: true,
+        turn: this.turn,
         createdAt: this.time,
         initialVelocity: { x: secondBody.velocity.x, y: secondBody.velocity.y },
       };
@@ -336,7 +358,7 @@ export class Match {
       for (const spread of spreads) {
         const cId = ++this.projectileIdSeq;
         const cBody = new C.Body({ mass: 0.9, shape: new C.Sphere(.15), position: new C.Vec3(pos.x + spread * 0.12, pos.y, 0) });
-        cBody.velocity.set(baseVel.x + spread, baseVel.y + 1.2, 0);
+        cBody.velocity.set(baseVel.x * .72 + spread, -Math.max(2.5, Math.abs(baseVel.y) * .28), 0);
         cBody.linearDamping = 0;
         const cProj = {
           id: cId,
@@ -350,6 +372,7 @@ export class Match {
           pierces: 0,
           maxPierces: 0,
           skillUsed: true,
+          turn: this.turn,
           createdAt: this.time,
           initialVelocity: { x: cBody.velocity.x, y: cBody.velocity.y },
         };
@@ -380,12 +403,20 @@ export class Match {
     if (this.finishIfEliminated()) return;
     const roster = this.items.filter(i => i.kind === 'resident' && i.team === this.team);
     this.shooterCursor[this.team] = (roster.findIndex(i => i.id === this.firedShooterId) + 1) % roster.length;
-    this.team = 1 - this.team; this.turn++; this.enterPhase('move', 6); this.syncShooter();
+    this.team = 1 - this.team; this.turn++; this.wind = this.rollWind(); this.enterPhase('move', 6); this.syncShooter();
   }
   step(dt = 1 / 60) {
     this.time += dt;
     // Small fixed steps keep fast projectiles from tunnelling through narrow pillars.
-    this.world.step(dt / 3); this.world.step(dt / 3); this.world.step(dt / 3);
+    for (let substep = 0; substep < 3; substep++) {
+      if (this.phase === 'flight') for (const p of this.projectiles.values()) {
+        if (p.ignoreCollisionsUntil && this.time >= p.ignoreCollisionsUntil) { p.body.collisionResponse = true; p.ignoreCollisionsUntil = 0; }
+        if (p.weapon === 'heavy' && this.wind !== 0) p.body.force.x += this.wind * WEAPONS.heavy.windFactor * p.body.mass;
+      }
+      this.world.step(dt / 3);
+    }
+    for (const collision of this.pendingProjectileCollisions) this.handleProjectileCollision(collision);
+    this.pendingProjectileCollisions.length = 0;
     // Apply after stepping; collision callbacks must not remove bodies mid-solver.
     for (const [item, impact] of this.pendingImpacts) {
       if (this.time - item.lastImpact < 0.18) continue;
@@ -412,7 +443,6 @@ export class Match {
     }
     if (this.phase === 'flight') {
       for (const p of Array.from(this.projectiles.values())) {
-        if (this.wind !== 0) p.body.force.x += this.wind * p.body.mass;
         if (p.collided || this.time >= this.deadline || Math.abs(p.body.position.x) > 26 || p.body.position.y < -1) {
           this.explode(p.id);
         }
@@ -422,9 +452,8 @@ export class Match {
       }
     }
     if (this.phase === 'settle') {
-      if (this.finishIfEliminated()) return;
       if (this.time >= this.deadline) {
-        this.nextTurn();
+        if (!this.finishIfEliminated()) this.nextTurn();
       }
     }
   }
@@ -443,7 +472,7 @@ export class Match {
     for (const angle of [65, 72, 78, 80, 55, 45]) {
       const origin = muzzlePosition(shooter.body.position.toArray(), this.team, angle);
       const rawDistance = Math.abs(target.body.position.x - origin[0]);
-      const windEffect = this.wind * (this.team === 0 ? 1 : -1) * 0.45;
+      const windEffect = shooter.weapon === 'heavy' ? this.wind * WEAPONS.heavy.windFactor * (this.team === 0 ? 1 : -1) * 0.45 : 0;
       const distance = Math.max(1, rawDistance - windEffect);
       const dy = target.body.position.y - origin[1], radians = angle * Math.PI / 180;
       const denominator = 2 * Math.cos(radians) ** 2 * (distance * Math.tan(radians) - dy);
@@ -477,10 +506,12 @@ export class Match {
       phase: this.phase, team: this.team, turn: this.turn, remaining: Math.max(0, Math.ceil(this.deadline - this.time)), aim: this.aim, winner: this.winner,
       availableMoves: this.getAvailableMoves(),
       wind: Math.round(this.wind * 10) / 10,
-      activeSkill: (this.phase === 'flight' && mainProj && !mainProj.skillUsed) ? {
+      activeSkill: (this.phase === 'flight' && mainProj && (mainProj.weapon === 'rocket' || !mainProj.skillUsed)) ? {
         weapon: mainProj.weapon,
         label: SKILL_LABELS[mainProj.weapon] || 'Kỹ năng',
         projectileId: mainProj.id,
+        action: { pebble: 'secondShot', heavy: 'boost', bloom: 'cluster', rocket: 'steer', drill: 'overdrive', pulse: 'airburst' }[mainProj.weapon],
+        available: !mainProj.collided,
       } : null,
       items: this.items.filter(i => !i.destroyed).map(i => ({ id: i.id, kind: i.kind, team: i.team, size: i.size, hp: i.hp, maxHp: i.maxHp, material: i.material, weapon: i.weapon, name: i.name, spot: i.spot, nodeId: i.nodeId, terrace: i.terrace, crack: crackStage(i.hp, i.maxHp), ...pose(i.body) })),
       projectile: mainProj ? { weapon: mainProj.weapon, ...pose(mainProj.body) } : null,

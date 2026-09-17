@@ -12,13 +12,13 @@ if (!token) { token = globalThis.crypto?.randomUUID?.() || Array.from(crypto.get
 let state = null, scene = null, playerId = null, screenKey = '', qrCode = '', connection = null, lastTurn = null;
 let mapCatalog = [], previewRequest = 0, previewMap = null;
 let draft = { angle: 42, power: 30, weapon: 'pebble' };
-let gesture = null, aimTimer = null, shotPending = false;
+let gesture = null, steerGesture = null, aimTimer = null, shotPending = false, skillSequence = 0, lastSteerSentAt = 0;
 const audio = createGameAudio();
 let muted = localStorage.getItem('bp-muted') === 'true'; audio.mute(muted);
 const teams = ['San Hô', 'Ngọc Lam'];
 const escape = text => String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const toast = text => { const t = document.querySelector('#toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), 4000); };
-const emit = (event, data = {}) => new Promise(resolve => (event === 'fire' ? socket.volatile : socket).timeout(4500).emit(event, data, (err, result) => {
+const emit = (event, data = {}) => new Promise(resolve => ((event === 'fire' || (event === 'skill' && data.action === 'steer')) ? socket.volatile : socket).timeout(4500).emit(event, data, (err, result) => {
   if (err) { toast('Mất kết nối. Đang thử kết nối lại…'); return resolve(null); }
   if (result?.error) toast(result.error); resolve(result);
 }));
@@ -26,6 +26,7 @@ function unlockAudio() { audio.unlock(); }
 window.addEventListener('game-blast', () => audio.play('blast'));
 window.addEventListener('game-shot', () => audio.play('shot'));
 window.addEventListener('material-sound', e => audio.play(e.detail.material, e.detail.strength));
+window.addEventListener('weapon-sound', e => audio.play(e.detail.type));
 const brand = `<a class="brand" href="/" aria-label="Block Party trang chủ"><span class="brand-mark">b<span>p</span></span><span>BLOCK<br>PARTY<span class="brand-sub">ĐẠI CHIẾN HÀNG XÓM</span></span></a>`;
 function header() { return `<header>${brand}<div class="header-actions"><span class="connection"><i></i><span id="network-label">Đã kết nối</span></span><button id="sound" class="icon-button" aria-label="Bật hoặc tắt âm thanh">${muted ? 'Âm thanh: tắt' : 'Âm thanh: bật'}</button><button id="fullscreen" class="icon-button" aria-label="Toàn màn hình">⛶</button></div></header>`; }
 function bindHeader() {
@@ -43,17 +44,33 @@ function controls() {
 }
 function landscape() { return matchMedia('(orientation: landscape)').matches; }
 function canControl() { return Boolean(socket.connected && controller && landscape() && !document.hidden && state?.game?.phase === 'aim' && state.activeId === playerId); }
+function canSteer() { return Boolean(socket.connected && controller && landscape() && !document.hidden && state?.game?.phase === 'flight' && state.activeId === playerId && state.game.activeSkill?.weapon === 'rocket' && state.game.activeSkill.available); }
+function skillInput(action = state?.game?.activeSkill?.action, value) {
+  const skill = state?.game?.activeSkill;
+  return { turn: state.game.turn, shooterId: state.game.shooterId, projectileId: skill.projectileId, action, ...(value === undefined ? {} : { value }), sequence: ++skillSequence };
+}
+function sendSteer(value) {
+  const now = performance.now();
+  if (!canSteer() || now - lastSteerSentAt < 60 || Math.abs(value) < .08) return;
+  lastSteerSentAt = now; emit('skill', skillInput('steer', Math.max(-1, Math.min(1, value))));
+}
 function sendAim() {
   if (aimTimer) return;
   aimTimer = setTimeout(() => { aimTimer = null; if (canControl() && !shotPending) socket.emit('aim', { ...draft, turn: state.game.turn, shooterId: state.game.shooterId }); }, 50);
 }
-function clearGesture() {
+function clearSteerGesture() {
+  const pad = document.querySelector('#aim-pad'), previous = steerGesture; steerGesture = null;
+  if (previous && pad?.hasPointerCapture(previous.id)) pad.releasePointerCapture(previous.id);
+  pad?.classList.remove('steering');
+}
+function clearGesture({ steer = true } = {}) {
   clearTimeout(aimTimer); aimTimer = null;
   const pad = document.querySelector('#aim-pad'); const previous = gesture; gesture = null;
   if (previous && pad?.hasPointerCapture(previous.id)) pad.releasePointerCapture(previous.id);
   pad?.classList.remove('dragging', 'armed');
   for (const id of ['pull-anchor', 'pull-knob', 'pull-cord']) document.getElementById(id)?.removeAttribute('style');
   const power = document.querySelector('#pull-power'); if (power) power.textContent = '0';
+  if (steer) clearSteerGesture();
 }
 function cancelGesture() { clearGesture(); updateControls(); }
 function moveGesture(event) {
@@ -76,6 +93,10 @@ function bindControls() {
   const pad = document.querySelector('#aim-pad'); if (!pad) return;
   pad.addEventListener('contextmenu', e => e.preventDefault());
   pad.addEventListener('pointerdown', event => {
+    if (canSteer() && !steerGesture && event.isPrimary && event.button === 0) {
+      event.preventDefault(); unlockAudio(); steerGesture = { id: event.pointerId, y: event.clientY, lastY: event.clientY };
+      pad.setPointerCapture(event.pointerId); pad.classList.add('steering'); return;
+    }
     if (!canControl() || shotPending || gesture || !event.isPrimary || event.button !== 0) return;
     event.preventDefault(); unlockAudio();
     const bounds = pad.getBoundingClientRect();
@@ -86,8 +107,15 @@ function bindControls() {
     }
     updateControls();
   });
-  pad.addEventListener('pointermove', moveGesture);
+  pad.addEventListener('pointermove', event => {
+    if (steerGesture && event.pointerId === steerGesture.id) {
+      const delta = (steerGesture.lastY - event.clientY) / 42;
+      steerGesture.lastY = event.clientY; sendSteer(delta); return;
+    }
+    moveGesture(event);
+  });
   pad.addEventListener('pointerup', async event => {
+    if (steerGesture && event.pointerId === steerGesture.id) { clearGesture(); updateControls(); return; }
     if (!gesture || event.pointerId !== gesture.id) return;
     moveGesture(event);
     const aim = gesture?.aim; const turn = gesture?.turn;
@@ -101,8 +129,8 @@ function bindControls() {
     if (result?.ok) { audio.play('shot'); navigator.vibrate?.(35); }
     shotPending = false; updateControls();
   });
-  pad.addEventListener('pointercancel', event => { if (event.pointerId === gesture?.id) cancelGesture(); });
-  pad.addEventListener('lostpointercapture', event => { if (event.pointerId === gesture?.id) cancelGesture(); });
+  pad.addEventListener('pointercancel', event => { if (event.pointerId === gesture?.id || event.pointerId === steerGesture?.id) cancelGesture(); });
+  pad.addEventListener('lostpointercapture', event => { if (event.pointerId === gesture?.id || event.pointerId === steerGesture?.id) cancelGesture(); });
   const readyBtn = document.querySelector('#ready-aim');
   if (readyBtn) {
     readyBtn.onclick = async () => {
@@ -115,13 +143,15 @@ function bindControls() {
     skillBtn.onclick = async () => {
       unlockAudio();
       navigator.vibrate?.(45);
-      await emit('skill');
+      const skill = state?.game?.activeSkill;
+      if (skill) await emit('skill', skillInput(skill.action, skill.weapon === 'rocket' ? -.75 : undefined));
     };
   }
 }
 function updateControls() {
   const isMove = state?.game?.phase === 'move' && state.activeId === playerId;
   const isFlight = state?.game?.phase === 'flight' && state.activeId === playerId;
+  const steering = canSteer();
   const enabled = canControl() && !shotPending;
   if (!enabled && gesture) clearGesture();
 
@@ -130,10 +160,10 @@ function updateControls() {
 
   const skillBtn = document.querySelector('#skill-btn');
   if (skillBtn) {
-    const hasSkill = isFlight && state?.game?.activeSkill?.available;
+    const hasSkill = isFlight && Boolean(state?.game?.activeSkill?.available);
     skillBtn.hidden = !hasSkill;
     if (hasSkill) {
-      skillBtn.textContent = `⚡ ${state.game.activeSkill.label || 'Kích hoạt'}`;
+      skillBtn.textContent = state.game.activeSkill.weapon === 'rocket' ? '🎯 Bổ nhào · hoặc vuốt dọc' : `⚡ ${state.game.activeSkill.label || 'Kích hoạt'}`;
     }
   }
 
@@ -161,11 +191,12 @@ function updateControls() {
   }
 
   const pad = document.querySelector('#aim-pad'); if (!pad) return;
-  pad.setAttribute('aria-disabled', String(!enabled));
+  pad.setAttribute('aria-disabled', String(!(enabled || steering)));
   if (!gesture) {
     const statusEl = document.querySelector('#pull-status');
     if (statusEl) {
-      statusEl.textContent = shotPending || state?.game?.phase === 'flight' ? 'ĐẠN ĐANG BAY…'
+      statusEl.textContent = steering ? 'VUỐT LÊN / XUỐNG ĐỂ BẺ LÁI'
+        : shotPending || state?.game?.phase === 'flight' ? 'ĐẠN ĐANG BAY…'
         : state?.game?.phase === 'settle' ? 'CÔNG TRÌNH ĐANG LẮNG XUỐNG…'
         : isMove ? 'PHA DI CHUYỂN · BẤM SẴN SÀNG'
         : enabled ? 'CHẠM · KÉO · THẢ'
@@ -173,8 +204,8 @@ function updateControls() {
     }
   }
   const team = state?.players.find(p => p.id === playerId)?.team || 0;
-  document.querySelector('#pull-direction').textContent = team === 0 ? '↙' : '↘';
-  document.querySelector('#pull-hint').textContent = team === 0 ? 'Kéo xuống trái' : 'Kéo xuống phải';
+  document.querySelector('#pull-direction').textContent = steering ? '↕' : team === 0 ? '↙' : '↘';
+  document.querySelector('#pull-hint').textContent = steering ? 'Vuốt dọc để điều khiển tên lửa' : team === 0 ? 'Kéo xuống trái' : 'Kéo xuống phải';
 }
 window.addEventListener('resize', cancelGesture);
 window.addEventListener('blur', cancelGesture);
@@ -279,9 +310,9 @@ function renderLobby() {
 function renderGame() {
   screenKey = 'game'; scene?.setMode('game'); document.body.classList.toggle('controller-playing', controller);
   if (controller) {
-    app.innerHTML = `${header()}<main class="gamepad"><div class="gamepad-status"><div><span class="eyebrow" id="phone-team"></span><h1 id="turn-heading"></h1></div><p id="turn-detail"></p><span class="timer" id="timer"></span></div><div class="gamepad-body">${controls()}</div><div class="phone-health" id="phone-health"></div></main><div class="rotate-prompt"><span aria-hidden="true">▯ ↻ ▭</span><h2>Xoay ngang điện thoại</h2><p>Cầm bằng hai tay, như tay cầm game.<br>Kéo trên điện thoại · Nhìn màn hình lớn.</p></div>`;
+    app.innerHTML = `${header()}<main class="gamepad"><div class="gamepad-status"><div><span class="eyebrow" id="phone-team"></span><h1 id="turn-heading"></h1></div><p id="turn-detail"></p><span class="wind" id="wind"></span><span class="timer" id="timer"></span></div><div class="gamepad-body">${controls()}</div><div class="phone-health" id="phone-health"></div></main><div class="rotate-prompt"><span aria-hidden="true">▯ ↻ ▭</span><h2>Xoay ngang điện thoại</h2><p>Cầm bằng hai tay, như tay cầm game.<br>Kéo trên điện thoại · Nhìn màn hình lớn.</p></div>`;
   } else {
-    app.innerHTML = `${header()}<div class="match-hud"><div class="score coral"><span>SAN HÔ</span><div id="health-0"></div></div><div class="round"><span id="round-label"></span><strong id="timer"></strong></div><div class="score teal"><span>NGỌC LAM</span><div id="health-1"></div></div></div><div class="turn-banner"><span class="turn-dot"></span><span id="turn-heading"></span><small id="turn-detail"></small><div id="aim-readout" class="aim-readout"></div></div><div class="bottom-game"><button id="back-lobby" class="button secondary compact">← Về sảnh</button><div class="spectator-note">Kéo trên điện thoại · Bắn từ nhân vật</div><button id="camera-toggle" class="button secondary compact" aria-pressed="false">Toàn cảnh</button><span class="room-badge"><span id="match-map"></span> · PHÒNG <b>${state.code}</b></span></div>`;
+    app.innerHTML = `${header()}<div class="match-hud"><div class="score coral"><span>SAN HÔ</span><div id="health-0"></div></div><div class="round"><span id="round-label"></span><small class="wind" id="wind"></small><strong id="timer"></strong></div><div class="score teal"><span>NGỌC LAM</span><div id="health-1"></div></div></div><div class="turn-banner"><span class="turn-dot"></span><span id="turn-heading"></span><small id="turn-detail"></small><div id="aim-readout" class="aim-readout"></div></div><div class="bottom-game"><button id="back-lobby" class="button secondary compact">← Về sảnh</button><div class="spectator-note">Kéo trên điện thoại · Bắn từ nhân vật</div><button id="camera-toggle" class="button secondary compact" aria-pressed="false">Toàn cảnh</button><span class="room-badge"><span id="match-map"></span> · PHÒNG <b>${state.code}</b></span></div>`;
     document.querySelector('#back-lobby').onclick = () => emit('lobby');
     scene?.setOverview(false);
     document.querySelector('#camera-toggle').onclick = event => {
@@ -297,9 +328,11 @@ function updateGameUI() {
   const mapLabel = document.querySelector('#match-map'); if (mapLabel) mapLabel.textContent = game.mapName;
   const readout = document.querySelector('#aim-readout');
   if (readout) { readout.hidden = game.phase !== 'aim'; readout.textContent = `${game.team === 0 ? '↗' : '↖'} ${Math.round(game.aim.angle)}° · LỰC ${Math.round(game.aim.power)}%`; }
+  const wind = document.querySelector('#wind');
+  if (wind) wind.textContent = `${game.wind < 0 ? '←' : game.wind > 0 ? '→' : '•'} GIÓ ${Math.abs(game.wind).toFixed(1)}`;
   const player = state.players.find(p => p.id === state.activeId);
   const activeName = state.mode === 'practice' && game.team === 1 ? 'Bot' : player?.name || 'Bot thay lượt';
-  const mine = canControl();
+  const mine = controller && state.activeId === playerId;
   const isMove = game.phase === 'move';
   const isFlight = game.phase === 'flight';
   const isSettle = game.phase === 'settle';
@@ -342,10 +375,12 @@ function render() {
 socket.on('state', next => {
   const changedMatch = Boolean(next.game) !== Boolean(state?.game);
   if (changedMatch) { ++previewRequest; previewMap = null; scene?.reset(); lastTurn = null; }
-  if (next.game?.shooterId !== state?.game?.shooterId || next.game?.turn !== state?.game?.turn || next.activeId !== state?.activeId || next.game?.phase !== 'aim') clearGesture();
+  const actorChanged = next.game?.shooterId !== state?.game?.shooterId || next.game?.turn !== state?.game?.turn || next.activeId !== state?.activeId;
+  if (actorChanged || next.game?.phase !== 'aim') clearGesture({ steer: false });
+  if (actorChanged || next.game?.phase !== 'flight' || next.game?.activeSkill?.weapon !== 'rocket') clearSteerGesture();
   state = next;
   if (next.game) {
-    if (lastTurn !== `${next.game.turn}:${next.game.shooterId}`) { lastTurn = `${next.game.turn}:${next.game.shooterId}`; draft = { ...next.game.aim }; }
+    if (lastTurn !== `${next.game.turn}:${next.game.shooterId}`) { lastTurn = `${next.game.turn}:${next.game.shooterId}`; draft = { ...next.game.aim }; skillSequence = 0; }
     scene?.update(next.game);
   } else if (changedMatch) loadPreview(next.mapId === 'random' ? 'tower' : next.mapId);
   render();

@@ -42,6 +42,12 @@ test('room authorization, capacity, turn ownership, reconnect, and QR', async t 
   assert.ok((await send(players[0].c, 'fire', { ...shot(), shooterId: -1 })).error);
   assert.ok((await send(players[0].c, 'fire', { ...shot(), turn: 99 })).error);
   assert.ok((await send(players[0].c, 'fire', shot())).ok);
+  const fired = server.rooms.get(code).game;
+  const skill = fired.snapshot().activeSkill;
+  assert.ok(skill?.available);
+  assert.ok((await send(players[1].c, 'skill', { turn: fired.turn, shooterId: fired.firedShooterId, projectileId: skill.projectileId, action: skill.action })).error);
+  assert.ok((await send(players[0].c, 'skill', { turn: fired.turn + 1, shooterId: fired.firedShooterId, projectileId: skill.projectileId, action: skill.action })).error);
+  assert.ok((await send(players[0].c, 'skill', { turn: fired.turn, shooterId: fired.firedShooterId, projectileId: skill.projectileId, action: skill.action })).ok);
   assert.ok((await send(players[0].c, 'fire', shot())).error);
   assert.ok((await send(players[0].c, 'lobby')).error);
   const reconnectToken = players[0].token; players[0].c.disconnect();

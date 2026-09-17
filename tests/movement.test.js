@@ -64,6 +64,18 @@ test('movement: node becomes unavailable when support block breaks or falls', ()
   assert.equal(game.isNodeAvailable('tower-node-1', 0), false);
 });
 
+test('movement: supported nodes follow a shifted support body', () => {
+  const game = new Match('tower');
+  const occupied = game.items.find(i => i.kind === 'resident' && i.team === 0 && i.nodeId === 'tower-node-1');
+  occupied.hp = 0;
+  const support = game.items.find(i => i.team === 0 && i.partId === 'tower-beam-0');
+  const originalX = game.nodePosition(game.map.nodes.find(n => n.id === 'tower-node-1'), 0).x;
+  support.body.position.x += .6;
+  const moved = game.moveShooter('tower-node-1');
+  assert.equal(moved.ok, true);
+  assert.ok(Math.abs(game.shooter.body.position.x - (originalX + .6)) < .001);
+});
+
 test('movement: server handles move event with turn and player authorization', async () => {
   const server = createApp({ port: 0 });
   await new Promise(resolve => server.http.listen(0, resolve));

@@ -15,10 +15,11 @@ Mở http://localhost:3000 trên máy tính, chọn **Tạo cuộc vui**.
 - Chọn công trình ở sảnh: **Nhà phố**, **Tháp cao**, **Cầu trên không** hoặc **Pháo đài**. Hình 3D đổi theo lựa chọn. **Ngẫu nhiên mỗi ván** chọn map khi bắt đầu (có thể trùng ván trước). Chỉ chủ phòng được đổi map và chỉ khi ở sảnh.
 - Đấu bot: quét QR bằng một điện thoại cùng Wi-Fi, nhập tên và vào đội **San Hô**. Trên máy tính chọn **Một điện thoại + bot**. Máy tính chỉ hiển thị trận đấu.
 - Chơi nhóm: điện thoại và máy tính cùng Wi-Fi, quét QR, nhập tên. Cần ít nhất một người mỗi đội; tối đa 8 người, 4 mỗi đội. Chủ phòng bấm **Bắt đầu trận**.
-- Cầm điện thoại **nằm ngang**. Bên trái hiển thị cư dân và vũ khí đang đến lượt; tay phải chạm và kéo trên vùng cảm ứng. Đội San Hô kéo xuống trái; Ngọc Lam kéo xuống phải. Kéo càng xa, lực càng mạnh. Mũi tên 3D và đường ngắm trên máy tính cập nhật theo thao tác; **thả tay để bắn**. Kéo về điểm chạm để hủy. Chạm nhẹ hoặc kéo sai hướng không bắn.
+- Cầm điện thoại **nằm ngang**. Trong 6 giây đầu, chọn một điểm đứng lân cận còn an toàn hoặc bấm **Sẵn sàng ngắm**. Sau đó tay phải chạm và kéo trên vùng cảm ứng trong tối đa 18 giây. Đội San Hô kéo xuống trái; Ngọc Lam kéo xuống phải. Kéo càng xa, lực càng mạnh; **thả tay để bắn**.
+- Khi đạn bay, điện thoại hiện kỹ năng riêng của vũ khí. Ná bắn bồi, bazooka tăng tốc, súng cối tách ba bom, tên lửa vuốt dọc để bẻ lái, mũi khoan tăng lần xuyên và súng xung lực kích nổ trên không. TV hiển thị hướng/cường độ gió; gió chỉ làm lệch bazooka.
 - Xoay dọc giữa lượt, mất kết nối, chuyển tab hoặc bị hủy cảm ứng sẽ hủy thao tác kéo đang diễn ra. Khi dựng dọc, game hiện lời nhắc xoay ngang. Nút toàn màn hình thử khóa hướng ngang khi trình duyệt hỗ trợ; không bắt buộc để chơi.
 - Mỗi đội có sáu cư dân (12 nhân vật trên sân, độc lập với số điện thoại tham gia); loại hết cư dân đối phương để thắng. Cư dân mất máu vì nổ, va đập mạnh hoặc rơi khỏi đảo. Đánh sập trụ có thể làm cả tháp đổ.
-- Mỗi lượt 25 giây. Hết giờ tự bắn với thông số hiện tại. Người chơi trong đội luân phiên điều khiển; khi cả đội mất kết nối, bot thay lượt. Tải lại trang cùng tab để kết nối lại.
+- Mỗi lượt đi qua `move (6s) → aim (18s) → flight (tối đa 7s) → settle (2.6s)`. Hết pha di chuyển tự vào ngắm; hết pha ngắm tự bắn. Người chơi trong đội luân phiên điều khiển; khi cả đội mất kết nối, bot thay lượt. Tải lại trang cùng tab để kết nối lại.
 - Nút **Về sảnh** kết thúc ván hiện tại; mở ván mới từ sảnh.
 
 QR tự lấy IP LAN. Nếu máy có VPN/nhiều card mạng, có thể cần chọn địa chỉ đúng bằng biến môi trường:
@@ -41,7 +42,7 @@ Browser tests dùng Google Chrome đã cài trên máy và touch events qua CDP.
 
 `tests/maps.test.js` kiểm tra từng map đứng vững trong 20 giây, hai đội đối xứng, sáu cư dân mỗi bên, collider không chồng nhau, nhà nằm trong đảo, cư dân có đường bắn ra ngoài, bắn thật từ cả hai đội có phá hủy và sát thương. Browser tests kiểm tra chọn cả bốn map, hiển thị trên điện thoại, chơi lại, ngẫu nhiên và phản hồi preview đến muộn không ghi đè trận đang chơi.
 
-`tests/game.test.js` kiểm tra đường đạn thật, độ ổn định tháp, sát thương/di chuyển, chuyển lượt, timeout và kết quả. `tests/rooms.test.js` mở server và socket thật để kiểm tra quyền chủ phòng, giới hạn người, sai lượt, reconnect và QR.
+`tests/game.test.js` kiểm tra state machine, settle, đường đạn thật, độ ổn định tháp, sát thương, chuyển lượt và kết quả. `tests/movement.test.js` kiểm tra node lân cận, occupancy, support bị phá/dịch chuyển và quyền Socket. `tests/weapons.test.js` kiểm tra multi-projectile, sáu kỹ năng, phản xạ, xuyên collider thứ hai, gió, impulse và lệnh cũ. `tests/rooms.test.js` mở server và socket thật để kiểm tra quyền chủ phòng, lượt, skill contract, reconnect và QR.
 
 `tests/materials.test.js` kiểm tra độ bền, hai mức vết nứt, vỡ do va đập và khối bên trên rơi khi mất trụ. `tests/art.spec.js` kiểm tra âm thanh tổng hợp, hoạt ảnh nhân vật, reduced motion, mảnh vỡ tự dọn và không phát lại hiệu ứng cũ sau reconnect. Browser test còn bắn bom bằng thao tác kéo trên điện thoại mô phỏng và xác nhận vết nứt/mảnh vỡ xuất hiện trên màn hình chung.
 
@@ -58,13 +59,13 @@ Cảnh nền là vịnh biển với đảo, làng nhỏ, núi xa, hải đăng,
 
 ## Cư dân tự bắn và vũ khí riêng
 
-Mỗi đội có Tú (ná), Bảo (bazooka), Mây (súng cối), Khoa (tên lửa), Linh (súng phá giáp), Sóc (súng xung lực). Sáu loại khác tốc độ, khối lượng, bán kính nổ, sát thương và lực đẩy; mỗi người giữ một vũ khí suốt ván. Súng phá giáp tập trung sát thương tại điểm chạm, chưa xuyên qua nhiều khối. Súng xung lực đẩy mạnh nhưng gây ít sát thương.
+Mỗi đội có Tú (ná), Bảo (bazooka), Mây (súng cối), Khoa (tên lửa), Linh (súng phá giáp), Sóc (súng xung lực). Mỗi người giữ một vũ khí suốt ván. Sáu loại có cơ chế riêng: nảy/bắn bồi, gió/tăng tốc, tách chùm, bẻ lái, xuyên giáp/khoan sâu và sóng xung lực kích nổ trên không.
 
 Lượt luân phiên qua các cư dân còn sống, bỏ qua người đã bị loại. Người dùng điện thoại vẫn luân phiên theo đội; số tay cầm độc lập với số cư dân. Tay cầm hiển thị người đang bắn, vị trí và vũ khí, không còn ba nút chọn đạn tự do. Máy chủ xác nhận cả lượt, cư dân và vũ khí để chặn lệnh cũ hoặc đổi súng trái phép.
 
 Camera tiến gần cư dân đang ngắm; vòng sáng và bảng máu đánh dấu người đó. Đạn bắn từ nòng súng và vị trí hiện tại, kể cả sau khi người đó rơi xuống. Khi bắn, camera mở về toàn sân. Nút **Toàn cảnh / Theo người bắn** đổi góc xem; reduced motion giữ góc toàn cảnh.
 
-Cư dân đứng ở sân, chòi, ban công lệch tầng, cầu và sân thượng. Chưa có điều khiển đi bộ hoặc chọn chỗ đứng trong trận. Tường/mái vẫn chắn đạn; vị trí phía sau thường cần góc cao. Bot tính đường bắn từ vị trí của mình và thử tránh nhà bên mình. Vụ nổ và khối nhà rơi có thể gây sát thương đồng đội.
+Cư dân đứng ở sân, chòi, ban công lệch tầng, cầu và sân thượng. Mỗi map có 11 node nối hai chiều; người đang bắn có thể chuyển sang node lân cận nếu chưa bị chiếm và support còn an toàn. Node đi theo vị trí và độ nghiêng của support. Tường/mái vẫn chắn đạn; bot tính đường bắn từ vị trí của mình và bù gió khi dùng bazooka. Vụ nổ và khối nhà rơi có thể gây sát thương đồng đội.
 
 `tests/shooters.test.js` kiểm tra luân phiên, bỏ qua người chết, vũ khí cố định, lệnh cũ, vị trí nòng súng sau khi di chuyển và đường bắn khả dụng cho cả 48 vị trí trên bốn map. Browser kiểm tra camera qua hai đội/sân thượng, toàn cảnh/reduced motion và reconnect giữ đúng vũ khí.
 
@@ -96,7 +97,7 @@ Nhân vật có thở, chớp mắt, phản ứng bị thương và mừng thắ
 
 ## Giới hạn bản đầu
 
-Bốn kiểu công trình trên cùng đảo; nhân vật dựng bằng geometry và hoạt ảnh đơn giản, chưa có asset rig chuyên nghiệp hoặc chế độ best-of. Vật lý là 3D nhưng chuyển động gameplay được khóa trên mặt phẳng ngang. Khối vỡ toàn phần, chưa cắt geometry tại điểm trúng đạn; mảnh vụn chỉ là hiệu ứng. Các loại đạn nổ khi va chạm; chưa có kích hoạt kỹ năng giữa không trung. Phòng lưu trong RAM; server khởi động lại sẽ mất phòng. Token ở sessionStorage phục hồi cùng tab, không phải hệ thống tài khoản. Chưa có cơ sở dữ liệu, matchmaking, chống lạm dụng quy mô internet hoặc triển khai production.
+Bốn kiểu công trình trên cùng đảo; nhân vật dựng bằng geometry và hoạt ảnh đơn giản, chưa có asset rig chuyên nghiệp hoặc chế độ best-of. Vật lý là 3D nhưng chuyển động gameplay được khóa trên mặt phẳng ngang; di chuyển dùng node thay vì đi bộ tự do. Khối vỡ toàn phần, chưa cắt geometry tại điểm trúng đạn; mảnh vụn chỉ là hiệu ứng. Phòng lưu trong RAM; server khởi động lại sẽ mất phòng. Token ở sessionStorage phục hồi cùng tab, không phải hệ thống tài khoản. Chưa có cơ sở dữ liệu, matchmaking, chống lạm dụng quy mô internet hoặc triển khai production.
 
 Tài liệu thư viện: [Three.js](https://threejs.org/docs/), [Cannon ES](https://pmndrs.github.io/cannon-es/), [Socket.IO](https://socket.io/docs/v4/).
 
