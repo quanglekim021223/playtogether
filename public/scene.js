@@ -1,5 +1,12 @@
 import * as T from 'three';
 import { GLTFLoader } from '/vendor/three-addons/loaders/GLTFLoader.js';
+import { EffectComposer } from '/vendor/three-addons/postprocessing/EffectComposer.js';
+import { RenderPass } from '/vendor/three-addons/postprocessing/RenderPass.js';
+import { SSAOPass } from '/vendor/three-addons/postprocessing/SSAOPass.js';
+import { UnrealBloomPass } from '/vendor/three-addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from '/vendor/three-addons/postprocessing/OutputPass.js';
+import { ShaderPass } from '/vendor/three-addons/postprocessing/ShaderPass.js';
+import { VignetteShader } from '/vendor/three-addons/shaders/VignetteShader.js';
 import { createArt } from './art.js';
 import { MATERIALS } from './materials.js';
 import { createEnvironment } from './environment.js';
@@ -24,7 +31,7 @@ export function createScene(container) {
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   let matchWinner = null, eventBaseline = false;
   const renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.35));
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFSoftShadowMap;
   renderer.outputColorSpace = T.SRGBColorSpace; renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
   container.append(renderer.domElement);
@@ -32,8 +39,21 @@ export function createScene(container) {
   const camera = new T.PerspectiveCamera(36, 1, 0.1, 400);
   const hemisphere = new T.HemisphereLight(0xe7faff, 0x809085, 2.2); scene.add(hemisphere);
   const sun = new T.DirectionalLight(0xffdfad, 3.3); sun.position.set(-15, 28, 18); sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024); Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 22, bottom: -22, near: 1, far: 80 });
-  sun.shadow.normalBias = 0.035; scene.add(sun);
+  sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 22, bottom: -22, near: 1, far: 80 });
+  sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.025; scene.add(sun);
+  const blastLight = new T.PointLight(0xff9b45, 0, 22, 2); blastLight.position.z = 4; scene.add(blastLight);
+  const lightingThemes = {
+    townhouse: { sky: 0xe7faff, ground: 0x809085, sun: 0xffdfad, exposure: 1.05 },
+    tower: { sky: 0xdff6ff, ground: 0x718b87, sun: 0xffd39a, exposure: 1.08 },
+    bridge: { sky: 0xd7f2ff, ground: 0x718d91, sun: 0xffe7bd, exposure: 1.0 },
+    fortress: { sky: 0xffead7, ground: 0x80766f, sun: 0xffbd7a, exposure: 1.08 }
+  };
+  function applyLightingTheme(mapId) {
+    const theme = lightingThemes[mapId] || lightingThemes.townhouse;
+    hemisphere.color.setHex(theme.sky); hemisphere.groundColor.setHex(theme.ground);
+    sun.color.setHex(theme.sun); renderer.toneMappingExposure = theme.exposure;
+    environment.setTheme(mapId); container.dataset.lightingTheme = mapId || 'townhouse';
+  }
   const materials = new Map();
   function material(color) {
     if (!materials.has(color)) materials.set(color, new T.MeshStandardMaterial({ color, roughness: 0.88 }));
@@ -262,7 +282,7 @@ export function createScene(container) {
     if (!data) return;
     container.dataset.map = data.mapId;
     container.setAttribute('aria-label', `Đấu trường 3D · ${data.mapName}`);
-    if (currentMap !== data.mapId) { reset(); currentMap = data.mapId; rebuildMapDecor(); }
+    if (currentMap !== data.mapId) { reset(); currentMap = data.mapId; applyLightingTheme(currentMap); rebuildMapDecor(); }
     activeShooter = data.items.find(i => i.id === data.shooterId) || null; gamePhase = data.phase; currentWind = data.wind || 0;
     const enemies = data.items.filter(i => i.kind === 'resident' && i.team !== data.team && i.hp > 0);
     const enemyX = enemies.length ? enemies.reduce((sum, item) => sum + item.p[0], 0) / enemies.length : 0;
@@ -372,6 +392,7 @@ export function createScene(container) {
       }
       if (event.type === 'blast') {
         shake = reducedMotion.matches ? 0 : .24;
+        blastLight.position.set(event.x, Math.max(.5, event.y), 3); blastLight.intensity = 34;
         for (let i = 0; i < (reducedMotion.matches ? 8 : 24); i++) {
           const m = sphere(event.x, Math.max(.3, event.y), 0, .16 + Math.random() * .22, [0xffd888, 0xf29a68, 0xc7b8a0][i % 3]);
           addParticle(m, (Math.random() - .5) * 10, Math.random() * 7, (Math.random() - .5) * 4, .5 + Math.random());
@@ -384,6 +405,7 @@ export function createScene(container) {
       }
       if (event.type === 'barrelBlast') {
         shake = reducedMotion.matches ? 0 : .38;
+        blastLight.position.set(event.x, Math.max(.5, event.y), 3); blastLight.intensity = 48;
         for (let i = 0; i < (reducedMotion.matches ? 10 : 34); i++) {
           const m = sphere(event.x, Math.max(.35, event.y), 0, .14 + Math.random() * .28, [0xffee91, 0xff8b38, 0xd84b32, 0x3d4240][i % 4]);
           addParticle(m, (Math.random() - .5) * 13, 2 + Math.random() * 10, (Math.random() - .5) * 6, .65 + Math.random() * .45);
@@ -407,11 +429,38 @@ export function createScene(container) {
     mapDecor.clear(); container.dataset.mapDecor = '0'; container.dataset.structureDecor = '0';
     container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; delete container.dataset.lastMaterial; delete container.dataset.lastEnvironmentEvent;
   }
-  let width, height;
+  let width, height, composer = null, ssaoPass = null, bloomPass = null, vignettePass = null;
+  function setupPostProcessing() {
+    try {
+      composer = new EffectComposer(renderer);
+      composer.addPass(new RenderPass(scene, camera));
+      ssaoPass = new SSAOPass(scene, camera, width, height, 16);
+      ssaoPass.kernelRadius = 7; ssaoPass.minDistance = .002; ssaoPass.maxDistance = .09;
+      composer.addPass(ssaoPass);
+      bloomPass = new UnrealBloomPass(new T.Vector2(width, height), .34, .48, .88);
+      composer.addPass(bloomPass);
+      vignettePass = new ShaderPass(VignetteShader);
+      vignettePass.uniforms.offset.value = 1.08; vignettePass.uniforms.darkness.value = .62;
+      composer.addPass(vignettePass); composer.addPass(new OutputPass());
+      container.dataset.postprocessing = 'enabled'; container.dataset.bloom = 'true';
+    } catch (error) {
+      composer = null; container.dataset.postprocessing = 'fallback'; container.dataset.bloom = 'false';
+      console.warn('Post-processing disabled:', error);
+    }
+  }
+  function updateRenderQuality() {
+    const constrained = reducedMotion.matches || width < 900 || height < 500 || (navigator.deviceMemory && navigator.deviceMemory <= 4);
+    if (ssaoPass) ssaoPass.enabled = !constrained;
+    if (bloomPass) bloomPass.strength = constrained ? .22 : .34;
+    container.dataset.postQuality = constrained ? 'balanced' : 'high';
+    container.dataset.ambientOcclusion = String(Boolean(ssaoPass?.enabled));
+  }
   function resize() {
     width = container.clientWidth; height = container.clientHeight; renderer.setSize(width, height); camera.aspect = width / height; camera.updateProjectionMatrix();
+    composer?.setSize(width, height); updateRenderQuality();
   }
-  window.addEventListener('resize', resize); resize();
+  window.addEventListener('resize', resize); resize(); setupPostProcessing(); updateRenderQuality();
+  reducedMotion.addEventListener?.('change', updateRenderQuality);
   let lastTime = performance.now();
   function render(now) {
     requestAnimationFrame(render); const dt = Math.min(0.05, (now - lastTime) / 1000); lastTime = now;
@@ -484,6 +533,7 @@ export function createScene(container) {
       return true;
     });
     container.dataset.fragments = particles.filter(p => p.debris).length;
+    blastLight.intensity = Math.max(0, blastLight.intensity - dt * 95);
 
     if (!reducedMotion.matches) {
       pennants.forEach((f, i) => { f.rotation.y = currentWind * .11 + Math.sin(now / 650 + i) * (.04 + Math.abs(currentWind) * .035); });
@@ -494,7 +544,7 @@ export function createScene(container) {
         left.rotation.z = Math.sin(now / 190 + i) * .35; right.rotation.z = -left.rotation.z;
       });
     }
-    renderer.render(scene, camera);
+    if (composer) composer.render(dt); else renderer.render(scene, camera);
   }
   requestAnimationFrame(render);
   return { update, updateAim, reset, aimPreview, setOverview: value => { overview = value; }, setMode: value => { mode = value; } };

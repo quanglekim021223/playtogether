@@ -3,11 +3,22 @@ import * as T from 'three';
 // A miniature coastal world behind the arena. Scenery never enters the physics world.
 export function createEnvironment(scene) {
   const sky = document.createElement('canvas'); sky.width = 2; sky.height = 512;
-  const ctx = sky.getContext('2d'), gradient = ctx.createLinearGradient(0, 0, 0, 512);
-  gradient.addColorStop(0, '#82bdd5'); gradient.addColorStop(.52, '#c6e2df'); gradient.addColorStop(1, '#f7dfb1');
-  ctx.fillStyle = gradient; ctx.fillRect(0, 0, 2, 512);
+  const ctx = sky.getContext('2d');
   const skyTexture = new T.CanvasTexture(sky); skyTexture.colorSpace = T.SRGBColorSpace; scene.background = skyTexture;
   scene.fog = new T.Fog('#c6ddd6', 80, 190);
+  const themes = {
+    townhouse: ['#82bdd5', '#c6e2df', '#f7dfb1', '#c6ddd6'],
+    tower: ['#79b9d6', '#c8e1dc', '#f6d6a1', '#bed8d1'],
+    bridge: ['#78b6d2', '#b7d8d7', '#f3ddb7', '#b7d2d2'],
+    fortress: ['#9ab8c9', '#dfcbb7', '#f2bd85', '#cdbdab']
+  };
+  function setTheme(mapId = 'townhouse') {
+    const [top, middle, bottom, fog] = themes[mapId] || themes.townhouse;
+    const gradient = ctx.createLinearGradient(0, 0, 0, 512);
+    gradient.addColorStop(0, top); gradient.addColorStop(.52, middle); gradient.addColorStop(1, bottom);
+    ctx.fillStyle = gradient; ctx.fillRect(0, 0, 2, 512); skyTexture.needsUpdate = true; scene.fog.color.set(fog);
+  }
+  setTheme();
   const cube = new T.BoxGeometry(1, 1, 1), stone = new T.DodecahedronGeometry(1, 0), ball = new T.SphereGeometry(1, 16, 8);
   const cone = new T.ConeGeometry(1, 1, 4), cylinder = new T.CylinderGeometry(1, 1, 1, 16);
   const palette = new Map();
@@ -71,6 +82,7 @@ export function createEnvironment(scene) {
     clouds.push(cloud);
   }
   return {
+    setTheme,
     animate(now) {
       ripples.position.x = Math.sin(now / 4500) * .4;
       clouds.forEach((c, i) => { c.position.x = -65 + i * 22 + Math.sin(now / 25000 + i) * 2; });

@@ -19,7 +19,7 @@ OUT = os.path.abspath(output_dir())
 os.makedirs(OUT, exist_ok=True)
 
 
-def material(name, color, metallic=0.0, roughness=0.75, alpha=1.0):
+def material(name, color, metallic=0.0, roughness=0.75, alpha=1.0, emission=None, emission_strength=0.0):
     mat = bpy.data.materials.new(name)
     mat.diffuse_color = (*color, alpha)
     mat.use_nodes = True
@@ -27,6 +27,11 @@ def material(name, color, metallic=0.0, roughness=0.75, alpha=1.0):
     bsdf.inputs["Base Color"].default_value = (*color, 1)
     bsdf.inputs["Metallic"].default_value = metallic
     bsdf.inputs["Roughness"].default_value = roughness
+    emission_input = bsdf.inputs.get("Emission Color") or bsdf.inputs.get("Emission")
+    if emission and emission_input:
+        emission_input.default_value = (*emission, 1)
+        strength_input = bsdf.inputs.get("Emission Strength")
+        if strength_input: strength_input.default_value = emission_strength
     if alpha < 1:
         bsdf.inputs["Alpha"].default_value = alpha
         mat.surface_render_method = 'DITHERED'
@@ -47,7 +52,7 @@ MORTAR = material("Mortar", (0.75, 0.62, 0.49), roughness=0.95)
 METAL = material("Metal", (0.10, 0.15, 0.18), metallic=0.78, roughness=0.34)
 CORAL = material("Coral", (0.85, 0.11, 0.06), metallic=0.05, roughness=0.58)
 TEAL = material("Teal", (0.08, 0.62, 0.58), metallic=0.15, roughness=0.42)
-GLOW = material("Glow", (0.60, 1.0, 0.84), metallic=0.1, roughness=0.18)
+GLOW = material("Glow", (0.60, 1.0, 0.84), metallic=0.1, roughness=0.18, emission=(0.28, 1.0, 0.72), emission_strength=3.2)
 WARNING = material("Warning", (1.0, 0.68, 0.12), metallic=0.05, roughness=0.55)
 SKIN = material("Skin", (0.92, 0.56, 0.34), roughness=0.72)
 SKIN_LIGHT = material("Skin Light", (1.0, 0.68, 0.43), roughness=0.7)
