@@ -110,6 +110,8 @@ Hai thùng xăng là body động có 42 HP. Đạn chạm trực tiếp sẽ k�
 
 Khối xuất hiện vết nứt khi còn dưới 85% HP, nứt nặng khi còn tối đa 45%; cú đánh đủ mạnh có thể phá ngay. Khối còn nguyên chịu vật lý tại server; khi vỡ, collider bị bỏ và những tầng bên trên được đánh thức để sụp. Mảnh vụn là hiệu ứng hình ảnh, không gây thêm sát thương. Hiệu ứng giới hạn 180 hạt cùng lúc, tự dọn sau vài giây và dùng chung geometry/material.
 
+Va chạm gửi kèm điểm chạm, pháp tuyến và cường độ từ mô phỏng server. Dấu cháy hoặc vết va chạm được gắn vào chính khối còn tồn tại nên tiếp tục đi theo khi khối nghiêng và rơi. Khi công trình vỡ, bụi lấy số lượng từ kích thước khối: đá/gạch tạo đám bụi thấp, dày và nặng; gỗ tạo dằm dài; kính tạo mảnh rất mỏng, nhẹ và quay nhanh. Mỗi vật liệu có trọng lực, lực cản, độ nảy và tốc độ xoay riêng. Flash vụ nổ đổi màu, bán kính và cường độ theo vũ khí, dùng PointLight PBR để hắt sáng lên nhân vật và môi trường gần điểm nổ.
+
 Nhân vật có thở, chớp mắt, phản ứng bị thương và mừng thắng bằng hoạt ảnh nhóm bộ phận. Nhà có vân gỗ, mạch gạch, kính, mái ngói và chi tiết gắn theo khối vật lý. Cây, cờ, mây, chim chuyển động nhẹ; pháo có giật lùi, vệt đạn, khói và vòng xung kích. Tùy chọn giảm chuyển động của hệ điều hành tắt rung camera, chuyển động nền và giảm số hạt. Texture và âm thanh đều tạo trong code; âm thanh mở sau thao tác người dùng, có nút tắt tiếng.
 
 ## Cấu trúc

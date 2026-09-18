@@ -74,7 +74,8 @@ test('cracks, material fragments, event deduplication, expiry and reconnect', as
   await page.goto('/?controller=1');
   const game = new Match('tower'), initial = game.snapshot();
   const damaged = game.items.find(i => i.team === 1 && i.material === 'brick');
-  game.damage(damaged, damaged.maxHp * .35); const cracked = game.snapshot();
+  const contact = damaged.body.position.clone(); contact.x += damaged.size[0] / 2;
+  game.damage(damaged, damaged.maxHp * .35, 'blast', contact, 18); const cracked = game.snapshot();
   await page.evaluate(async snapshot => {
     const { createScene } = await import('/scene.js');
     document.querySelector('#app').remove(); document.body.classList.remove('controller');
@@ -84,6 +85,8 @@ test('cracks, material fragments, event deduplication, expiry and reconnect', as
   }, initial);
   await page.evaluate(snapshot => window.artTestScene.update(snapshot), cracked);
   await expect(page.locator('#scene')).toHaveAttribute('data-cracked', '1');
+  await expect.poll(() => page.locator('#scene').getAttribute('data-attached-decals').then(Number)).toBeGreaterThan(0);
+  await expect(page.locator('#scene')).toHaveAttribute('data-collapse-dust', 'brick');
   await page.screenshot({ path: 'artifacts/material-cracks.png', scale: 'css' });
   const glass = game.items.find(i => i.team === 1 && i.material === 'glass');
   game.damage(glass, 999); const broken = game.snapshot();
@@ -114,11 +117,14 @@ test('character rigs animate visually without changing collider pose; reduced mo
     resident.userData.hurtUntil = 2; art.animateResident(resident, 1500, false, null); const hurt = resident.userData.mouth.scale.y;
     art.animateResident(resident, 3000, true, 0); const rest = resident.userData.rig.position.toArray();
     const won = resident.userData.arms[0].rotation.z;
-    const fragments = ['wood', 'brick', 'stone', 'glass'].map(m => { const mesh = art.fragment(m, 1); return { kind: mesh.userData.fragment, scale: mesh.scale.toArray() }; });
+    const fragments = ['wood', 'brick', 'stone', 'glass'].map(m => { const mesh = art.fragment(m, 1); return { material: mesh.userData.material, kind: mesh.userData.fragment, bounce: mesh.userData.bounce, scale: mesh.scale.toArray() }; });
     return { a, b, hurt, rest, won, pose: resident.position.toArray(), fragments };
   });
   expect(result.a).not.toBe(result.b); expect(result.hurt).toBeGreaterThan(1); expect(result.rest).toEqual([0, 0, 0]); expect(result.pose).toEqual([4, 3, 0]); expect(Math.abs(result.won)).toBe(2);
   expect(new Set(result.fragments.map(f => f.kind)).size).toBe(4);
+  expect(result.fragments.map(f => f.material)).toEqual(['wood', 'brick', 'stone', 'glass']);
+  expect(result.fragments.find(f => f.material === 'glass').scale[2]).toBeLessThan(result.fragments.find(f => f.material === 'wood').scale[2]);
+  expect(result.fragments.find(f => f.material === 'stone').bounce).toBeLessThan(result.fragments.find(f => f.material === 'glass').bounce);
 });
 
 test('camera follows the active resident across teams and rooftops; overview and reduced motion remain available', async ({ page }) => {

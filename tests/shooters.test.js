@@ -60,7 +60,7 @@ test('a wall in front of the muzzle blocks the shot instead of teleporting throu
 });
 for (const map of Object.keys(MAPS)) test(`${map}: every resident can launch from an open position`, () => {
   for (const team of [0, 1]) for (let index = 0; index < 6; index++) {
-    const game = new Match(map); game.team = team; game.shooterCursor[team] = index; game.syncShooter();
+    const game = new Match(map); game.wind = 0; game.team = team; game.shooterCursor[team] = index; game.syncShooter();
     const aim = game.botAim();
     assert.equal(aim.weapon, game.shooter.weapon);
     game.readyAim();

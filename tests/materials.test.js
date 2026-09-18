@@ -31,6 +31,14 @@ test('cracks persist in snapshots before break; removed collider emits one mater
   assert.equal(breaks.length, 1); assert.equal(breaks[0].material, 'brick'); assert.equal(breaks[0].p.length, 3); assert.equal(breaks[0].q.length, 4);
   assert.equal(crackStage(100, 100), 0); assert.equal(crackStage(0, 100), 0);
 });
+test('damage events include an authoritative contact point, normal and strength', () => {
+  const game = new Match(); const part = game.items.find(i => i.material === 'wood');
+  const impact = part.body.position.clone(); impact.x += part.size[0] / 2;
+  game.damage(part, 4, 'impact', impact, 13.5);
+  const event = game.events.at(-1);
+  assert.equal(event.type, 'hit'); assert.deepEqual(event.impact, impact.toArray());
+  assert.ok(event.normal[0] > .99); assert.equal(event.impactStrength, 13.5);
+});
 test('a falling glass block shatters on collision, a resting block remains intact', () => {
   const game = new Match();
   game.add('block', 0, 0, 8, [1, 1, 1], 1, 100, 'glass');

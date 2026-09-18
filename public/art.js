@@ -186,11 +186,11 @@ export function createArt() {
     const geometry = type === 'stone' ? rock : type === 'glass' ? shard : cube;
     const m = mesh(geometry, surfaces[type]);
     const s = .14 + (index % 4) * .045;
-    if (type === 'wood') m.scale.set(.08 + index % 2 * .045, .4 + index % 4 * .13, .07);
-    else if (type === 'glass') m.scale.set(s * 1.7, s * 2, .035);
+    if (type === 'wood') m.scale.set(.055 + index % 2 * .035, .42 + index % 4 * .15, .045);
+    else if (type === 'glass') m.scale.set(s * 1.8, s * 2.2, .018);
     else if (type === 'brick') m.scale.set(s * 1.6, s, s);
     else m.scale.setScalar(s * 1.2);
-    m.userData.bounce = props.bounce; m.userData.fragment = props.fragment;
+    m.userData.bounce = props.bounce; m.userData.fragment = props.fragment; m.userData.material = type;
     return m;
   }
   return { block, interactive, resident, animateResident, fragment };
