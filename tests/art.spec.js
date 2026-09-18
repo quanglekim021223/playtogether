@@ -34,11 +34,14 @@ test('environment meshes render and a fuel blast produces bounded effects and au
   }, initial);
   await expect(page.locator('#scene')).toHaveAttribute('data-fuel-barrels', '2');
   await expect(page.locator('#scene')).toHaveAttribute('data-bounce-pads', '2');
-  await expect(page.locator('#scene')).toHaveAttribute('data-asset-kit', '14');
+  await expect(page.locator('#scene')).toHaveAttribute('data-asset-kit', '22');
   await expect(page.locator('#scene')).toHaveAttribute('data-resident-assets', '2');
   await expect(page.locator('#scene')).toHaveAttribute('data-weapon-assets', '6');
+  await expect(page.locator('#scene')).toHaveAttribute('data-decor-assets', '8');
   await expect.poll(() => page.locator('#scene').getAttribute('data-resident-models').then(Number)).toBeGreaterThan(0);
   await expect.poll(() => page.locator('#scene').getAttribute('data-weapon-models').then(Number)).toBeGreaterThan(0);
+  await expect.poll(() => page.locator('#scene').getAttribute('data-map-decor').then(Number)).toBeGreaterThanOrEqual(6);
+  await expect.poll(() => page.locator('#scene').getAttribute('data-structure-decor').then(Number)).toBeGreaterThan(0);
   game.damageEnvironment(game.environmentItems.find(i => i.kind === 'fuelBarrel'), 999, 'test');
   await page.evaluate(snapshot => window.environmentScene.update(snapshot), game.snapshot());
   await expect(page.locator('#scene')).toHaveAttribute('data-fuel-barrels', '1');

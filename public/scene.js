@@ -15,7 +15,11 @@ export function createScene(container) {
     resident0: ['bp_residentcoral.glb', [1, 1.65, .75]], resident1: ['bp_residentteal.glb', [1, 1.65, .75]],
     'weapon:pebble': ['bp_weaponpebble.glb', [1, .75, .3]], 'weapon:heavy': ['bp_weaponheavy.glb', [1.25, .65, .5]],
     'weapon:bloom': ['bp_weaponbloom.glb', [1.2, .72, .68]], 'weapon:rocket': ['bp_weaponrocket.glb', [1.35, .62, .55]],
-    'weapon:drill': ['bp_weapondrill.glb', [1.4, .72, .55]], 'weapon:pulse': ['bp_weaponpulse.glb', [1.28, .72, .58]]
+    'weapon:drill': ['bp_weapondrill.glb', [1.4, .72, .55]], 'weapon:pulse': ['bp_weaponpulse.glb', [1.28, .72, .58]],
+    'decor:window': ['bp_decorwindow.glb', [1.22, 1.3, .4]], 'decor:door': ['bp_decordoor.glb', [1.12, 1.66, .48]],
+    'decor:railing': ['bp_decorrailing.glb', [2, .82, .12]], 'decor:chimney': ['bp_decorchimney.glb', [.72, 1.21, .72]],
+    'decor:streetlamp': ['bp_decorstreetlamp.glb', [.66, 2.48, .46]], 'decor:crate': ['bp_decorcrate.glb', [.82, .76, .82]],
+    'decor:planter': ['bp_decorplanter.glb', [1.05, 1.25, .52]], 'decor:sign': ['bp_decorsign.glb', [1.55, 1.07, .18]]
   };
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   let matchWinner = null, eventBaseline = false;
@@ -103,6 +107,7 @@ export function createScene(container) {
     birds.push({ bird, left, right });
   }
   const objects = new Map(); const projectileMeshes = new Map(); let shot = null; let particles = []; let lastEvent = 0; let shake = 0; let trailAt = 0; let mode = 'home';
+  const mapDecor = new T.Group(); mapDecor.name = 'MapDecor'; scene.add(mapDecor);
   let currentMap = null, activeShooter = null, gamePhase = 'aim', overview = false, currentWind = 0, tacticalTarget = new T.Vector3();
   const selection = new T.Mesh(new T.TorusGeometry(.68, .035, 6, 36), new T.MeshBasicMaterial({ color: 0xffd376, depthTest: false }));
   selection.renderOrder = 9; selection.visible = false; scene.add(selection);
@@ -144,6 +149,41 @@ export function createScene(container) {
     obj.userData.gun.add(model); model.visible = true;
     obj.userData.weaponModel = model; obj.userData.assetWeapon = weapon;
   }
+  function decorClone(key, parent, position, scale = 1, rotation = 0) {
+    const asset = kit.get(`decor:${key}`); if (!asset) return null;
+    const model = asset.scene.clone(true); model.position.set(...position); model.scale.setScalar(scale); model.rotation.y = rotation;
+    model.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+    parent.add(model); return model;
+  }
+  const decorLayouts = {
+    townhouse: [['streetlamp', -9.5, 0, 2.8, 1], ['streetlamp', 9.5, 0, 2.8, 1], ['planter', -7.8, 0, 3.0, .8], ['planter', 7.8, 0, 3.0, .8], ['crate', -11, 0, 2.5, .9], ['crate', 11, 0, 2.5, .9]],
+    tower: [['streetlamp', -8.7, 0, 3.0, 1], ['streetlamp', 8.7, 0, 3.0, 1], ['crate', -10.4, 0, 2.5, 1], ['crate', -11.1, 0, 2.35, .72], ['crate', 10.4, 0, 2.5, 1], ['crate', 11.1, 0, 2.35, .72]],
+    bridge: [['streetlamp', -9.2, 0, 2.9, 1], ['streetlamp', 9.2, 0, 2.9, 1], ['planter', -11, 0, 2.8, .85], ['planter', 11, 0, 2.8, .85], ['crate', -7.7, 0, 2.5, .8], ['crate', 7.7, 0, 2.5, .8]],
+    fortress: [['streetlamp', -9.4, 0, 2.8, .9], ['streetlamp', 9.4, 0, 2.8, .9], ['crate', -10.6, 0, 2.5, 1], ['crate', 10.6, 0, 2.5, 1], ['planter', -7.8, 0, 2.8, .7], ['planter', 7.8, 0, 2.8, .7]]
+  };
+  function rebuildMapDecor() {
+    mapDecor.clear(); let count = 0;
+    for (const [key, x, y, z, scale] of decorLayouts[currentMap] || []) if (decorClone(key, mapDecor, [x, y, z], scale)) count++;
+    container.dataset.mapDecor = String(count);
+  }
+  function decorateStructure(obj, item) {
+    if (obj.userData.structureDecor || !item?.size || item.kind === 'resident') return;
+    const [w, h, d = 1] = item.size; const group = new T.Group(); group.name = 'StructureDecor'; let count = 0;
+    const add = (key, p, scale = 1) => { const model = decorClone(key, group, p, scale); if (model) count++; return model; };
+    const sequence = Number(item.id) || 0;
+    if (item.kind === 'beam' && w > 2.5 && sequence % 2 === 0) {
+      add('window', [0, -h / 2 - .62, d / 2 + .08], Math.min(.85, w / 4));
+      if (currentMap === 'townhouse') add('sign', [w * .27, -h / 2 - .48, d / 2 + .12], .62);
+    } else if (item.kind === 'roof') {
+      add('chimney', [w * (item.team === 0 ? -.28 : .28), h / 2, -.30], .72);
+    } else if (item.kind === 'bridge') {
+      add('railing', [0, h / 2, d / 2], Math.min(1.7, w / 2));
+    } else if (item.kind === 'block' && w > 1.05 && item.material !== 'glass') {
+      add(sequence % 2 ? 'door' : 'window', [0, -h / 2, d / 2 + .08], Math.min(.85, w / 1.3));
+    }
+    if (!count) return;
+    obj.add(group); obj.userData.structureDecor = group; container.dataset.structureDecor = String(Number(container.dataset.structureDecor || 0) + count);
+  }
   function applyKit(obj, item) {
     if (obj.userData.assetModel) return;
     const key = kitKey(item); if (!key) return;
@@ -165,10 +205,13 @@ export function createScene(container) {
     container.dataset.assetKit = String(kit.size);
     container.dataset.residentAssets = String([...kit.keys()].filter(key => key.startsWith('resident')).length);
     container.dataset.weaponAssets = String([...kit.keys()].filter(key => key.startsWith('weapon:')).length);
+    container.dataset.decorAssets = String([...kit.keys()].filter(key => key.startsWith('decor:')).length);
     for (const obj of objects.values()) {
       if (obj.userData.assetItem) applyKit(obj, obj.userData.assetItem);
       if (obj.userData.weaponKey) attachWeaponAsset(obj, obj.userData.weaponKey);
+      if (obj.userData.decorItem) decorateStructure(obj, obj.userData.decorItem);
     }
+    rebuildMapDecor();
     container.dataset.residentModels = String([...objects.values()].filter(obj => obj.userData.assetAnimator).length);
     container.dataset.weaponModels = String([...objects.values()].filter(obj => obj.userData.weaponModel).length);
   }).catch(() => { container.dataset.assetKit = 'fallback'; });
@@ -219,7 +262,7 @@ export function createScene(container) {
     if (!data) return;
     container.dataset.map = data.mapId;
     container.setAttribute('aria-label', `Đấu trường 3D · ${data.mapName}`);
-    if (currentMap !== data.mapId) { reset(); currentMap = data.mapId; }
+    if (currentMap !== data.mapId) { reset(); currentMap = data.mapId; rebuildMapDecor(); }
     activeShooter = data.items.find(i => i.id === data.shooterId) || null; gamePhase = data.phase; currentWind = data.wind || 0;
     const enemies = data.items.filter(i => i.kind === 'resident' && i.team !== data.team && i.hp > 0);
     const enemyX = enemies.length ? enemies.reduce((sum, item) => sum + item.p[0], 0) / enemies.length : 0;
@@ -240,6 +283,7 @@ export function createScene(container) {
           : ['fuelBarrel', 'bouncePad'].includes(item.kind) ? art.interactive(item) : art.block(item);
         applyKit(obj, item);
         if (item.kind === 'resident') { obj.userData.weaponKey = item.weapon; attachWeaponAsset(obj, item.weapon); }
+        obj.userData.decorItem = item; decorateStructure(obj, item);
         scene.add(obj); objects.set(item.id, obj); obj.position.set(item.p[0], item.p[1], item.kind === 'resident' ? 1.3 : item.p[2]); obj.quaternion.fromArray(item.q);
       }
       obj.userData.targetP = new T.Vector3(item.p[0], item.p[1], item.kind === 'resident' ? 1.3 : item.p[2]); obj.userData.targetQ = item.kind === 'resident' ? new T.Quaternion() : new T.Quaternion(...item.q);
@@ -360,6 +404,7 @@ export function createScene(container) {
     aimArrow.visible = false; impactMarker.visible = false; dots.forEach(dot => { dot.visible = false; }); lastEvent = 0; eventBaseline = false; matchWinner = null; activeShooter = null; selection.visible = false;
     for (const obj of objects.values()) scene.remove(obj); objects.clear();
     if (shot) scene.remove(shot); shot = null; for (const m of projectileMeshes.values()) scene.remove(m); projectileMeshes.clear(); for (const p of particles) scene.remove(p.mesh); particles = [];
+    mapDecor.clear(); container.dataset.mapDecor = '0'; container.dataset.structureDecor = '0';
     container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; delete container.dataset.lastMaterial; delete container.dataset.lastEnvironmentEvent;
   }
   let width, height;

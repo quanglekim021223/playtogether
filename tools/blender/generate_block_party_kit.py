@@ -310,6 +310,82 @@ def weapon_pulse():
     return r, (1.28, .72, .58), "weapon:pulse"
 
 
+def decor_window():
+    r = root("BP_DecorWindow")
+    cube("Glass", r, (0, .55, 0), (1.05, 1.10, .07), GLASS, .015)
+    for x in (-.56, .56): cube("Frame", r, (x, .55, .02), (.11, 1.24, .14), WOOD_DARK, .025)
+    for y in (-.03, .55, 1.13): cube("Frame", r, (0, y, .02), (1.22, .09, .14), WOOD_DARK, .025)
+    cube("FlowerBox", r, (0, -.13, .18), (1.0, .22, .35), WOOD, .045)
+    for x in (-.34, 0, .34): sphere("Plant", r, (x, .04, .22), (.18, .20, .16), TEAL, 16, 8)
+    return r, (1.22, 1.30, .40), "decor:window"
+
+
+def decor_door():
+    r = root("BP_DecorDoor")
+    cube("Door", r, (0, .80, 0), (.90, 1.60, .16), WOOD_DARK, .07)
+    for y in (.42, 1.16): cube("Panel", r, (0, y, .095), (.67, .50, .045), WOOD, .045)
+    sphere("Knob", r, (.29, .80, .15), (.07, .07, .055), WARNING, 16, 8)
+    cube("Step", r, (0, -.05, .12), (1.12, .12, .48), STONE, .035)
+    return r, (1.12, 1.66, .48), "decor:door"
+
+
+def decor_railing():
+    r = root("BP_DecorRailing")
+    cube("TopRail", r, (0, .76, 0), (2.0, .11, .12), METAL, .025)
+    cube("BottomRail", r, (0, .10, 0), (2.0, .08, .10), METAL, .02)
+    for x in (-.92, -.46, 0, .46, .92): cube("Post", r, (x, .40, 0), (.08, .80, .08), METAL, .02)
+    return r, (2.0, .82, .12), "decor:railing"
+
+
+def decor_chimney():
+    r = root("BP_DecorChimney")
+    cube("Stack", r, (0, .55, 0), (.55, 1.10, .55), BRICK, .045)
+    for y in (.18, .53, .88): cube("Mortar", r, (0, y, .286), (.53, .035, .025), MORTAR, .005)
+    cube("Cap", r, (0, 1.13, 0), (.72, .16, .72), STONE_DARK, .04)
+    return r, (.72, 1.21, .72), "decor:chimney"
+
+
+def decor_streetlamp():
+    r = root("BP_DecorStreetlamp")
+    cylinder("Pole", r, (0, 1.25, 0), .065, 2.5, METAL)
+    cylinder("Base", r, (0, .12, 0), .18, .24, STONE_DARK)
+    cube("Arm", r, (.22, 2.40, 0), (.48, .08, .08), METAL, .025)
+    cube("Lantern", r, (.42, 2.17, 0), (.34, .43, .34), WARNING, .07)
+    cube("LanternCore", r, (.42, 2.17, .18), (.20, .28, .035), GLOW, .02)
+    cube("Roof", r, (.42, 2.43, 0), (.46, .10, .46), METAL, .03)
+    return r, (.66, 2.48, .46), "decor:streetlamp"
+
+
+def decor_crate():
+    r = root("BP_DecorCrate")
+    cube("Crate", r, (0, .38, 0), (.82, .76, .72), WOOD, .055)
+    for y in (.12, .38, .64): cube("Plank", r, (0, y, .38), (.76, .08, .055), WOOD_LIGHT, .018)
+    for sign in (-1, 1):
+        brace = cube("Brace", r, (0, .38, .42), (.09, .72, .05), WOOD_DARK, .015)
+        brace.rotation_euler.z = sign * .72
+    return r, (.82, .76, .82), "decor:crate"
+
+
+def decor_planter():
+    r = root("BP_DecorPlanter")
+    cube("Planter", r, (0, .22, 0), (1.05, .44, .52), CORAL, .07)
+    cube("Soil", r, (0, .46, 0), (.92, .08, .40), WOOD_DARK, .025)
+    for x in (-.34, 0, .34):
+        cylinder("Stem", r, (x, .72, 0), .035, .52, TEAL)
+        sphere("Leaves", r, (x, .92, 0), (.24, .30, .22), TEAL, 16, 8)
+        sphere("Flower", r, (x, 1.15, .12), (.10, .10, .07), WARNING, 12, 8)
+    return r, (1.05, 1.25, .52), "decor:planter"
+
+
+def decor_sign():
+    r = root("BP_DecorSign")
+    cube("Board", r, (0, .72, 0), (1.55, .70, .14), WEAPON_BLUE, .08)
+    cube("Inset", r, (0, .72, .085), (1.27, .43, .035), SHIRT, .04)
+    for x in (-.35, 0, .35): cube("Mark", r, (x, .72, .115), (.17, .10, .025), CORAL if x else TEAL, .02)
+    cube("Bracket", r, (-.64, .18, 0), (.10, .72, .10), METAL, .02)
+    return r, (1.55, 1.07, .18), "decor:sign"
+
+
 def export(root_obj, name):
     bpy.ops.object.select_all(action='DESELECT')
     root_obj.select_set(True)
@@ -323,6 +399,7 @@ bpy.ops.object.delete(use_global=False)
 assets = [factory() for factory in (wood_block, brick_block, stone_block, glass_block, fuel_barrel, bounce_pad)]
 assets.extend((resident_asset(0), resident_asset(1)))
 assets.extend(factory() for factory in (weapon_pebble, weapon_heavy, weapon_bloom, weapon_rocket, weapon_drill, weapon_pulse))
+assets.extend(factory() for factory in (decor_window, decor_door, decor_railing, decor_chimney, decor_streetlamp, decor_crate, decor_planter, decor_sign))
 manifest = []
 for obj, size, kind in assets:
     export(obj, obj.name.lower())

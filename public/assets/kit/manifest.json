@@ -138,5 +138,85 @@
       0.58
     ],
     "kind": "weapon:pulse"
+  },
+  {
+    "file": "bp_decorwindow.glb",
+    "name": "BP_DecorWindow",
+    "size": [
+      1.22,
+      1.3,
+      0.4
+    ],
+    "kind": "decor:window"
+  },
+  {
+    "file": "bp_decordoor.glb",
+    "name": "BP_DecorDoor",
+    "size": [
+      1.12,
+      1.66,
+      0.48
+    ],
+    "kind": "decor:door"
+  },
+  {
+    "file": "bp_decorrailing.glb",
+    "name": "BP_DecorRailing",
+    "size": [
+      2.0,
+      0.82,
+      0.12
+    ],
+    "kind": "decor:railing"
+  },
+  {
+    "file": "bp_decorchimney.glb",
+    "name": "BP_DecorChimney",
+    "size": [
+      0.72,
+      1.21,
+      0.72
+    ],
+    "kind": "decor:chimney"
+  },
+  {
+    "file": "bp_decorstreetlamp.glb",
+    "name": "BP_DecorStreetlamp",
+    "size": [
+      0.66,
+      2.48,
+      0.46
+    ],
+    "kind": "decor:streetlamp"
+  },
+  {
+    "file": "bp_decorcrate.glb",
+    "name": "BP_DecorCrate",
+    "size": [
+      0.82,
+      0.76,
+      0.82
+    ],
+    "kind": "decor:crate"
+  },
+  {
+    "file": "bp_decorplanter.glb",
+    "name": "BP_DecorPlanter",
+    "size": [
+      1.05,
+      1.25,
+      0.52
+    ],
+    "kind": "decor:planter"
+  },
+  {
+    "file": "bp_decorsign.glb",
+    "name": "BP_DecorSign",
+    "size": [
+      1.55,
+      1.07,
+      0.18
+    ],
+    "kind": "decor:sign"
   }
 ]
