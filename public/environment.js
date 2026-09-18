@@ -1,7 +1,18 @@
 import * as T from 'three';
+import { RGBELoader } from '/vendor/three-addons/loaders/RGBELoader.js';
+import { RoomEnvironment } from '/vendor/three-addons/environments/RoomEnvironment.js';
 
 // A miniature coastal world behind the arena. Scenery never enters the physics world.
-export function createEnvironment(scene) {
+export function createEnvironment(scene, renderer) {
+  const pmrem = new T.PMREMGenerator(renderer); pmrem.compileEquirectangularShader();
+  const fallback = pmrem.fromScene(new RoomEnvironment(), .04).texture;
+  scene.environment = fallback; scene.environmentIntensity = .28;
+  const lightingReady = new Promise(resolve => {
+    new RGBELoader().load('/assets/environment/studio_small_09_1k.hdr', hdr => {
+      const environmentMap = pmrem.fromEquirectangular(hdr).texture;
+      scene.environment = environmentMap; hdr.dispose(); fallback.dispose(); pmrem.dispose(); resolve('hdri');
+    }, undefined, () => { pmrem.dispose(); resolve('procedural'); });
+  });
   const sky = document.createElement('canvas'); sky.width = 2; sky.height = 512;
   const ctx = sky.getContext('2d');
   const skyTexture = new T.CanvasTexture(sky); skyTexture.colorSpace = T.SRGBColorSpace; scene.background = skyTexture;
@@ -82,6 +93,7 @@ export function createEnvironment(scene) {
     clouds.push(cloud);
   }
   return {
+    lightingReady,
     setTheme,
     animate(now) {
       ripples.position.x = Math.sin(now / 4500) * .4;

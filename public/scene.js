@@ -1,5 +1,7 @@
 import * as T from 'three';
 import { GLTFLoader } from '/vendor/three-addons/loaders/GLTFLoader.js';
+import { KTX2Loader } from '/vendor/three-addons/loaders/KTX2Loader.js';
+import { MeshoptDecoder } from '/vendor/three-addons/libs/meshopt_decoder.module.js';
 import { EffectComposer } from '/vendor/three-addons/postprocessing/EffectComposer.js';
 import { RenderPass } from '/vendor/three-addons/postprocessing/RenderPass.js';
 import { SSAOPass } from '/vendor/three-addons/postprocessing/SSAOPass.js';
@@ -43,7 +45,9 @@ export function createScene(container) {
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFSoftShadowMap;
   renderer.outputColorSpace = T.SRGBColorSpace; renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
   container.append(renderer.domElement);
-  const scene = new T.Scene(); const environment = createEnvironment(scene);
+  const scene = new T.Scene(); const environment = createEnvironment(scene, renderer);
+  container.dataset.environmentLighting = 'loading';
+  environment.lightingReady.then(source => { container.dataset.environmentLighting = source; });
   const camera = new T.PerspectiveCamera(36, 1, 0.1, 400);
   const hemisphere = new T.HemisphereLight(0xe7faff, 0x809085, 2.2); scene.add(hemisphere);
   const sun = new T.DirectionalLight(0xffdfad, 3.3); sun.position.set(-15, 28, 18); sun.castShadow = true;
@@ -226,7 +230,9 @@ export function createScene(container) {
     model.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
     obj.add(model); obj.userData.assetModel = model; obj.userData.assetItem = null;
   }
-  const loader = new GLTFLoader();
+  const ktx2Loader = new KTX2Loader().setTranscoderPath('/vendor/three-addons/libs/basis/').detectSupport(renderer);
+  const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).setKTX2Loader(ktx2Loader);
+  container.dataset.meshCompression = 'meshopt'; container.dataset.textureCompression = 'ktx2-ready';
   Promise.all(Object.entries(kitFiles).map(async ([key, [file, size]]) => {
     const loaded = await loader.loadAsync(`/assets/kit/${file}`); kit.set(key, { scene: loaded.scene, size });
   })).then(() => {

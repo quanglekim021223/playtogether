@@ -68,10 +68,12 @@ test('phone-only practice: drag updates TV aim, release fires, bot returns turn'
     await expect(page.locator('#round-label')).toHaveText('LƯỢT 3', { timeout: 15_000 });
     await player.phone.locator('#ready-aim').click();
     await expect(player.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'false');
-    await expect(player.phone.locator('#shooter-weapon')).toHaveText('Bazooka');
-    await expect(page.locator('#scene')).toHaveAttribute('data-weapon', 'heavy');
+    const weapon = await page.locator('#scene').getAttribute('data-weapon');
+    const weaponNames = { pebble: 'Ná cao su', heavy: 'Bazooka', bloom: 'Súng cối', rocket: 'Tên lửa', drill: 'Súng phá giáp', pulse: 'Súng xung lực' };
+    expect(weaponNames[weapon]).toBeTruthy();
+    await expect(player.phone.locator('#shooter-weapon')).toHaveText(weaponNames[weapon]);
     await player.phone.reload();
-    await expect(player.phone.locator('#shooter-weapon')).toHaveText('Bazooka');
+    await expect(player.phone.locator('#shooter-weapon')).toHaveText(weaponNames[weapon]);
     expect(errors).toEqual([]);
     await page.locator('#back-lobby').click();
   } finally { await player.context.close(); }

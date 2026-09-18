@@ -19,7 +19,44 @@ OUT = os.path.abspath(output_dir())
 os.makedirs(OUT, exist_ok=True)
 
 
-def material(name, color, metallic=0.0, roughness=0.75, alpha=1.0, emission=None, emission_strength=0.0):
+def surface_maps(name, color, pattern, size=48):
+    """Create small tileable PBR maps without external image tools."""
+    heights = []
+    for y in range(size):
+        for x in range(size):
+            u, v = x / size, y / size
+            noise = math.sin((x * 12.9898 + y * 78.233) * 0.17) * 43758.5453
+            noise = noise - math.floor(noise)
+            if pattern == "wood": value = .5 + .28 * math.sin(u * 28 + math.sin(v * 9) * 2.2) + (noise - .5) * .12
+            elif pattern == "brick": value = .48 + (noise - .5) * .30 + .10 * math.sin((u + v) * 35)
+            elif pattern == "stone": value = .48 + .18 * math.sin(u * 17) * math.sin(v * 21) + (noise - .5) * .28
+            elif pattern == "metal": value = .52 + .14 * math.sin(v * 95) + (noise - .5) * .08
+            else: value = .5 + .10 * math.sin(u * 75) * math.sin(v * 75) + (noise - .5) * .06
+            heights.append(max(0, min(1, value)))
+
+    color_pixels, rough_pixels, normal_pixels = [], [], []
+    for y in range(size):
+        for x in range(size):
+            i = y * size + x; height = heights[i]
+            variation = .82 + height * .32
+            color_pixels.extend((*[max(0, min(1, channel * variation)) for channel in color], 1))
+            rough = .72 + (.5 - height) * .18
+            rough_pixels.extend((rough, rough, rough, 1))
+            dx = heights[y * size + (x + 1) % size] - heights[y * size + (x - 1) % size]
+            dy = heights[((y + 1) % size) * size + x] - heights[((y - 1) % size) * size + x]
+            nx, ny, nz = -dx * 1.8, -dy * 1.8, 1.0
+            length = math.sqrt(nx * nx + ny * ny + nz * nz)
+            normal_pixels.extend((nx / length * .5 + .5, ny / length * .5 + .5, nz / length * .5 + .5, 1))
+
+    def image(label, pixels, non_color=False):
+        result = bpy.data.images.new(f"{name}_{label}", width=size, height=size, alpha=True)
+        result.pixels.foreach_set(pixels); result.pack()
+        if non_color: result.colorspace_settings.name = 'Non-Color'
+        return result
+    return image("BaseColor", color_pixels), image("Roughness", rough_pixels, True), image("Normal", normal_pixels, True)
+
+
+def material(name, color, metallic=0.0, roughness=0.75, alpha=1.0, emission=None, emission_strength=0.0, pattern=None):
     mat = bpy.data.materials.new(name)
     mat.diffuse_color = (*color, alpha)
     mat.use_nodes = True
@@ -32,35 +69,45 @@ def material(name, color, metallic=0.0, roughness=0.75, alpha=1.0, emission=None
         emission_input.default_value = (*emission, 1)
         strength_input = bsdf.inputs.get("Emission Strength")
         if strength_input: strength_input.default_value = emission_strength
+    if pattern:
+        base_map, rough_map, normal_map = surface_maps(name.replace(" ", "_"), color, pattern)
+        base_node = mat.node_tree.nodes.new('ShaderNodeTexImage'); base_node.image = base_map; base_node.label = "Procedural Base Color"
+        rough_node = mat.node_tree.nodes.new('ShaderNodeTexImage'); rough_node.image = rough_map; rough_node.label = "Procedural Roughness"
+        normal_node = mat.node_tree.nodes.new('ShaderNodeTexImage'); normal_node.image = normal_map; normal_node.label = "Procedural Normal"
+        normal_decode = mat.node_tree.nodes.new('ShaderNodeNormalMap'); normal_decode.inputs['Strength'].default_value = .32
+        mat.node_tree.links.new(base_node.outputs['Color'], bsdf.inputs['Base Color'])
+        mat.node_tree.links.new(rough_node.outputs['Color'], bsdf.inputs['Roughness'])
+        mat.node_tree.links.new(normal_node.outputs['Color'], normal_decode.inputs['Color'])
+        mat.node_tree.links.new(normal_decode.outputs['Normal'], bsdf.inputs['Normal'])
     if alpha < 1:
         bsdf.inputs["Alpha"].default_value = alpha
         mat.surface_render_method = 'DITHERED'
     return mat
 
 
-WOOD = material("Wood", (0.48, 0.20, 0.07), roughness=0.88)
-WOOD_LIGHT = material("Wood Light", (0.68, 0.34, 0.12), roughness=0.84)
-WOOD_DARK = material("Wood Dark", (0.23, 0.09, 0.035), roughness=0.92)
-BRICK = material("Brick", (0.67, 0.18, 0.10), roughness=0.92)
-BRICK_LIGHT = material("Brick Light", (0.79, 0.29, 0.16), roughness=0.90)
-BRICK_DARK = material("Brick Dark", (0.47, 0.09, 0.055), roughness=0.94)
-STONE = material("Stone", (0.31, 0.35, 0.35), roughness=0.96)
-STONE_LIGHT = material("Stone Light", (0.46, 0.49, 0.46), roughness=0.94)
-STONE_DARK = material("Stone Dark", (0.19, 0.23, 0.24), roughness=0.98)
+WOOD = material("Wood", (0.48, 0.20, 0.07), roughness=0.88, pattern="wood")
+WOOD_LIGHT = material("Wood Light", (0.68, 0.34, 0.12), roughness=0.84, pattern="wood")
+WOOD_DARK = material("Wood Dark", (0.23, 0.09, 0.035), roughness=0.92, pattern="wood")
+BRICK = material("Brick", (0.67, 0.18, 0.10), roughness=0.92, pattern="brick")
+BRICK_LIGHT = material("Brick Light", (0.79, 0.29, 0.16), roughness=0.90, pattern="brick")
+BRICK_DARK = material("Brick Dark", (0.47, 0.09, 0.055), roughness=0.94, pattern="brick")
+STONE = material("Stone", (0.31, 0.35, 0.35), roughness=0.96, pattern="stone")
+STONE_LIGHT = material("Stone Light", (0.46, 0.49, 0.46), roughness=0.94, pattern="stone")
+STONE_DARK = material("Stone Dark", (0.19, 0.23, 0.24), roughness=0.98, pattern="stone")
 GLASS = material("Glass", (0.18, 0.78, 0.82), metallic=0.08, roughness=0.13, alpha=0.42)
 MORTAR = material("Mortar", (0.75, 0.62, 0.49), roughness=0.95)
-METAL = material("Metal", (0.10, 0.15, 0.18), metallic=0.78, roughness=0.34)
-CORAL = material("Coral", (0.85, 0.11, 0.06), metallic=0.05, roughness=0.58)
-TEAL = material("Teal", (0.08, 0.62, 0.58), metallic=0.15, roughness=0.42)
+METAL = material("Metal", (0.10, 0.15, 0.18), metallic=0.78, roughness=0.34, pattern="metal")
+CORAL = material("Coral", (0.85, 0.11, 0.06), metallic=0.05, roughness=0.58, pattern="fabric")
+TEAL = material("Teal", (0.08, 0.62, 0.58), metallic=0.15, roughness=0.42, pattern="fabric")
 GLOW = material("Glow", (0.60, 1.0, 0.84), metallic=0.1, roughness=0.18, emission=(0.28, 1.0, 0.72), emission_strength=3.2)
 WARNING = material("Warning", (1.0, 0.68, 0.12), metallic=0.05, roughness=0.55)
 SKIN = material("Skin", (0.92, 0.56, 0.34), roughness=0.72)
 SKIN_LIGHT = material("Skin Light", (1.0, 0.68, 0.43), roughness=0.7)
 HAIR = material("Hair", (0.10, 0.055, 0.035), roughness=0.9)
 HELMET = material("Helmet", (0.92, 0.68, 0.25), roughness=0.58)
-PANTS = material("Pants", (0.11, 0.16, 0.19), roughness=0.84)
+PANTS = material("Pants", (0.11, 0.16, 0.19), roughness=0.84, pattern="fabric")
 BOOT = material("Boot", (0.075, 0.055, 0.045), roughness=0.9)
-SHIRT = material("Shirt", (0.78, 0.74, 0.62), roughness=0.86)
+SHIRT = material("Shirt", (0.78, 0.74, 0.62), roughness=0.86, pattern="fabric")
 WHITE = material("Eye White", (0.96, 0.96, 0.91), roughness=0.5)
 WEAPON_BLUE = material("Weapon Blue", (0.22, 0.63, 0.76), metallic=0.28, roughness=0.4)
 WEAPON_PINK = material("Weapon Pink", (0.88, 0.28, 0.48), metallic=0.18, roughness=0.46)

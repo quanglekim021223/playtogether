@@ -14,6 +14,7 @@ Trên macOS, file ứng dụng thường không tự thêm lệnh `blender` vào
 
 ```sh
 "/Applications/Blender.app/Contents/MacOS/Blender" --background --python tools/blender/generate_block_party_kit.py -- --output public/assets/kit
+npm run assets:optimize
 ```
 
 Nếu muốn dùng lệnh ngắn trong các Terminal mới, thêm alias vào `~/.zshrc`:
@@ -23,6 +24,8 @@ alias blender="/Applications/Blender.app/Contents/MacOS/Blender"
 ```
 
 Game tải bộ GLB một lần rồi clone asset cho các khối vật liệu và đạo cụ môi trường, trong khi collider và vật lý vẫn dùng dữ liệu server. Mái, cầu và dầm tiếp tục dùng geometry riêng để giữ hình dáng kiến trúc. Nếu một file không tải được, renderer tự giữ geometry tạo bằng code làm dự phòng.
+
+Script Blender tự tạo base-color, roughness và normal map nhỏ cho gỗ, gạch, đá, kim loại và vải. `npm run assets:optimize` chạy glTF Transform với Meshopt, giữ nguyên hierarchy và tên node phục vụ animation. Pipeline tự dùng KTX2 khi máy build có `toktx`; runtime luôn cấu hình MeshoptDecoder và KTX2Loader. Image-based lighting dùng `studio_small_09_1k.hdr` của Sergej Majboroda/Poly Haven (CC0), với `RoomEnvironment` làm dự phòng nếu HDRI không tải được.
 
 ## Chạy
 
