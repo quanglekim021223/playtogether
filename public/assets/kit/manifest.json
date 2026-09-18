@@ -78,5 +78,65 @@
       0.75
     ],
     "kind": "resident1"
+  },
+  {
+    "file": "bp_weaponpebble.glb",
+    "name": "BP_WeaponPebble",
+    "size": [
+      1.0,
+      0.75,
+      0.3
+    ],
+    "kind": "weapon:pebble"
+  },
+  {
+    "file": "bp_weaponheavy.glb",
+    "name": "BP_WeaponHeavy",
+    "size": [
+      1.25,
+      0.65,
+      0.5
+    ],
+    "kind": "weapon:heavy"
+  },
+  {
+    "file": "bp_weaponbloom.glb",
+    "name": "BP_WeaponBloom",
+    "size": [
+      1.2,
+      0.72,
+      0.68
+    ],
+    "kind": "weapon:bloom"
+  },
+  {
+    "file": "bp_weaponrocket.glb",
+    "name": "BP_WeaponRocket",
+    "size": [
+      1.35,
+      0.62,
+      0.55
+    ],
+    "kind": "weapon:rocket"
+  },
+  {
+    "file": "bp_weapondrill.glb",
+    "name": "BP_WeaponDrill",
+    "size": [
+      1.4,
+      0.72,
+      0.55
+    ],
+    "kind": "weapon:drill"
+  },
+  {
+    "file": "bp_weaponpulse.glb",
+    "name": "BP_WeaponPulse",
+    "size": [
+      1.28,
+      0.72,
+      0.58
+    ],
+    "kind": "weapon:pulse"
   }
 ]

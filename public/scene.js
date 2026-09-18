@@ -12,7 +12,10 @@ export function createScene(container) {
     wood: ['bp_woodblock.glb', [1.4, 1.5, 1.4]], brick: ['bp_brickblock.glb', [1.4, 1.5, 1.4]],
     stone: ['bp_stoneblock.glb', [1.4, 1.5, 1.4]], glass: ['bp_glassblock.glb', [1.4, 1.5, .13]],
     fuelBarrel: ['bp_fuelbarrel.glb', [.72, 1.18, .72]], bouncePad: ['bp_bouncepad.glb', [1.45, .34, .95]],
-    resident0: ['bp_residentcoral.glb', [1, 1.65, .75]], resident1: ['bp_residentteal.glb', [1, 1.65, .75]]
+    resident0: ['bp_residentcoral.glb', [1, 1.65, .75]], resident1: ['bp_residentteal.glb', [1, 1.65, .75]],
+    'weapon:pebble': ['bp_weaponpebble.glb', [1, .75, .3]], 'weapon:heavy': ['bp_weaponheavy.glb', [1.25, .65, .5]],
+    'weapon:bloom': ['bp_weaponbloom.glb', [1.2, .72, .68]], 'weapon:rocket': ['bp_weaponrocket.glb', [1.35, .62, .55]],
+    'weapon:drill': ['bp_weapondrill.glb', [1.4, .72, .55]], 'weapon:pulse': ['bp_weaponpulse.glb', [1.28, .72, .58]]
   };
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   let matchWinner = null, eventBaseline = false;
@@ -131,6 +134,16 @@ export function createScene(container) {
     actions.idle.play(); obj.userData.assetAnimator = { mixer, actions, current: 'idle' };
     obj.userData.assetItem = null;
   }
+  function attachWeaponAsset(obj, weapon) {
+    if (!obj.userData.gun || obj.userData.assetWeapon === weapon) return;
+    const asset = kit.get(`weapon:${weapon}`); if (!asset) return;
+    if (obj.userData.weaponModel) obj.userData.gun.remove(obj.userData.weaponModel);
+    for (const child of obj.userData.gun.children) child.visible = false;
+    const model = asset.scene.clone(true); model.scale.setScalar(.78);
+    model.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+    obj.userData.gun.add(model); model.visible = true;
+    obj.userData.weaponModel = model; obj.userData.assetWeapon = weapon;
+  }
   function applyKit(obj, item) {
     if (obj.userData.assetModel) return;
     const key = kitKey(item); if (!key) return;
@@ -151,8 +164,13 @@ export function createScene(container) {
   })).then(() => {
     container.dataset.assetKit = String(kit.size);
     container.dataset.residentAssets = String([...kit.keys()].filter(key => key.startsWith('resident')).length);
-    for (const obj of objects.values()) if (obj.userData.assetItem) applyKit(obj, obj.userData.assetItem);
+    container.dataset.weaponAssets = String([...kit.keys()].filter(key => key.startsWith('weapon:')).length);
+    for (const obj of objects.values()) {
+      if (obj.userData.assetItem) applyKit(obj, obj.userData.assetItem);
+      if (obj.userData.weaponKey) attachWeaponAsset(obj, obj.userData.weaponKey);
+    }
     container.dataset.residentModels = String([...objects.values()].filter(obj => obj.userData.assetAnimator).length);
+    container.dataset.weaponModels = String([...objects.values()].filter(obj => obj.userData.weaponModel).length);
   }).catch(() => { container.dataset.assetKit = 'fallback'; });
   const dots = Array.from({ length: 15 }, () => { const dot = sphere(0, 0, 1.45, 0.065, 0xffffff); dot.visible = false; return dot; });
   container.dataset.trajectorySamples = String(dots.length);
@@ -221,17 +239,20 @@ export function createScene(container) {
         obj = item.kind === 'resident' ? art.resident(item.team, item.id, item.weapon)
           : ['fuelBarrel', 'bouncePad'].includes(item.kind) ? art.interactive(item) : art.block(item);
         applyKit(obj, item);
+        if (item.kind === 'resident') { obj.userData.weaponKey = item.weapon; attachWeaponAsset(obj, item.weapon); }
         scene.add(obj); objects.set(item.id, obj); obj.position.set(item.p[0], item.p[1], item.kind === 'resident' ? 1.3 : item.p[2]); obj.quaternion.fromArray(item.q);
       }
       obj.userData.targetP = new T.Vector3(item.p[0], item.p[1], item.kind === 'resident' ? 1.3 : item.p[2]); obj.userData.targetQ = item.kind === 'resident' ? new T.Quaternion() : new T.Quaternion(...item.q);
       if (obj.userData.cracks) obj.userData.cracks.forEach((c, i) => { c.visible = item.crack === i + 1; });
       if (obj.userData.hp !== undefined && item.hp < obj.userData.hp) obj.userData.hurtUntil = performance.now() / 1000 + .65;
       obj.userData.hp = item.hp; obj.userData.team = item.team;
+      if (item.kind === 'resident' && obj.userData.weaponKey !== item.weapon) { obj.userData.weaponKey = item.weapon; attachWeaponAsset(obj, item.weapon); }
       obj.userData.activeResident = item.kind === 'resident' && item.id === data.shooterId;
       obj.userData.gamePhase = data.phase;
       obj.visible = item.kind !== 'resident' || item.hp > 0;
     }
     container.dataset.residentModels = String([...objects.values()].filter(obj => obj.userData.assetAnimator).length);
+    container.dataset.weaponModels = String([...objects.values()].filter(obj => obj.userData.weaponModel).length);
     const hasProjectileList = Array.isArray(data.projectiles) && data.projectiles.length > 0;
     const currentProjList = hasProjectileList
       ? data.projectiles
@@ -379,7 +400,10 @@ export function createScene(container) {
           previous.fadeOut(.12); action.reset().fadeIn(.12).play(); animator.current = next;
         }
         animator.mixer.timeScale = reducedMotion.matches ? 0 : 1; animator.mixer.update(dt);
-        if (obj.userData.activeResident) container.dataset.residentAnimation = next;
+        if (obj.userData.activeResident) {
+          container.dataset.residentAnimation = next;
+          container.dataset.activeWeaponModel = obj.userData.assetWeapon || 'fallback';
+        }
       }
       if (obj.userData.gun) {
         const recoil = obj.userData.recoil || 0; obj.userData.gun.position.x = (obj.userData.team === 0 ? -1 : 1) * recoil;

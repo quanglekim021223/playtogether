@@ -57,6 +57,10 @@ PANTS = material("Pants", (0.11, 0.16, 0.19), roughness=0.84)
 BOOT = material("Boot", (0.075, 0.055, 0.045), roughness=0.9)
 SHIRT = material("Shirt", (0.78, 0.74, 0.62), roughness=0.86)
 WHITE = material("Eye White", (0.96, 0.96, 0.91), roughness=0.5)
+WEAPON_BLUE = material("Weapon Blue", (0.22, 0.63, 0.76), metallic=0.28, roughness=0.4)
+WEAPON_PINK = material("Weapon Pink", (0.88, 0.28, 0.48), metallic=0.18, roughness=0.46)
+WEAPON_ORANGE = material("Weapon Orange", (0.95, 0.43, 0.12), metallic=0.16, roughness=0.5)
+WEAPON_PURPLE = material("Weapon Purple", (0.45, 0.28, 0.72), metallic=0.3, roughness=0.38)
 
 
 def link(obj, root):
@@ -82,6 +86,7 @@ def cylinder(name, root, location, radius, depth, mat, axis="y"):
     obj = bpy.context.object
     obj.name = name
     if axis == "y": obj.rotation_euler.x = math.pi / 2
+    elif axis == "x": obj.rotation_euler.y = math.pi / 2
     obj.data.materials.append(mat)
     bevel = obj.modifiers.new("Soft edges", 'BEVEL')
     bevel.width, bevel.segments = 0.025, 2
@@ -238,6 +243,73 @@ def resident_asset(team):
     return r, (1.0, 1.65, .75), f"resident{team}"
 
 
+def weapon_pebble():
+    r = root("BP_WeaponPebble")
+    cube("Grip", r, (.08, -.13, 0), (.18, .43, .18), WOOD_DARK, .055)
+    cube("Brace", r, (.28, .04, 0), (.46, .15, .16), WOOD, .05)
+    for sign in (-1, 1):
+        fork = cube("Fork", r, (.54, sign * .20, 0), (.13, .48, .15), WOOD_LIGHT, .045)
+        fork.rotation_euler.z = sign * -.20
+    for sign in (-1, 1):
+        band = cube("Elastic", r, (.73, sign * .09, .03), (.39, .035, .045), WARNING, .012)
+        band.rotation_euler.z = sign * -.31
+    sphere("Ammo", r, (.27, .24, 0), (.12, .12, .12), STONE_DARK, 16, 8)
+    return r, (1.0, .75, .3), "weapon:pebble"
+
+
+def weapon_heavy():
+    r = root("BP_WeaponHeavy")
+    cylinder("LauncherTube", r, (.48, .05, 0), .18, 1.02, WEAPON_ORANGE, axis="x")
+    for x, radius in ((-.04, .22), (.98, .24)):
+        cylinder("TubeRing", r, (x, .05, 0), radius, .09, METAL, axis="x")
+    cylinder("Muzzle", r, (1.05, .05, 0), .16, .18, STONE_DARK, axis="x")
+    cube("Grip", r, (.28, -.24, 0), (.16, .42, .18), METAL, .045)
+    cube("Sight", r, (.52, .28, 0), (.24, .13, .12), WARNING, .035)
+    return r, (1.25, .65, .5), "weapon:heavy"
+
+
+def weapon_bloom():
+    r = root("BP_WeaponBloom")
+    sphere("Drum", r, (.34, .04, 0), (.34, .31, .31), WEAPON_PINK)
+    cylinder("Barrel", r, (.72, .08, 0), .18, .72, METAL, axis="x")
+    cylinder("Muzzle", r, (1.08, .08, 0), .24, .16, WEAPON_PINK, axis="x")
+    cube("Grip", r, (.18, -.28, 0), (.17, .42, .18), METAL, .045)
+    for z in (-.25, .25): cube("DrumRib", r, (.34, .04, z), (.10, .52, .06), WARNING, .02)
+    return r, (1.2, .72, .68), "weapon:bloom"
+
+
+def weapon_rocket():
+    r = root("BP_WeaponRocket")
+    cylinder("RocketTube", r, (.48, .06, 0), .13, .96, WEAPON_BLUE, axis="x")
+    cone = None
+    bpy.ops.mesh.primitive_cone_add(vertices=20, radius1=.19, radius2=.04, depth=.38, location=(1.10, .06, 0), rotation=(0, math.pi / 2, 0))
+    cone = link(bpy.context.object, r); cone.name = "RocketNose"; cone.data.materials.append(WARNING)
+    for sign in (-1, 1): cube("Fin", r, (.83, .06, sign * .16), (.30, .10, .18), WEAPON_ORANGE, .025)
+    cube("Grip", r, (.23, -.23, 0), (.14, .38, .16), METAL, .04)
+    return r, (1.35, .62, .55), "weapon:rocket"
+
+
+def weapon_drill():
+    r = root("BP_WeaponDrill")
+    cube("DrillBody", r, (.34, .04, 0), (.68, .34, .38), WEAPON_PURPLE, .09)
+    for x in (.10, .34, .58): cylinder("MotorRing", r, (x, .04, 0), .21, .075, METAL, axis="x")
+    bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=.24, radius2=.025, depth=.72, location=(1.02, .04, 0), rotation=(0, math.pi / 2, 0))
+    bit = link(bpy.context.object, r); bit.name = "DrillBit"; bit.data.materials.append(WARNING)
+    cube("Grip", r, (.18, -.27, 0), (.16, .42, .18), METAL, .045)
+    return r, (1.4, .72, .55), "weapon:drill"
+
+
+def weapon_pulse():
+    r = root("BP_WeaponPulse")
+    cube("PulseBody", r, (.30, .04, 0), (.62, .32, .38), METAL, .10)
+    for index, x in enumerate((.55, .73, .91)):
+        cylinder("PulseCoil", r, (x, .04, 0), .26 - index * .035, .08, TEAL, axis="x")
+    sphere("EnergyCore", r, (.98, .04, 0), (.18, .18, .18), GLOW, 20, 12)
+    cylinder("Emitter", r, (1.12, .04, 0), .12, .20, WEAPON_BLUE, axis="x")
+    cube("Grip", r, (.18, -.27, 0), (.16, .42, .18), METAL, .045)
+    return r, (1.28, .72, .58), "weapon:pulse"
+
+
 def export(root_obj, name):
     bpy.ops.object.select_all(action='DESELECT')
     root_obj.select_set(True)
@@ -250,6 +322,7 @@ bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete(use_global=False)
 assets = [factory() for factory in (wood_block, brick_block, stone_block, glass_block, fuel_barrel, bounce_pad)]
 assets.extend((resident_asset(0), resident_asset(1)))
+assets.extend(factory() for factory in (weapon_pebble, weapon_heavy, weapon_bloom, weapon_rocket, weapon_drill, weapon_pulse))
 manifest = []
 for obj, size, kind in assets:
     export(obj, obj.name.lower())

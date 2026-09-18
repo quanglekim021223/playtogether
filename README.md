@@ -4,7 +4,7 @@ Game party 3D trên web, hai đội bắn phá công trình theo lượt. Máy t
 
 ### Tạo asset Blender không cần dựng tay
 
-Sau khi cài Blender, script `tools/blender/generate_block_party_kit.py` tạo tám asset GLB stylized: khối gỗ có ván và đinh, tường gạch xây từng viên, đá ghép, kính có ánh phản chiếu, thùng xăng, tấm nảy và hai nhân vật theo màu đội. Nhân vật có rig phân cấp nhẹ để Three.js điều khiển các trạng thái đứng, chạy, ngắm, trúng đạn và ăn mừng. Mỗi file có gốc tọa độ và kích thước ổn định để map vào đúng collider trong game.
+Sau khi cài Blender, script `tools/blender/generate_block_party_kit.py` tạo mười bốn asset GLB stylized: bốn vật liệu công trình, thùng xăng, tấm nảy, hai nhân vật theo màu đội và sáu vũ khí độc bản. Nhân vật có rig phân cấp nhẹ để Three.js điều khiển các trạng thái đứng, chạy, ngắm, trúng đạn và ăn mừng. Vũ khí GLB được gắn vào node ngắm có sẵn nên góc bắn, recoil và vật lý server không thay đổi. Mỗi file có gốc tọa độ và kích thước ổn định để map vào đúng collider trong game.
 
 ```sh
 blender --background --python tools/blender/generate_block_party_kit.py -- --output public/assets/kit

@@ -34,9 +34,11 @@ test('environment meshes render and a fuel blast produces bounded effects and au
   }, initial);
   await expect(page.locator('#scene')).toHaveAttribute('data-fuel-barrels', '2');
   await expect(page.locator('#scene')).toHaveAttribute('data-bounce-pads', '2');
-  await expect(page.locator('#scene')).toHaveAttribute('data-asset-kit', '8');
+  await expect(page.locator('#scene')).toHaveAttribute('data-asset-kit', '14');
   await expect(page.locator('#scene')).toHaveAttribute('data-resident-assets', '2');
+  await expect(page.locator('#scene')).toHaveAttribute('data-weapon-assets', '6');
   await expect.poll(() => page.locator('#scene').getAttribute('data-resident-models').then(Number)).toBeGreaterThan(0);
+  await expect.poll(() => page.locator('#scene').getAttribute('data-weapon-models').then(Number)).toBeGreaterThan(0);
   game.damageEnvironment(game.environmentItems.find(i => i.kind === 'fuelBarrel'), 999, 'test');
   await page.evaluate(snapshot => window.environmentScene.update(snapshot), game.snapshot());
   await expect(page.locator('#scene')).toHaveAttribute('data-fuel-barrels', '1');
@@ -115,12 +117,14 @@ test('camera follows the active resident across teams and rooftops; overview and
   await page.evaluate(snapshot => window.focusScene.update(snapshot), game.snapshot());
   await expect(page.locator('#scene')).toHaveAttribute('data-camera-mode', 'tactical');
   await expect(page.locator('#scene')).toHaveAttribute('data-resident-animation', 'aim');
+  await expect(page.locator('#scene')).toHaveAttribute('data-active-weapon-model', 'pebble');
   await expect.poll(() => page.locator('#scene').getAttribute('data-camera-x').then(Number)).toBeGreaterThan(game.shooter.body.position.x + 4);
   await page.screenshot({ path: 'artifacts/tactical-aim.png', scale: 'css' });
   game.enterPhase('move', 12);
   game.team = 1; game.shooterCursor[1] = 2; game.syncShooter();
   await page.evaluate(snapshot => window.focusScene.update(snapshot), game.snapshot());
   await expect(page.locator('#scene')).toHaveAttribute('data-weapon', 'bloom');
+  await expect(page.locator('#scene')).toHaveAttribute('data-active-weapon-model', 'bloom');
   await expect.poll(() => page.locator('#scene').getAttribute('data-camera-x').then(Number)).toBeCloseTo(game.shooter.body.position.x - 3, 1);
   await page.screenshot({ path: 'artifacts/rooftop-shooter.png', scale: 'css' });
   await page.evaluate(() => window.focusScene.setOverview(true));
