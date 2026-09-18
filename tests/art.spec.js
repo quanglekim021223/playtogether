@@ -5,7 +5,7 @@ test('material audio produces distinct, finite, non-silent waveforms', async ({ 
   await page.goto('/?controller=1');
   const results = await page.evaluate(async () => {
     const { synthesize } = await import('/audio.js'); const results = [];
-    for (const type of ['wood', 'brick', 'stone', 'glass', 'barrel', 'pad', 'airdropSpawn', 'airdropLand', 'airdropCollect', 'airdropBreak']) {
+    for (const type of ['wood', 'brick', 'stone', 'glass', 'barrel', 'pad', 'airdropSpawn', 'airdropLand', 'airdropCollect', 'airdropBreak', 'impactWhoosh', 'replayStart']) {
       const ctx = new OfflineAudioContext(1, 44100, 44100);
       synthesize(ctx, ctx.destination, type);
       const buffer = await ctx.startRendering(), data = buffer.getChannelData(0);
@@ -18,6 +18,40 @@ test('material audio produces distinct, finite, non-silent waveforms', async ({ 
   for (const result of results) { expect(result.finite).toBe(true); expect(result.energy).toBeGreaterThan(.01); expect(result.peak).toBeLessThan(1); }
   expect(new Set(results.filter(r => ['wood', 'brick', 'stone', 'glass'].includes(r.type)).map(r => r.crossings)).size).toBe(4);
   expect(results.find(r => r.type === 'glass').crossings).toBeGreaterThan(results.find(r => r.type === 'stone').crossings * 4);
+});
+
+test('combat presentation applies distance shake, impact pause and final-shot replay', async ({ page }) => {
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/?controller=1');
+  const game = new Match('tower'), initial = game.snapshot();
+  await page.evaluate(async snapshot => {
+    const { createScene } = await import('/scene.js');
+    document.querySelector('#app').remove(); document.body.classList.remove('controller');
+    const container = document.querySelector('#scene'); container.style.cssText = 'position:fixed;inset:0';
+    window.combatScene = createScene(container); window.combatScene.setMode('game'); window.combatScene.update(snapshot);
+  }, initial);
+
+  const eventId = 9000;
+  const flight = structuredClone(initial); flight.phase = 'flight'; flight.time = 1;
+  flight.projectiles = [{ id: 77, weapon: 'heavy', p: [0, 6, 0], q: [0, 0, 0, 1], v: [8, 2, 0] }]; flight.projectile = flight.projectiles[0];
+  flight.events.push(
+    { id: eventId, time: 1, type: 'directHit', residentId: 6, x: 8, y: 1, weapon: 'heavy' },
+    { id: eventId + 1, time: 1, type: 'blast', x: 8, y: 1, radius: 5, weapon: 'heavy', hitItemId: 6 },
+  );
+  await page.evaluate(snapshot => window.combatScene.update(snapshot), flight);
+  const scene = page.locator('#scene');
+  await expect(scene).toHaveAttribute('data-impact-pause', 'active');
+  await expect.poll(() => scene.getAttribute('data-shake-strength').then(Number)).toBeGreaterThan(0);
+
+  const settle = structuredClone(flight); settle.phase = 'settle'; settle.time = 2; settle.events = flight.events;
+  const over = structuredClone(settle); over.phase = 'over'; over.time = 3; over.winner = 0;
+  await page.evaluate(([a, b]) => { window.combatScene.update(a); window.combatScene.update(b); }, [settle, over]);
+  await expect(scene).toHaveAttribute('data-replay', 'playing');
+  await expect(scene).toHaveAttribute('data-camera-mode', 'replay-projectile');
+  await expect.poll(() => scene.getAttribute('data-replay-frames').then(Number)).toBeGreaterThanOrEqual(3);
+  await page.evaluate(() => window.combatScene.skipReplay());
+  await expect(scene).toHaveAttribute('data-replay', 'complete');
+  expect(errors).toEqual([]);
 });
 
 test('weather and airdrop states render, animate and clean up from authoritative snapshots', async ({ page }) => {

@@ -9,7 +9,7 @@ let controller = params.has('room') || params.has('controller');
 if (controller) document.body.classList.add('controller');
 let token = sessionStorage.getItem('bp-token');
 if (!token) { token = globalThis.crypto?.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(24)), v => v.toString(16).padStart(2, '0')).join(''); sessionStorage.setItem('bp-token', token); }
-let state = null, scene = null, playerId = null, screenKey = '', qrCode = '', connection = null, lastTurn = null;
+let state = null, scene = null, playerId = null, screenKey = '', qrCode = '', connection = null, lastTurn = null, replayActive = false;
 let mapCatalog = [], previewRequest = 0, previewMap = null;
 let autoJoinFailed = false;
 let draft = { angle: 42, power: 30, weapon: 'pebble' };
@@ -28,6 +28,8 @@ window.addEventListener('game-blast', () => audio.play('blast'));
 window.addEventListener('game-shot', () => audio.play('shot'));
 window.addEventListener('material-sound', e => audio.play(e.detail.material, e.detail.strength));
 window.addEventListener('weapon-sound', e => audio.play(e.detail.type));
+window.addEventListener('replay-start', () => { if (!controller) { replayActive = true; render(); } });
+window.addEventListener('replay-end', () => { if (!controller) { replayActive = false; render(); } });
 function updateWindIndicator(element, value, weather = null) {
   if (!element) return;
   const wind = Number.isFinite(value) ? value : 0;
@@ -438,17 +440,22 @@ function renderOver() {
   app.innerHTML = `${header()}<main class="results"><span class="eyebrow">HÀNG XÓM NHỚ NHAU LÂU</span><div class="trophy">✦</div><h1>${game.winner === -1 ? 'Hòa rồi!' : `${teams[game.winner]}<br>thắng rồi!`}</h1><p>${game.turn} lượt bắn. Một cuộc vui đáng nhớ.</p>${controller ? '<p>Chờ chủ phòng mở ván tiếp theo.</p>' : '<button id="again" class="button primary">Về sảnh · Chơi tiếp <span>↻</span></button>'}</main>`;
   bindHeader(); document.querySelector('#again')?.addEventListener('click', () => emit('lobby'));
 }
+function renderReplay() {
+  screenKey = 'replay';
+  app.innerHTML = `${header()}<div class="replay-hud"><span>PHÁT LẠI CÚ BẮN QUYẾT ĐỊNH</span><button id="skip-replay" class="button secondary compact">Bỏ qua ›</button></div>`;
+  bindHeader(); document.querySelector('#skip-replay')?.addEventListener('click', () => scene?.skipReplay());
+}
 function render() {
   if (!state) { if (controller) renderJoin(); else renderHome(); return; }
   if (controller && !playerId) return;
-  const target = !state.game ? 'lobby' : state.game.phase === 'over' ? 'over' : 'game';
+  const target = !state.game ? 'lobby' : state.game.phase === 'over' ? (!controller && replayActive ? 'replay' : 'over') : 'game';
   if (screenKey !== target) {
-    if (target === 'lobby') renderLobby(); else if (target === 'over') renderOver(); else renderGame();
+    if (target === 'lobby') renderLobby(); else if (target === 'over') renderOver(); else if (target === 'replay') renderReplay(); else renderGame();
   } else if (target === 'lobby') teamLists(); else if (target === 'game') updateGameUI();
 }
 socket.on('state', next => {
   const changedMatch = Boolean(next.game) !== Boolean(state?.game);
-  if (changedMatch) { ++previewRequest; previewMap = null; scene?.reset(); lastTurn = null; }
+  if (changedMatch) { ++previewRequest; previewMap = null; scene?.reset(); lastTurn = null; replayActive = false; }
   const actorChanged = next.game?.shooterId !== state?.game?.shooterId || next.game?.turn !== state?.game?.turn || next.activeId !== state?.activeId;
   if (actorChanged || next.game?.phase !== 'aim') clearGesture({ steer: false });
   if (actorChanged || next.game?.phase !== 'flight' || next.game?.activeSkill?.weapon !== 'rocket') clearSteerGesture();

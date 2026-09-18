@@ -107,6 +107,12 @@ Phòng party chọn thời tiết theo trọng số: nắng, mưa, sương hoặ
 
 Từ lượt 4, thùng tiếp tế có thể hạ dù trong pha settle xuống node trung lập ở giữa sân. Collider chỉ xuất hiện sau khi thùng tiếp đất và được xóa trước khi cư dân bước vào node. Thùng có 40 HP, có thể bị đạn hoặc vụ nổ phá, và hết hạn sau bốn lượt. Người nhặt nhận một trong ba hiệu ứng: hồi 35 HP, tăng 1.5 lần sát thương của phát bắn kế tiếp gồm cả đạn con và sát thương tiếp xúc, hoặc giảm một nửa đòn sát thương kế tiếp. Trạng thái weather, airdrop và buff đều nằm trong snapshot để reconnect khôi phục đúng trận đấu.
 
+## Combat feel và phát lại cú bắn cuối
+
+Vụ nổ làm rung vị trí và góc camera theo sức mạnh, bán kính và khoảng cách tới điểm nổ. Bazooka, Rocket, Pulse và thùng xăng có cường độ riêng. Đạn trúng trực tiếp cư dân hoặc phá khối đang đỡ một movement node tạo impact pause 0.3 giây kèm âm thanh trầm; đây chỉ là hiệu ứng phía TV nên mô phỏng server và tay cầm vẫn tiếp tục đồng bộ.
+
+Client giữ tối đa 100 snapshot gần nhất của pha flight/settle trong lượt hiện tại. Nếu phát bắn kết thúc trận, TV phát lại tối đa 90 frame ở tốc độ 0.72 lần, dựng lại chuyển động đạn, công trình và VFX rồi mới hiện kết quả. Người xem có thể bỏ qua replay. Chế độ reduced motion tắt rung, impact pause và replay tự động.
+
 ## Vật liệu và hình ảnh
 
 - **Gỗ**: 72% HP cơ sở, tiếng gãy ngắn và dằm dài.

@@ -146,6 +146,7 @@ export function createScene(container) {
     birds.push({ bird, left, right });
   }
   const objects = new Map(); const projectileMeshes = new Map(); let shot = null; let particles = []; let impactMarks = []; let lastEvent = 0; let shake = 0; let trailAt = 0; let mode = 'home';
+  let impactPauseUntil = 0, replayTurn = null, replayFrames = [], replay = null;
   const mapDecor = new T.Group(); mapDecor.name = 'MapDecor'; scene.add(mapDecor);
   let currentMap = null, activeShooter = null, gamePhase = 'aim', overview = false, currentWind = 0, tacticalTarget = new T.Vector3();
   const selection = new T.Mesh(new T.TorusGeometry(.68, .035, 6, 36), new T.MeshBasicMaterial({ color: 0xffd376, depthTest: false }));
@@ -371,8 +372,46 @@ export function createScene(container) {
     currentWind = data.wind ?? currentWind;
     aimPreview(data.team, data.aim, currentWind, gamePhase === 'aim' && mode === 'game', data.impact);
   }
-  function update(data) {
+  const copySnapshot = data => typeof structuredClone === 'function' ? structuredClone(data) : JSON.parse(JSON.stringify(data));
+  function captureReplayFrame(data) {
+    if (data.turn !== replayTurn) { replayTurn = data.turn; replayFrames = []; }
+    if (!['flight', 'settle', 'over'].includes(data.phase)) return;
+    replayFrames.push(copySnapshot(data));
+    if (replayFrames.length > 100) replayFrames.shift();
+  }
+  function beginReplay(finalSnapshot) {
+    if (replay || reducedMotion.matches || finalSnapshot.winner == null || replayFrames.length < 3) return false;
+    const frames = replayFrames.slice(-90), eventIds = frames.flatMap(frame => frame.events || []).map(event => event.id).filter(Number.isFinite);
+    replay = { frames, index: 0, startAt: performance.now() + 420, sourceStart: frames[0].time, speed: .72, finalSnapshot: copySnapshot(finalSnapshot) };
+    lastEvent = eventIds.length ? Math.min(...eventIds) - 1 : lastEvent; eventBaseline = true;
+    container.dataset.replay = 'playing'; container.dataset.replayFrames = String(frames.length);
+    update(frames[0], true);
+    window.dispatchEvent(new CustomEvent('replay-start'));
+    window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'replayStart' } }));
+    return true;
+  }
+  function finishReplay() {
+    if (!replay) return;
+    const finalSnapshot = replay.finalSnapshot; replay = null; update(finalSnapshot, true);
+    container.dataset.replay = 'complete'; window.dispatchEvent(new CustomEvent('replay-end'));
+  }
+  function triggerImpactPause() {
+    if (reducedMotion.matches || replay) return;
+    impactPauseUntil = Math.max(impactPauseUntil, performance.now() + 300);
+    container.dataset.impactPause = 'active';
+    window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'impactWhoosh' } }));
+  }
+  function triggerShake(amount, x, y, radius = 3) {
+    if (reducedMotion.matches) return;
+    const distance = Math.hypot(x - viewTarget.x, y - viewTarget.y);
+    const attenuation = Math.max(.18, 1 - distance / 36);
+    shake = Math.max(shake, amount * attenuation * Math.min(1.35, .7 + radius * .1));
+    container.dataset.shakeStrength = shake.toFixed(3);
+  }
+  function update(data, fromReplay = false) {
     if (!data) return;
+    const previousPhase = gamePhase;
+    if (!fromReplay) captureReplayFrame(data);
     container.dataset.map = data.mapId;
     container.setAttribute('aria-label', `Đấu trường 3D · ${data.mapName}`);
     if (currentMap !== data.mapId) { reset(); currentMap = data.mapId; applyLightingTheme(currentMap); rebuildMapDecor(); }
@@ -540,7 +579,9 @@ export function createScene(container) {
         if (event.type === 'hit') addImpactMark(origin[0], origin[1], event.cause === 'blast' ? 0x241812 : 0x4b3d34, .34 + Math.min(.7, force * .3), event.itemId, event.size);
         container.dataset.lastMaterial = event.material;
         window.dispatchEvent(new CustomEvent('material-sound', { detail: { material: event.material, strength: event.type === 'break' ? 1 : .4 } }));
+        if (event.type === 'break' && event.criticalSupport) triggerImpactPause();
       }
+      if (event.type === 'directHit') triggerImpactPause();
       if (event.type === 'shot') {
         const actor = objects.get(event.shooterId); if (actor) actor.userData.recoil = .18;
         spawnMuzzleFlash(event);
@@ -548,7 +589,7 @@ export function createScene(container) {
       }
       if (event.type === 'blast') {
         const profile = WEAPON_VFX[event.weapon] || WEAPON_VFX.pebble;
-        shake = reducedMotion.matches ? 0 : profile.shake;
+        triggerShake(profile.shake, event.x, event.y, event.radius);
         blastLight.color.setHex(profile.core); blastLight.position.set(event.x, Math.max(.5, event.y), 3);
         blastLight.intensity = event.weapon === 'heavy' || event.weapon === 'rocket' ? 52 : 38;
         blastLight.distance = Math.max(18, (event.radius || 3) * 7); blastLight.userData.decayRate = 105;
@@ -557,7 +598,7 @@ export function createScene(container) {
         window.dispatchEvent(new CustomEvent('game-blast'));
       }
       if (event.type === 'barrelBlast') {
-        shake = reducedMotion.matches ? 0 : .38;
+        triggerShake(.38, event.x, event.y, event.radius);
         blastLight.color.setHex(0xff7b38); blastLight.position.set(event.x, Math.max(.5, event.y), 3); blastLight.intensity = 58; blastLight.distance = 24; blastLight.userData.decayRate = 92;
         for (let i = 0; i < (reducedMotion.matches ? 10 : 34); i++) {
           const m = sphere(event.x, Math.max(.35, event.y), 0, .14 + Math.random() * .28, [0xffee91, 0xff8b38, 0xd84b32, 0x3d4240][i % 4]);
@@ -569,6 +610,7 @@ export function createScene(container) {
         window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'barrel' } }));
       }
     }
+    if (!fromReplay && data.phase === 'over' && previousPhase !== 'over') beginReplay(data);
   }
   const ringGeometry = new T.TorusGeometry(1, .04, 6, 40), flashGeometry = new T.ConeGeometry(.28, 1.1, 8), sparkGeometry = new T.BoxGeometry(.06, .06, .5);
   const impactMarkGeometry = new T.CircleGeometry(.72, 18);
@@ -684,8 +726,9 @@ export function createScene(container) {
     if (shot) scene.remove(shot); shot = null; for (const m of projectileMeshes.values()) scene.remove(m); projectileMeshes.clear();
     for (const p of particles) { p.mesh.removeFromParent(); if (p.mesh.userData.effectMaterial) p.mesh.material.dispose(); } particles = [];
     for (const mark of impactMarks) { mark.mesh.removeFromParent(); mark.mesh.material.dispose(); } impactMarks = []; impactFocus = null;
+    impactPauseUntil = 0; replayTurn = null; replayFrames = []; replay = null; shake = 0;
     mapDecor.clear(); container.dataset.mapDecor = '0'; container.dataset.structureDecor = '0';
-    container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.impactMarks = '0'; container.dataset.attachedDecals = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; container.dataset.airdrop = 'none'; container.dataset.weatherParticles = 'none'; delete container.dataset.weather; delete container.dataset.trajectoryDots; delete container.dataset.lastAirdropEvent; delete container.dataset.lastMaterial; delete container.dataset.collapseDust; delete container.dataset.lastEnvironmentEvent; delete container.dataset.lastWeaponVfx;
+    container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.impactMarks = '0'; container.dataset.attachedDecals = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; container.dataset.airdrop = 'none'; container.dataset.weatherParticles = 'none'; container.dataset.replay = 'idle'; container.dataset.impactPause = 'idle'; delete container.dataset.weather; delete container.dataset.trajectoryDots; delete container.dataset.lastAirdropEvent; delete container.dataset.lastMaterial; delete container.dataset.collapseDust; delete container.dataset.lastEnvironmentEvent; delete container.dataset.lastWeaponVfx; delete container.dataset.shakeStrength;
   }
   let width, height, composer = null, ssaoPass = null, bloomPass = null, vignettePass = null;
   function setupPostProcessing() {
@@ -722,18 +765,29 @@ export function createScene(container) {
   let lastTime = performance.now();
   function render(now) {
     requestAnimationFrame(render); const dt = Math.min(0.05, (now - lastTime) / 1000); lastTime = now;
+    if (replay && now >= replay.startAt) {
+      const replayTime = replay.sourceStart + (now - replay.startAt) / 1000 * replay.speed;
+      while (replay.index + 1 < replay.frames.length && replay.frames[replay.index + 1].time <= replayTime) update(replay.frames[++replay.index], true);
+      if (replay.index === replay.frames.length - 1 || now - replay.startAt > 8000) finishReplay();
+    }
+    const impactPaused = now < impactPauseUntil;
+    if (!impactPaused && container.dataset.impactPause === 'active') container.dataset.impactPause = 'idle';
+    const presentationScale = impactPaused ? .06 : replay ? replay.speed : 1;
+    const visualDt = dt * presentationScale;
     const portrait = width / height < 1.15;
     const distance = Math.max(43, 79.5 / (width / height));
     const closeMove = mode === 'game' && gamePhase === 'move' && activeShooter && !overview && !reducedMotion.matches;
     const tacticalAim = mode === 'game' && gamePhase === 'aim' && activeShooter && !overview && !reducedMotion.matches;
     const focusingImpact = impactFocus && now < impactFocus.until;
+    const replayProjectile = replay ? projectileMeshes.values().next().value : null;
     if (impactFocus && !focusingImpact) { impactFocus = null; container.dataset.impactCamera = 'idle'; }
     const target = focusingImpact ? impactFocus.p
+      : replayProjectile ? new T.Vector3(replayProjectile.position.x, Math.max(1.5, replayProjectile.position.y), 0)
       : closeMove ? new T.Vector3(activeShooter.p[0] + (activeShooter.team === 0 ? 3 : -3), activeShooter.p[1] + 1.2, 0)
       : tacticalAim ? tacticalTarget
       : new T.Vector3(mode === 'lobby' && !portrait ? -4.6 : 0, mode === 'home' ? 10 : 2, 0);
-    const desiredDistance = focusingImpact ? Math.max(29, 48 / (width / height)) : closeMove ? Math.max(22, 34 / (width / height)) : tacticalAim ? Math.max(41, 72 / (width / height)) : mode === 'home' ? Math.max(distance, 57) : distance;
-    const blend = reducedMotion.matches ? 1 : 1 - Math.exp(-dt * 5);
+    const desiredDistance = focusingImpact ? Math.max(29, 48 / (width / height)) : replayProjectile ? Math.max(25, 40 / (width / height)) : closeMove ? Math.max(22, 34 / (width / height)) : tacticalAim ? Math.max(41, 72 / (width / height)) : mode === 'home' ? Math.max(distance, 57) : distance;
+    const blend = reducedMotion.matches ? 1 : 1 - Math.exp(-visualDt * 5);
     viewTarget.lerp(target, blend); viewDistance += (desiredDistance - viewDistance) * blend;
     camera.position.set(viewTarget.x + (mode === 'lobby' && !portrait ? 6.6 : 0), viewTarget.y + Math.max(10, viewDistance * .32), viewDistance);
     if (airdropMesh?.visible) {
@@ -773,13 +827,16 @@ export function createScene(container) {
       rainGeo.attributes.position.needsUpdate = true;
     }
     camera.lookAt(viewTarget);
-    container.dataset.cameraMode = focusingImpact ? 'impact' : closeMove ? 'shooter' : tacticalAim ? 'tactical' : 'overview'; container.dataset.cameraX = viewTarget.x.toFixed(2);
+    container.dataset.cameraMode = focusingImpact ? 'impact' : replayProjectile ? 'replay-projectile' : closeMove ? 'shooter' : tacticalAim ? 'tactical' : 'overview'; container.dataset.cameraX = viewTarget.x.toFixed(2);
     selection.visible = mode === 'game' && ['move', 'aim'].includes(gamePhase) && Boolean(activeShooter);
     if (selection.visible) selection.position.set(activeShooter.p[0], activeShooter.p[1] + .12, 1.55);
-    if (shake > 0 && !reducedMotion.matches) { camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake; shake *= 0.88; }
+    if (shake > 0 && !reducedMotion.matches) {
+      camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake;
+      camera.rotation.z += (Math.random() - .5) * shake * .018; shake *= Math.pow(.88, dt * 60);
+    }
     for (const obj of objects.values()) {
       obj.userData.moving = obj.position.distanceToSquared(obj.userData.targetP) > .001;
-      obj.position.lerp(obj.userData.targetP, Math.min(1, dt * 22)); obj.quaternion.slerp(obj.userData.targetQ, Math.min(1, dt * 22));
+      obj.position.lerp(obj.userData.targetP, Math.min(1, visualDt * 22)); obj.quaternion.slerp(obj.userData.targetQ, Math.min(1, visualDt * 22));
       art.animateResident(obj, now, reducedMotion.matches, matchWinner);
       const animator = obj.userData.assetAnimator;
       if (animator) {
@@ -789,7 +846,7 @@ export function createScene(container) {
           const previous = animator.actions[animator.current], action = animator.actions[next];
           previous.fadeOut(.12); action.reset().fadeIn(.12).play(); animator.current = next;
         }
-        animator.mixer.timeScale = reducedMotion.matches ? 0 : 1; animator.mixer.update(dt);
+        animator.mixer.timeScale = reducedMotion.matches ? 0 : presentationScale; animator.mixer.update(dt);
         if (obj.userData.activeResident) {
           container.dataset.residentAnimation = next;
           container.dataset.activeWeaponModel = obj.userData.assetWeapon || 'fallback';
@@ -797,19 +854,19 @@ export function createScene(container) {
       }
       if (obj.userData.gun) {
         const recoil = obj.userData.recoil || 0; obj.userData.gun.position.x = (obj.userData.team === 0 ? -1 : 1) * recoil;
-        obj.userData.recoil = Math.max(0, recoil - dt * .7);
+        obj.userData.recoil = Math.max(0, recoil - visualDt * .7);
       }
     }
     for (const mesh of projectileMeshes.values()) {
       if (!mesh.userData.serverP) continue;
-      const age = Math.min(.12, Math.max(0, (now - mesh.userData.snapshotAt) / 1000));
+      const age = Math.min(.12, Math.max(0, (now - mesh.userData.snapshotAt) / 1000)) * presentationScale;
       const predicted = mesh.userData.serverP.clone().addScaledVector(mesh.userData.velocity, age);
       const g = 4.91 * (currentWeather?.gravityMod || 1.0);
       predicted.y -= g * age * age;
       const isHeavy = mesh.userData.weapon === 'heavy';
       const windFactor = isHeavy ? (WEAPONS.heavy.windFactor || 1) : (currentWeather?.windAllWeapons ? 0.6 : 0);
       predicted.x += .5 * currentWind * (currentWeather?.windMod || 1.0) * windFactor * age * age;
-      mesh.position.lerp(predicted, reducedMotion.matches ? 1 : 1 - Math.exp(-dt * 28));
+      mesh.position.lerp(predicted, reducedMotion.matches ? 1 : 1 - Math.exp(-visualDt * 28));
     }
     if (now - trailAt > 55 && !reducedMotion.matches) {
       const trails = [...projectileMeshes.values()];
@@ -820,29 +877,29 @@ export function createScene(container) {
       }
     }
     particles = particles.filter(p => {
-      p.life -= dt; if (p.life <= 0) { p.mesh.removeFromParent(); if (p.mesh.userData.effectMaterial) p.mesh.material.dispose(); return false; }
-      if (p.fade && p.mesh.material?.transparent) p.mesh.material.opacity *= Math.max(0, 1 - dt * 1.6 / Math.max(.2, p.life / p.maxLife));
-      if (p.ring) { p.mesh.scale.addScalar(dt * 9); if (p.mesh.material?.transparent) p.mesh.material.opacity = Math.min(1, p.life / p.maxLife); return true; }
-      p.vy -= p.gravity * dt;
-      const damping = Math.exp(-p.drag * dt); p.vx *= damping; p.vy *= damping; p.vz *= damping;
-      p.mesh.position.x += p.vx * dt; p.mesh.position.y += p.vy * dt; p.mesh.position.z += p.vz * dt;
+      p.life -= visualDt; if (p.life <= 0) { p.mesh.removeFromParent(); if (p.mesh.userData.effectMaterial) p.mesh.material.dispose(); return false; }
+      if (p.fade && p.mesh.material?.transparent) p.mesh.material.opacity *= Math.max(0, 1 - visualDt * 1.6 / Math.max(.2, p.life / p.maxLife));
+      if (p.ring) { p.mesh.scale.addScalar(visualDt * 9); if (p.mesh.material?.transparent) p.mesh.material.opacity = Math.min(1, p.life / p.maxLife); return true; }
+      p.vy -= p.gravity * visualDt;
+      const damping = Math.exp(-p.drag * visualDt); p.vx *= damping; p.vy *= damping; p.vz *= damping;
+      p.mesh.position.x += p.vx * visualDt; p.mesh.position.y += p.vy * visualDt; p.mesh.position.z += p.vz * visualDt;
       if (p.debris) {
         if (p.mesh.position.y < .12) { p.mesh.position.y = .12; p.vy = Math.abs(p.vy) * p.mesh.userData.bounce; p.vx *= .7; p.vz *= .7; p.spin *= .65; }
-        p.mesh.rotation.x += p.spin * dt; p.mesh.rotation.z += p.spin * dt * .6;
-        if (p.life < .5) p.mesh.scale.multiplyScalar(Math.max(0, 1 - dt * 5));
-      } else if (p.grow) p.mesh.scale.multiplyScalar(1 + dt * p.grow);
-      else p.mesh.scale.multiplyScalar(1 - dt * 1.8);
+        p.mesh.rotation.x += p.spin * visualDt; p.mesh.rotation.z += p.spin * visualDt * .6;
+        if (p.life < .5) p.mesh.scale.multiplyScalar(Math.max(0, 1 - visualDt * 5));
+      } else if (p.grow) p.mesh.scale.multiplyScalar(1 + visualDt * p.grow);
+      else p.mesh.scale.multiplyScalar(1 - visualDt * 1.8);
       return true;
     });
     impactMarks = impactMarks.filter(mark => {
-      mark.life -= dt; mark.mesh.material.opacity = .28 * Math.min(1, mark.life / 1.5);
+      mark.life -= visualDt; mark.mesh.material.opacity = .28 * Math.min(1, mark.life / 1.5);
       if (mark.life > 0) return true;
       mark.mesh.removeFromParent(); mark.mesh.material.dispose(); return false;
     });
     container.dataset.fragments = particles.filter(p => p.debris).length;
     container.dataset.vfxParticles = String(particles.filter(p => !p.debris).length); container.dataset.impactMarks = String(impactMarks.length);
     container.dataset.attachedDecals = String(impactMarks.filter(mark => mark.mesh.userData.attached).length);
-    blastLight.intensity = Math.max(0, blastLight.intensity - dt * blastLight.userData.decayRate);
+    blastLight.intensity = Math.max(0, blastLight.intensity - visualDt * blastLight.userData.decayRate);
 
     if (!reducedMotion.matches) {
       pennants.forEach((f, i) => { f.rotation.y = currentWind * .11 + Math.sin(now / 650 + i) * (.04 + Math.abs(currentWind) * .035); });
@@ -856,5 +913,5 @@ export function createScene(container) {
     if (composer) composer.render(dt); else renderer.render(scene, camera);
   }
   requestAnimationFrame(render);
-  return { update, updateAim, reset, aimPreview, setOverview: value => { overview = value; }, setMode: value => { mode = value; } };
+  return { update, updateAim, reset, aimPreview, skipReplay: finishReplay, setOverview: value => { overview = value; }, setMode: value => { mode = value; } };
 }

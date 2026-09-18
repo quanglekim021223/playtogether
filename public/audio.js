@@ -18,6 +18,8 @@ const profiles = {
   airdropLand: { frequency: 92, filter: 520, duration: .32, tone: 'triangle', noise: .72 },
   airdropCollect: { frequency: 880, filter: 3400, duration: .38, tone: 'sine', noise: .08 },
   airdropBreak: { frequency: 115, filter: 900, duration: .4, tone: 'square', noise: .9 },
+  impactWhoosh: { frequency: 72, filter: 430, duration: .34, tone: 'sine', noise: .42 },
+  replayStart: { frequency: 190, filter: 1100, duration: .48, tone: 'triangle', noise: .14 },
 };
 export function synthesize(context, output, type, strength = 1) {
   const p = profiles[type]; if (!p) return;

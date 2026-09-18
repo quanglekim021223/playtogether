@@ -90,3 +90,21 @@ test('heavy bomb breaks support blocks and the enemy roof physically collapses',
   assert.ok(game.items.find(i => i.kind === 'roof' && i.team === 1).body.position.y < 5);
   assert.ok(game.items.find(i => i.kind === 'roof' && i.team === 0).body.position.y > 7);
 });
+
+test('combat presentation events identify direct resident hits and critical supports', () => {
+  const game = new Match('tower');
+  game.shooterCursor[0] = 1; game.syncShooter();
+  game.readyAim(); game.fire({ angle: 45, power: 50, weapon: 'heavy' });
+  const projectile = game.projectile;
+  const resident = game.items.find(item => item.kind === 'resident' && item.team === 1);
+  projectile.hitItemId = resident.id;
+  game.explode(projectile.id);
+  const directHit = game.events.find(event => event.type === 'directHit');
+  assert.equal(directHit.residentId, resident.id);
+  assert.equal(directHit.weapon, 'heavy');
+
+  const support = game.items.find(item => item.team === 1 && item.partId === 'tower-beam-0');
+  game.damage(support, support.hp + 1, 'test', support.body.position.clone(), 20);
+  const broken = game.events.find(event => event.type === 'break' && event.itemId === support.id);
+  assert.equal(broken.criticalSupport, true);
+});

@@ -501,7 +501,11 @@ export class Match {
     }
     item.hp = Math.max(0, item.hp - effectiveAmount);
     if (item.kind === 'resident') return;
-    const data = { itemId: item.id, material: item.material, p: item.body.position.toArray(), q: item.body.quaternion.toArray(), size: item.size, cause };
+    const data = {
+      itemId: item.id, material: item.material, p: item.body.position.toArray(), q: item.body.quaternion.toArray(), size: item.size, cause,
+      criticalSupport: this.map.nodes?.some(node => node.supportId === item.partId)
+        || (item.kind === 'block' && item.size?.[1] >= 1.4),
+    };
     if (impactPoint) {
       const normal = impactPoint.vsub(item.body.position);
       if (normal.lengthSquared() < 0.0001) normal.set(0, 1, 0); else normal.normalize();
@@ -562,6 +566,11 @@ export class Match {
     const baseStats = WEAPONS[weapon];
     const mod = proj.damageMod || 1.0;
     const stats = { ...baseStats, damage: baseStats.damage * mod, damageMod: mod };
+    const directResident = this.items.find(item => item.id === proj.hitItemId && item.kind === 'resident');
+    if (directResident) this.event('directHit', {
+      residentId: directResident.id, team: directResident.team, weapon,
+      x: directResident.body.position.x, y: directResident.body.position.y,
+    });
     this.applyRadialBlast(position, stats);
     this.event('blast', { x: position.x, y: position.y, radius: stats.radius, weapon, projectileId: proj.id, hitItemId: proj.hitItemId ?? null });
     try { this.world.removeBody(body); } catch {}
