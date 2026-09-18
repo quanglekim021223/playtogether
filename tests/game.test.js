@@ -52,8 +52,16 @@ test('end state and draw are resolved after explosions', () => {
 test('timeout auto-fires and both teams use mirrored trajectories', () => {
   const a = launchVelocity(0, 42, 62), b = launchVelocity(1, 42, 62);
   assert.equal(a.x, -b.x); assert.equal(a.y, b.y);
+  const downward = launchVelocity(0, -20, 15);
+  assert.ok(downward.y < 0, 'negative aim angles must launch downward for nearby lower targets');
   const game = new Match(); game.deadline = 0; game.step(); assert.equal(game.phase, 'aim');
   game.deadline = 0; game.step(); assert.equal(game.phase, 'flight');
+});
+
+test('server accepts safe downward shots and rejects angles below the firing clearance', () => {
+  const game = new Match(); game.readyAim();
+  assert.equal(game.validAim({ angle: -20, power: 15, weapon: game.shooter.weapon }), true);
+  assert.equal(game.validAim({ angle: -20.01, power: 15, weapon: game.shooter.weapon }), false);
 });
 
 test('six-person teams keep playing until the last resident is eliminated', () => {

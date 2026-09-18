@@ -2,7 +2,7 @@ import * as C from 'cannon-es';
 import { MAPS, DEFAULT_MAP } from './maps.js';
 import { MATERIALS, crackStage } from './public/materials.js';
 
-import { WEAPONS, launchVelocity, muzzlePosition } from './public/weapons.js';
+import { AIM_LIMITS, WEAPONS, launchVelocity, muzzlePosition } from './public/weapons.js';
 export { WEAPONS, launchVelocity };
 export const SKILL_LABELS = {
   pebble: '⚡ Đạn kép',
@@ -344,8 +344,8 @@ export class Match {
   }
   validAim(input) {
     const shooter = this.shooter;
-    return Boolean(shooter && input && Number.isFinite(input.angle) && input.angle >= 10 && input.angle <= 80
-      && Number.isFinite(input.power) && input.power >= 15 && input.power <= 100 && input.weapon === shooter.weapon
+    return Boolean(shooter && input && Number.isFinite(input.angle) && input.angle >= AIM_LIMITS.minAngle && input.angle <= AIM_LIMITS.maxAngle
+      && Number.isFinite(input.power) && input.power >= AIM_LIMITS.minPower && input.power <= AIM_LIMITS.maxPower && input.weapon === shooter.weapon
       && (input.shooterId === undefined || input.shooterId === shooter.id) && (input.turn === undefined || input.turn === this.turn));
   }
   setAim(input) {

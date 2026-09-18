@@ -1,3 +1,5 @@
+import { AIM_LIMITS } from './weapons.js';
+
 const MIN_FORWARD_PULL = 10;
 export const AIM_ARM_RADIUS = 12;
 export const AIM_CANCEL_RADIUS = 26;
@@ -42,8 +44,11 @@ export function dragAim(dx, dy, team, maxPull) {
   if (distance < AIM_ARM_RADIUS || forward < MIN_FORWARD_PULL) return null;
   const powerTravel = Math.max(1, maxPull - MIN_FORWARD_PULL);
   const angleTravel = Math.max(60, Math.min(100, maxPull * .55));
+  const vertical = clamp(dy / angleTravel, -1, 1);
   return {
-    angle: clamp(45 + dy / angleTravel * 35, 10, 80),
-    power: clamp(15 + (forward - MIN_FORWARD_PULL) / powerTravel * 85, 15, 100),
+    angle: vertical < 0
+      ? 45 + vertical * (45 - AIM_LIMITS.minAngle)
+      : 45 + vertical * (AIM_LIMITS.maxAngle - 45),
+    power: clamp(AIM_LIMITS.minPower + (forward - MIN_FORWARD_PULL) / powerTravel * (AIM_LIMITS.maxPower - AIM_LIMITS.minPower), AIM_LIMITS.minPower, AIM_LIMITS.maxPower),
   };
 }

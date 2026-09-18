@@ -1,4 +1,6 @@
 // Shared ballistic and visual contract; each resident owns one weapon for the match.
+export const AIM_LIMITS = Object.freeze({ minAngle: -20, maxAngle: 80, minPower: 15, maxPower: 100 });
+
 export const WEAPONS = {
   pebble: { name: 'Ná cao su', hint: 'Nảy một lần · có đạn bồi', icon: 'Y', radius: 2.7, damage: 62, mass: 2, speed: 1, impulse: 28, bouncesMax: 1, canSecondShot: true, color: '#ffc667' },
   heavy: { name: 'Bazooka', hint: 'Nổ mạnh · chịu ảnh hưởng gió', icon: '⬢', radius: 3.1, damage: 100, mass: 5, speed: .88, impulse: 42, windFactor: 1.2, color: '#697e59' },

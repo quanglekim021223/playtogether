@@ -11,7 +11,7 @@ test('vertical travel adjusts the full angle range in both directions', () => {
   assert.equal(dragAim(-60, 0, 0, 120).angle, 45);
   assert.ok(dragAim(-60, -30, 0, 120).angle < 45);
   assert.ok(dragAim(-60, 30, 0, 120).angle > 45);
-  assert.equal(dragAim(-60, -200, 0, 120).angle, 10);
+  assert.equal(dragAim(-60, -200, 0, 120).angle, -20);
   assert.equal(dragAim(-60, 200, 0, 120).angle, 80);
 });
 test('tap, return to origin, and pull towards enemy do not arm a shot', () => {
@@ -43,6 +43,7 @@ test('large and steep pulls stay inside the server limits', () => {
   assert.equal(dragAim(-600, 200, 0, 120).power, 100);
   assert.equal(dragAim(-100, 0, 0, 120).angle, 45);
   assert.equal(dragAim(-10, 200, 0, 120).angle, 80);
+  assert.equal(dragAim(-10, -200, 0, 120).angle, -20);
 });
 test('wide aim pads provide a longer but bounded precision range', () => {
   assert.equal(aimPullRange(200), 120);
