@@ -414,10 +414,10 @@ export function createScene(container) {
     container.dataset.replay = 'complete'; window.dispatchEvent(new CustomEvent('replay-end'));
   }
   function replayLast() { return lastReplayFinal ? beginReplay(lastReplayFinal) : false; }
-  function triggerImpactPause() {
+  function triggerImpactPause(duration = 70) {
     if (reducedMotion.matches || replay) return;
-    impactPauseUntil = Math.max(impactPauseUntil, performance.now() + 300);
-    container.dataset.impactPause = 'active';
+    impactPauseUntil = Math.max(impactPauseUntil, performance.now() + duration);
+    container.dataset.impactPause = 'active'; container.dataset.impactPauseMs = String(duration);
     window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'impactWhoosh' } }));
   }
   function triggerShake(amount, x, y, radius = 3) {
@@ -598,9 +598,9 @@ export function createScene(container) {
         if (event.type === 'hit') addImpactMark(origin[0], origin[1], event.cause === 'blast' ? 0x241812 : 0x4b3d34, .34 + Math.min(.7, force * .3), event.itemId, event.size);
         container.dataset.lastMaterial = event.material;
         window.dispatchEvent(new CustomEvent('material-sound', { detail: { material: event.material, strength: event.type === 'break' ? 1 : .4 } }));
-        if (event.type === 'break' && event.criticalSupport) triggerImpactPause();
+        if (event.type === 'break' && event.criticalSupport) triggerImpactPause(95);
       }
-      if (event.type === 'directHit') triggerImpactPause();
+      if (event.type === 'directHit') triggerImpactPause(70);
       if (event.type === 'shot') {
         const actor = objects.get(event.shooterId); if (actor) actor.userData.recoil = .18;
         spawnMuzzleFlash(event);
@@ -633,7 +633,10 @@ export function createScene(container) {
         window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'barrel' } }));
       }
     }
-    if (!fromReplay && data.phase === 'over' && previousPhase !== 'over') beginReplay(data);
+    if (!fromReplay && data.phase === 'over' && previousPhase !== 'over') {
+      lastReplayFinal = copySnapshot(data);
+      container.dataset.replay = replayFrames.length >= 3 && !reducedMotion.matches ? 'ready' : 'unavailable';
+    }
   }
   const ringGeometry = new T.TorusGeometry(1, .04, 6, 40), flashGeometry = new T.ConeGeometry(.28, 1.1, 8), sparkGeometry = new T.BoxGeometry(.06, .06, .5);
   const impactMarkGeometry = new T.CircleGeometry(.72, 18);
@@ -801,7 +804,7 @@ export function createScene(container) {
     }
     const impactPaused = now < impactPauseUntil;
     if (!impactPaused && container.dataset.impactPause === 'active') container.dataset.impactPause = 'idle';
-    const presentationScale = impactPaused ? .06 : replay ? (now < replay.impactSlowUntil ? .24 : replay.baseSpeed) : 1;
+    const presentationScale = impactPaused ? .25 : replay ? (now < replay.impactSlowUntil ? .24 : replay.baseSpeed) : 1;
     const visualDt = dt * presentationScale;
     const portrait = width / height < 1.15;
     const distance = Math.max(43, 79.5 / (width / height));

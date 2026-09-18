@@ -46,12 +46,15 @@ test('combat presentation applies distance shake, impact pause and final-shot re
   );
   await page.evaluate(snapshot => window.combatScene.update(snapshot), impact);
   const scene = page.locator('#scene');
-  await expect(scene).toHaveAttribute('data-impact-pause', 'active');
+  await expect(scene).toHaveAttribute('data-impact-pause-ms', '70');
   await expect.poll(() => scene.getAttribute('data-shake-strength').then(Number)).toBeGreaterThan(0);
 
   const settle = structuredClone(impact); settle.phase = 'settle'; settle.time = 3; settle.projectiles = []; settle.projectile = null;
   const over = structuredClone(settle); over.phase = 'over'; over.time = 4; over.winner = 0;
   await page.evaluate(([a, b]) => { window.combatScene.update(a); window.combatScene.update(b); }, [settle, over]);
+  await expect(scene).toHaveAttribute('data-replay', 'ready');
+  expect(await page.evaluate(() => window.combatScene.canReplay())).toBe(true);
+  expect(await page.evaluate(() => window.combatScene.replayLast())).toBe(true);
   await expect(scene).toHaveAttribute('data-replay', 'playing');
   await expect(scene).toHaveAttribute('data-replay-stage', 'shooter');
   await expect(scene).toHaveAttribute('data-camera-mode', 'replay-shooter');
