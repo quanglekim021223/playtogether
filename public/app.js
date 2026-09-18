@@ -1,4 +1,4 @@
-import { dragAim } from './aim.js';
+import { aimPullRange, dragAim } from './aim.js';
 import { createGameAudio } from './audio.js';
 import { MATERIALS } from './materials.js';
 import { WEAPONS } from './weapons.js';
@@ -64,8 +64,8 @@ function controls() {
   <section class="controller-touch"><div class="pull-heading"><span id="pull-status">CHẠM · KÉO · THẢ</span><span class="pull-power"><output id="pull-angle">—</output><small>°</small><output id="pull-power">0</output><small>% LỰC</small></span></div>
     <div id="aim-pad" role="application" aria-label="Vùng kéo ná để ngắm và thả để bắn" aria-disabled="true">
       <div class="pad-grid" aria-hidden="true"></div><div id="pull-cord" aria-hidden="true"></div><div id="pull-anchor" aria-hidden="true"></div><div id="pull-knob" aria-hidden="true">✦</div>
-      <div class="pad-cue"><span id="pull-direction">↙</span><span id="pull-hint">Kéo xuống trái</span><small>Nhìn mũi tên trên màn hình lớn</small></div>
-    </div><div class="pull-footer"><span>Kéo xa = mạnh hơn · Thả = bắn</span><span>Kéo về điểm chạm để hủy</span></div>
+      <div class="pad-cue"><span id="pull-direction">←</span><span id="pull-hint">Kéo trái lấy lực · lên/xuống chỉnh góc</span><small>Nhìn mũi tên trên màn hình lớn</small></div>
+    </div><div class="pull-footer"><span>Ngang = lực · Dọc = góc · Thả = bắn</span><span>Kéo về điểm chạm để hủy</span></div>
   </section>`;
 }
 function landscape() { return matchMedia('(orientation: landscape)').matches; }
@@ -121,7 +121,7 @@ function moveGesture(event) {
   pad.classList.toggle('armed', Boolean(aim));
   document.querySelector('#pull-power').textContent = aim ? Math.round(aim.power) : '0';
   document.querySelector('#pull-angle').textContent = aim ? Math.round(aim.angle) : '—';
-  document.querySelector('#pull-status').textContent = aim ? 'THẢ TAY ĐỂ BẮN' : 'KÉO NGƯỢC HƯỚNG BẮN';
+  document.querySelector('#pull-status').textContent = aim ? 'THẢ TAY ĐỂ BẮN' : 'KÉO NGANG NGƯỢC ĐỐI THỦ';
   if (aim) { draft = { ...draft, ...aim }; sendAim(); }
 }
 function bindControls() {
@@ -135,7 +135,7 @@ function bindControls() {
     if (!canControl() || shotPending || gesture || event.isPrimary === false || (event.pointerType !== 'touch' && event.button !== 0)) return;
     event.preventDefault(); unlockAudio();
     const point = padPoint(event, pad);
-    gesture = { id: event.pointerId, x: point.x, y: point.y, localX: point.x, localY: point.y, maxPull: Math.min(140, pad.clientHeight * 0.62, pad.clientWidth * 0.34), turn: state.game.turn, aim: null };
+    gesture = { id: event.pointerId, x: point.x, y: point.y, localX: point.x, localY: point.y, maxPull: aimPullRange(pad.clientWidth), turn: state.game.turn, aim: null };
     pad.setPointerCapture(event.pointerId); pad.classList.add('dragging');
     for (const id of ['pull-anchor', 'pull-knob', 'pull-cord']) {
       const element = document.getElementById(id); element.style.left = `${gesture.localX}px`; element.style.top = `${gesture.localY}px`;
@@ -246,8 +246,8 @@ function updateControls() {
     }
   }
   const team = state?.players.find(p => p.id === playerId)?.team || 0;
-  document.querySelector('#pull-direction').textContent = steering ? '↕' : team === 0 ? '↙' : '↘';
-  document.querySelector('#pull-hint').textContent = steering ? 'Vuốt dọc để điều khiển tên lửa' : team === 0 ? 'Kéo xuống trái' : 'Kéo xuống phải';
+  document.querySelector('#pull-direction').textContent = steering ? '↕' : team === 0 ? '←' : '→';
+  document.querySelector('#pull-hint').textContent = steering ? 'Vuốt dọc để điều khiển tên lửa' : team === 0 ? 'Kéo trái lấy lực · lên/xuống chỉnh góc' : 'Kéo phải lấy lực · lên/xuống chỉnh góc';
 }
 window.addEventListener('resize', cancelGesture);
 window.addEventListener('blur', cancelGesture);

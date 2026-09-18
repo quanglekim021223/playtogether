@@ -115,7 +115,7 @@ test('landscape controllers: orientation, cancel, mirrored pull, turns, reconnec
     await expect(b.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'false');
     await a.phone.reload(); await expect(a.phone.locator('#phone-team')).toContainText('SAN HÔ');
     await expect(a.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'true');
-    await expect(b.phone.locator('#pull-hint')).toHaveText('Kéo xuống phải');
+    await expect(b.phone.locator('#pull-hint')).toHaveText('Kéo phải lấy lực · lên/xuống chỉnh góc');
     await pullStart(b, 40, 35);
     const power = await b.phone.locator('#pull-power').textContent();
     await expect(page.locator('#aim-readout')).toContainText(`LỰC ${power}%`);
@@ -142,9 +142,11 @@ test('resident shot triggers live material damage, fragments and cracks on TV', 
     });
     await expect(player.phone.locator('#shooter-weapon')).toHaveText('Ná cao su');
     const box = await player.phone.locator('#aim-pad').boundingBox();
-    const maxPull = Math.min(140, box.height * .62, box.width * .34);
-    const length = 12 + (30 - 15) / 85 * (maxPull - 12), angle = 35 * Math.PI / 180;
-    await pullStart(player, -Math.cos(angle) * length, Math.sin(angle) * length);
+    const maxPull = Math.max(120, Math.min(180, box.width * .42));
+    const horizontal = 10 + (30 - 15) / 85 * (maxPull - 10);
+    const angleTravel = Math.max(60, Math.min(100, maxPull * .55));
+    const vertical = (35 - 45) / 35 * angleTravel;
+    await pullStart(player, -horizontal, vertical);
     await expect(page.locator('#aim-readout')).toContainText('LỰC 30%');
     await release(player);
     await expect.poll(() => page.evaluate(() => window.liveMaterials.length), { timeout: 8000 }).toBeGreaterThan(0);
