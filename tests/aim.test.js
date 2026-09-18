@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AIM_CANCEL_RADIUS, aimPullRange, crossedPowerMilestones, dragAim, smoothAimPoint } from '../public/aim.js';
+import { AIM_ARM_RADIUS, AIM_CANCEL_RADIUS, AIM_CANCEL_READY_RADIUS, aimPullRange, crossedPowerMilestones, dragAim, isAimCanceling, smoothAimPoint } from '../public/aim.js';
 
 test('slingshot mirrors team direction and horizontal travel controls power', () => {
   assert.deepEqual(dragAim(-60, 40, 0, 120), dragAim(60, 40, 1, 120));
@@ -29,7 +29,11 @@ test('the visible point filters jitter while raw release coordinates remain avai
   assert.deepEqual(smoothAimPoint(null, { x: -40, y: 10 }), { x: -40, y: 10 });
 });
 test('cancel radius and power milestones are deterministic', () => {
-  assert.equal(dragAim(-AIM_CANCEL_RADIUS + 1, 0, 0, 120), null);
+  assert.equal(dragAim(-AIM_ARM_RADIUS + 1, 0, 0, 120), null);
+  assert.ok(dragAim(-AIM_CANCEL_RADIUS + 1, 0, 0, 120), 'a short pull must remain a valid light shot');
+  assert.equal(isAimCanceling(false, AIM_CANCEL_RADIUS - 1), false);
+  assert.equal(isAimCanceling(true, AIM_CANCEL_RADIUS - 1), true);
+  assert.equal(isAimCanceling(true, AIM_CANCEL_READY_RADIUS), false);
   assert.deepEqual(crossedPowerMilestones(20, 52), [25, 50]);
   assert.deepEqual(crossedPowerMilestones(49, 76, new Set([50])), [75]);
   assert.deepEqual(crossedPowerMilestones(76, 100), [100]);

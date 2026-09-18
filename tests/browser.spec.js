@@ -104,6 +104,11 @@ test('landscape controllers: orientation, cancel, mirrored pull, turns, reconnec
     await expect(a.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'false');
     await expect(b.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'true');
     expect(await a.phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight)).toBe(true);
+    // A short pull is a valid low-power shot; cancellation only arms after a longer pull.
+    await pullStart(a, -18, 0);
+    await expect(a.phone.locator('#aim-pad')).toHaveClass(/armed/);
+    await expect.poll(() => a.phone.locator('#pull-power').textContent().then(Number)).toBeLessThan(25);
+    await cancel(a);
     // Wrong-direction pulls, pointer cancellation, and returning to origin never fire.
     await pullStart(a, 50, 35); await release(a); await expect(page.locator('#round-label')).toHaveText('LƯỢT 1');
     await pullStart(a, -50, 35); await cancel(a); await expect(a.phone.locator('#aim-pad')).not.toHaveClass(/dragging/);

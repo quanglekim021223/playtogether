@@ -1,5 +1,7 @@
 const MIN_FORWARD_PULL = 10;
+export const AIM_ARM_RADIUS = 12;
 export const AIM_CANCEL_RADIUS = 26;
+export const AIM_CANCEL_READY_RADIUS = 36;
 export const POWER_MILESTONES = [25, 50, 75, 100];
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -27,13 +29,17 @@ export function crossedPowerMilestones(previousPower, power, seen = new Set()) {
   return POWER_MILESTONES.filter(mark => previousPower < mark && power >= mark && !seen.has(mark));
 }
 
+export function isAimCanceling(cancelReady, distance) {
+  return Boolean(cancelReady && distance < AIM_CANCEL_RADIUS);
+}
+
 // Pull away from the enemy, like a slingshot. Horizontal travel selects power;
 // vertical travel adjusts the angle without unexpectedly changing that power.
 // Screen Y grows downwards, so pulling down launches at a steeper angle.
 export function dragAim(dx, dy, team, maxPull) {
   const forward = -dx * (team === 0 ? 1 : -1);
   const distance = Math.hypot(dx, dy);
-  if (distance < AIM_CANCEL_RADIUS || forward < MIN_FORWARD_PULL) return null;
+  if (distance < AIM_ARM_RADIUS || forward < MIN_FORWARD_PULL) return null;
   const powerTravel = Math.max(1, maxPull - MIN_FORWARD_PULL);
   const angleTravel = Math.max(60, Math.min(100, maxPull * .55));
   return {
