@@ -9,7 +9,7 @@ import { Match, PHASE_DURATIONS } from './game.js';
 import { MAPS, MAP_CATALOG, DEFAULT_MAP } from './maps.js';
 
 export function createApp({ port = 3000 } = {}) {
-  const app = express(); const http = createServer(app); const io = new Server(http, { maxHttpBufferSize: 8192 });
+  const app = express(); app.set('trust proxy', 1); const http = createServer(app); const io = new Server(http, { maxHttpBufferSize: 8192 });
   const rooms = new Map();
   const publicPath = fileURLToPath(new URL('./public/', import.meta.url));
   app.use(express.static(publicPath));
