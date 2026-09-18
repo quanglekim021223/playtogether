@@ -119,6 +119,7 @@ Nhân vật có thở, chớp mắt, phản ứng bị thương và mừng thắ
 - `public/art.js`: texture, chi tiết nhà, vết nứt, nhân vật, thùng xăng, tấm nảy và hoạt ảnh.
 - `public/environment.js`: bầu trời, biển, đảo, làng ven bờ, hải đăng và chuyển động cảnh nền.
 - `public/scene.js`: ánh sáng đổi tông theo bản đồ, shadow map mềm, flash sáng khi nổ và pipeline hậu kỳ SSAO + bloom + vignette; tự hạ chất lượng trên màn hình nhỏ hoặc thiết bị yếu.
+- Hiệu ứng chiến đấu phân biệt sáu vũ khí bằng màu, trail, muzzle flash, tia lửa, khói, shockwave, dấu va chạm và camera nhấn vào điểm nổ; toàn bộ chỉ chạy ở client và không can thiệp vật lý authoritative.
 - `public/weapons.js`: thông số sáu vũ khí, vận tốc và vị trí nòng súng dùng chung server/client.
 - `public/audio.js`: âm thanh tổng hợp theo vật liệu, giới hạn phát chồng, âm lượng và mute.
 - `public/app.js`, `public/style.css`: màn hình chung, kết nối và vòng đời thao tác cảm ứng.

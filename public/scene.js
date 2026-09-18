@@ -12,6 +12,14 @@ import { MATERIALS } from './materials.js';
 import { createEnvironment } from './environment.js';
 import { WEAPONS, launchVelocity, muzzlePosition } from './weapons.js';
 const COLORS = [0xee775f, 0x48aaa5];
+const WEAPON_VFX = {
+  pebble: { core: 0xffd36f, accent: 0xfff1b0, smoke: 0x8f826d, shake: .11 },
+  heavy: { core: 0xff9a42, accent: 0xffdc73, smoke: 0x4e554f, shake: .32 },
+  bloom: { core: 0xe989c4, accent: 0xffc4df, smoke: 0x766273, shake: .2 },
+  rocket: { core: 0xff6b32, accent: 0xffd06b, smoke: 0x555b5a, shake: .28 },
+  drill: { core: 0x8dd7ed, accent: 0xe1f8ff, smoke: 0x65777b, shake: .17 },
+  pulse: { core: 0x75f3db, accent: 0xd8fff4, smoke: 0x587b78, shake: .24 }
+};
 export function createScene(container) {
   const art = createArt();
   const kit = new Map();
@@ -126,12 +134,12 @@ export function createScene(container) {
     const left = box(-.16, 0, 0, .36, .035, .1, 0x67828b, bird), right = box(.16, 0, 0, .36, .035, .1, 0x67828b, bird);
     birds.push({ bird, left, right });
   }
-  const objects = new Map(); const projectileMeshes = new Map(); let shot = null; let particles = []; let lastEvent = 0; let shake = 0; let trailAt = 0; let mode = 'home';
+  const objects = new Map(); const projectileMeshes = new Map(); let shot = null; let particles = []; let impactMarks = []; let lastEvent = 0; let shake = 0; let trailAt = 0; let mode = 'home';
   const mapDecor = new T.Group(); mapDecor.name = 'MapDecor'; scene.add(mapDecor);
   let currentMap = null, activeShooter = null, gamePhase = 'aim', overview = false, currentWind = 0, tacticalTarget = new T.Vector3();
   const selection = new T.Mesh(new T.TorusGeometry(.68, .035, 6, 36), new T.MeshBasicMaterial({ color: 0xffd376, depthTest: false }));
   selection.renderOrder = 9; selection.visible = false; scene.add(selection);
-  const viewTarget = new T.Vector3(0, 2, 0); let viewDistance = 50;
+  const viewTarget = new T.Vector3(0, 2, 0); let viewDistance = 50, impactFocus = null;
   function kitKey(item) {
     if (['fuelBarrel', 'bouncePad'].includes(item.kind)) return item.kind;
     if (item.kind === 'resident') return `resident${item.team}`;
@@ -344,7 +352,7 @@ export function createScene(container) {
       mesh.userData.snapshotAt = performance.now();
     }
     if (!hasProjectileList && data.projectile) {
-      if (!shot) shot = sphere(0, 0, 0, 0.29, WEAPONS[data.projectile.weapon].color);
+      if (!shot) { shot = sphere(0, 0, 0, 0.29, WEAPONS[data.projectile.weapon].color); shot.userData.weapon = data.projectile.weapon; }
       shot.position.set(data.projectile.p[0], data.projectile.p[1], 1.45);
     } else if (shot) { scene.remove(shot); shot = null; }
     matchWinner = data.winner;
@@ -367,6 +375,7 @@ export function createScene(container) {
       }
       if (event.type === 'pierce') {
         for (let i = 0; i < 7; i++) { const chip = art.fragment('stone', i); chip.position.set(event.x, event.y, .6); addParticle(chip, (Math.random() - .5) * 7, 1 + Math.random() * 4, 0, .7, true); }
+        spawnDrillSparks(event.x, event.y);
         window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'drill' } }));
       }
       if (event.type === 'skill') {
@@ -383,24 +392,21 @@ export function createScene(container) {
           m.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
           addParticle(m, (Math.random() - .5) * 6, 2 + Math.random() * 5, (Math.random() - .5) * 4, 2.5 + Math.random(), true);
         }
+        spawnMaterialDust(event);
         container.dataset.lastMaterial = event.material;
         window.dispatchEvent(new CustomEvent('material-sound', { detail: { material: event.material, strength: event.type === 'break' ? 1 : .4 } }));
       }
       if (event.type === 'shot') {
         const actor = objects.get(event.shooterId); if (actor) actor.userData.recoil = .18;
+        spawnMuzzleFlash(event);
         window.dispatchEvent(new CustomEvent('game-shot'));
       }
       if (event.type === 'blast') {
-        shake = reducedMotion.matches ? 0 : .24;
+        const profile = WEAPON_VFX[event.weapon] || WEAPON_VFX.pebble;
+        shake = reducedMotion.matches ? 0 : profile.shake;
         blastLight.position.set(event.x, Math.max(.5, event.y), 3); blastLight.intensity = 34;
-        for (let i = 0; i < (reducedMotion.matches ? 8 : 24); i++) {
-          const m = sphere(event.x, Math.max(.3, event.y), 0, .16 + Math.random() * .22, [0xffd888, 0xf29a68, 0xc7b8a0][i % 3]);
-          addParticle(m, (Math.random() - .5) * 10, Math.random() * 7, (Math.random() - .5) * 4, .5 + Math.random());
-        }
-        if (!reducedMotion.matches) {
-          const ring = new T.Mesh(ringGeometry, event.weapon === 'pulse' ? pulseRingMaterial : ringMaterial); ring.position.set(event.x, Math.max(.3, event.y), 1); ring.scale.setScalar(event.weapon === 'pulse' ? .55 : .3);
-          addParticle(ring, 0, 0, 0, .38, false, true);
-        }
+        spawnWeaponBlast(event);
+        focusImpact(event.x, event.y, event.weapon === 'pulse' ? 650 : 480);
         window.dispatchEvent(new CustomEvent('game-blast'));
       }
       if (event.type === 'barrelBlast') {
@@ -411,23 +417,96 @@ export function createScene(container) {
           addParticle(m, (Math.random() - .5) * 13, 2 + Math.random() * 10, (Math.random() - .5) * 6, .65 + Math.random() * .45);
         }
         const ring = new T.Mesh(ringGeometry, barrelRingMaterial); ring.position.set(event.x, Math.max(.35, event.y), 1); ring.scale.setScalar(.4); addParticle(ring, 0, 0, 0, .48, false, true);
+        addImpactMark(event.x, event.y, 0x4a2a20, 1.45); focusImpact(event.x, event.y, 620);
         container.dataset.lastEnvironmentEvent = 'barrelBlast';
         window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'barrel' } }));
       }
     }
   }
-  const ringGeometry = new T.TorusGeometry(1, .04, 6, 40), ringMaterial = new T.MeshBasicMaterial({ color: 0xffe4aa }), pulseRingMaterial = new T.MeshBasicMaterial({ color: 0x82d4c8 });
+  const ringGeometry = new T.TorusGeometry(1, .04, 6, 40), flashGeometry = new T.ConeGeometry(.28, 1.1, 8), sparkGeometry = new T.BoxGeometry(.06, .06, .5);
+  const ringMaterial = new T.MeshBasicMaterial({ color: 0xffe4aa }), pulseRingMaterial = new T.MeshBasicMaterial({ color: 0x82d4c8 });
   const padRingMaterial = new T.MeshBasicMaterial({ color: 0x86f3dc }), barrelRingMaterial = new T.MeshBasicMaterial({ color: 0xff7b38 });
+  function glowMaterial(color, opacity = 1) {
+    const material = new T.MeshBasicMaterial({ color, transparent: opacity < 1, opacity, depthWrite: false, blending: T.AdditiveBlending });
+    material.color.multiplyScalar(1.7); return material;
+  }
+  function glowMesh(geometry, color, opacity = 1) {
+    const effect = new T.Mesh(geometry, glowMaterial(color, opacity)); effect.userData.effectMaterial = true; return effect;
+  }
+  function effectSphere(x, y, z, radius, color, opacity = 1) {
+    const effect = glowMesh(sphereGeometry, color, opacity); effect.position.set(x, y, z); effect.scale.setScalar(radius); return effect;
+  }
+  function focusImpact(x, y, duration) {
+    if (reducedMotion.matches) return;
+    impactFocus = { p: new T.Vector3(x, Math.max(1.2, y), 0), until: performance.now() + duration };
+    container.dataset.impactCamera = 'active';
+  }
+  function addImpactMark(x, y, color, scale = 1) {
+    const mark = new T.Mesh(new T.CircleGeometry(.72, 18), new T.MeshBasicMaterial({ color, transparent: true, opacity: .28, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+    mark.position.set(x, Math.max(.18, y), 1.62); mark.scale.set(scale, scale * .62, 1); mark.rotation.z = Math.random() * Math.PI; scene.add(mark);
+    impactMarks.push({ mesh: mark, life: 7, maxLife: 7 });
+    if (impactMarks.length > 18) { const old = impactMarks.shift(); scene.remove(old.mesh); old.mesh.material.dispose(); old.mesh.geometry.dispose(); }
+    container.dataset.impactMarks = String(impactMarks.length);
+  }
+  function spawnMuzzleFlash(event) {
+    const profile = WEAPON_VFX[event.weapon] || WEAPON_VFX.pebble, p = event.p || [0, 1, 0], direction = event.team === 1 ? -1 : 1;
+    const flash = glowMesh(flashGeometry, profile.accent); flash.position.set(p[0], p[1], 1.5); flash.rotation.z = -direction * Math.PI / 2;
+    addParticle(flash, direction * 1.2, .2, 0, .16);
+    for (let i = 0; i < (reducedMotion.matches ? 2 : 7); i++) addParticle(effectSphere(p[0], p[1], 1.5, .055 + Math.random() * .05, profile.core), direction * (2 + Math.random() * 5), (Math.random() - .3) * 3, (Math.random() - .5) * 2, .22 + Math.random() * .16);
+    container.dataset.lastWeaponVfx = event.weapon;
+  }
+  function spawnDrillSparks(x, y) {
+    for (let i = 0; i < (reducedMotion.matches ? 3 : 11); i++) {
+      const spark = glowMesh(sparkGeometry, i % 2 ? WEAPON_VFX.drill.core : WEAPON_VFX.drill.accent); spark.position.set(x, y, 1.35); spark.rotation.z = Math.random() * Math.PI;
+      addParticle(spark, (Math.random() - .5) * 12, (Math.random() - .2) * 8, (Math.random() - .5) * 3, .25 + Math.random() * .3);
+    }
+  }
+  function spawnMaterialDust(event) {
+    if (reducedMotion.matches) return;
+    const colors = { wood: 0xa86d3f, brick: 0xb85b42, stone: 0x8d918b, glass: 0xc8f4f2 }, color = colors[event.material] || 0x99958c;
+    const p = event.p || [0, 1, 0], count = event.type === 'break' ? 8 : 3;
+    for (let i = 0; i < count; i++) addParticle(effectSphere(p[0] + (Math.random() - .5), p[1] + (Math.random() - .5), 1.25, .12 + Math.random() * .2, color, .38), (Math.random() - .5) * 3, .5 + Math.random() * 2.5, (Math.random() - .5), .7 + Math.random() * .45);
+  }
+  function spawnWeaponBlast(event) {
+    const profile = WEAPON_VFX[event.weapon] || WEAPON_VFX.pebble, x = event.x, y = Math.max(.3, event.y), compact = reducedMotion.matches;
+    const count = compact ? 7 : event.weapon === 'heavy' || event.weapon === 'rocket' ? 28 : 20;
+    for (let i = 0; i < count; i++) {
+      const smoke = i % 4 === 0, color = smoke ? profile.smoke : i % 2 ? profile.core : profile.accent;
+      const particle = smoke ? sphere(x, y, 0, .16 + Math.random() * .28, color) : effectSphere(x, y, 1.15, .1 + Math.random() * .2, color);
+      const lateral = event.weapon === 'drill' ? (Math.random() < .5 ? -1 : 1) * (5 + Math.random() * 8) : (Math.random() - .5) * 11;
+      addParticle(particle, lateral, Math.random() * (event.weapon === 'bloom' ? 10 : 7), (Math.random() - .5) * 4, .45 + Math.random() * .7);
+    }
+    const rings = event.weapon === 'pulse' ? 3 : 1;
+    for (let i = 0; i < rings; i++) {
+      const ring = glowMesh(ringGeometry, i % 2 ? profile.accent : profile.core, .85); ring.position.set(x, y, 1.4 + i * .08); ring.scale.setScalar(.22 + i * .22);
+      addParticle(ring, 0, 0, 0, .32 + i * .08, false, true);
+    }
+    addImpactMark(x, y, event.weapon === 'pulse' ? 0x296e68 : 0x493129, .7 + Math.min(1.2, (event.radius || 2) * .16));
+    container.dataset.lastWeaponVfx = event.weapon; container.dataset.weaponVfx = 'active';
+  }
+  function spawnProjectileTrail(projectile) {
+    const weapon = projectile.userData.weapon || 'pebble', profile = WEAPON_VFX[weapon] || WEAPON_VFX.pebble, p = projectile.position;
+    if (weapon === 'pulse') {
+      const ring = glowMesh(ringGeometry, profile.core, .65); ring.position.copy(p); ring.scale.setScalar(.075); addParticle(ring, 0, 0, 0, .2, false, true); return;
+    }
+    if (weapon === 'drill') {
+      const spark = glowMesh(sparkGeometry, profile.core); spark.position.copy(p); spark.rotation.z = Math.atan2(projectile.userData.velocity?.y || 0, projectile.userData.velocity?.x || 1); addParticle(spark, 0, 0, 0, .25); return;
+    }
+    const main = effectSphere(p.x, p.y, p.z, weapon === 'pebble' ? .055 : .1, profile.core, .72); addParticle(main, 0, .15, 0, .3);
+    if (['heavy', 'rocket', 'bloom'].includes(weapon)) addParticle(sphere(p.x, p.y, p.z - .05, .11 + Math.random() * .07, profile.smoke), 0, .2, 0, .48);
+  }
   function addParticle(m, vx, vy, vz, life, debris = false, ring = false) {
-    if (particles.length >= 180) scene.remove(particles.shift().mesh);
+    if (particles.length >= 180) { const old = particles.shift(); scene.remove(old.mesh); if (old.mesh.userData.effectMaterial) old.mesh.material.dispose(); }
     scene.add(m); particles.push({ mesh: m, vx, vy, vz, life, debris, ring, spin: (Math.random() - .5) * 7 });
   }
   function reset() {
     aimArrow.visible = false; impactMarker.visible = false; dots.forEach(dot => { dot.visible = false; }); lastEvent = 0; eventBaseline = false; matchWinner = null; activeShooter = null; selection.visible = false;
     for (const obj of objects.values()) scene.remove(obj); objects.clear();
-    if (shot) scene.remove(shot); shot = null; for (const m of projectileMeshes.values()) scene.remove(m); projectileMeshes.clear(); for (const p of particles) scene.remove(p.mesh); particles = [];
+    if (shot) scene.remove(shot); shot = null; for (const m of projectileMeshes.values()) scene.remove(m); projectileMeshes.clear();
+    for (const p of particles) { scene.remove(p.mesh); if (p.mesh.userData.effectMaterial) p.mesh.material.dispose(); } particles = [];
+    for (const mark of impactMarks) { scene.remove(mark.mesh); mark.mesh.material.dispose(); mark.mesh.geometry.dispose(); } impactMarks = []; impactFocus = null;
     mapDecor.clear(); container.dataset.mapDecor = '0'; container.dataset.structureDecor = '0';
-    container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; delete container.dataset.lastMaterial; delete container.dataset.lastEnvironmentEvent;
+    container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.impactMarks = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; delete container.dataset.lastMaterial; delete container.dataset.lastEnvironmentEvent; delete container.dataset.lastWeaponVfx;
   }
   let width, height, composer = null, ssaoPass = null, bloomPass = null, vignettePass = null;
   function setupPostProcessing() {
@@ -468,16 +547,19 @@ export function createScene(container) {
     const distance = Math.max(43, 79.5 / (width / height));
     const closeMove = mode === 'game' && gamePhase === 'move' && activeShooter && !overview && !reducedMotion.matches;
     const tacticalAim = mode === 'game' && gamePhase === 'aim' && activeShooter && !overview && !reducedMotion.matches;
-    const target = closeMove ? new T.Vector3(activeShooter.p[0] + (activeShooter.team === 0 ? 3 : -3), activeShooter.p[1] + 1.2, 0)
+    const focusingImpact = impactFocus && now < impactFocus.until;
+    if (impactFocus && !focusingImpact) { impactFocus = null; container.dataset.impactCamera = 'idle'; }
+    const target = focusingImpact ? impactFocus.p
+      : closeMove ? new T.Vector3(activeShooter.p[0] + (activeShooter.team === 0 ? 3 : -3), activeShooter.p[1] + 1.2, 0)
       : tacticalAim ? tacticalTarget
       : new T.Vector3(mode === 'lobby' && !portrait ? -4.6 : 0, mode === 'home' ? 10 : 2, 0);
-    const desiredDistance = closeMove ? Math.max(22, 34 / (width / height)) : tacticalAim ? Math.max(41, 72 / (width / height)) : mode === 'home' ? Math.max(distance, 57) : distance;
+    const desiredDistance = focusingImpact ? Math.max(29, 48 / (width / height)) : closeMove ? Math.max(22, 34 / (width / height)) : tacticalAim ? Math.max(41, 72 / (width / height)) : mode === 'home' ? Math.max(distance, 57) : distance;
     const blend = reducedMotion.matches ? 1 : 1 - Math.exp(-dt * 5);
     viewTarget.lerp(target, blend); viewDistance += (desiredDistance - viewDistance) * blend;
     camera.position.set(viewTarget.x + (mode === 'lobby' && !portrait ? 6.6 : 0), viewTarget.y + Math.max(10, viewDistance * .32), viewDistance);
     scene.fog.near = Math.max(80, viewDistance + 30); scene.fog.far = Math.max(190, viewDistance + 140);
     camera.lookAt(viewTarget);
-    container.dataset.cameraMode = closeMove ? 'shooter' : tacticalAim ? 'tactical' : 'overview'; container.dataset.cameraX = viewTarget.x.toFixed(2);
+    container.dataset.cameraMode = focusingImpact ? 'impact' : closeMove ? 'shooter' : tacticalAim ? 'tactical' : 'overview'; container.dataset.cameraX = viewTarget.x.toFixed(2);
     selection.visible = mode === 'game' && ['move', 'aim'].includes(gamePhase) && Boolean(activeShooter);
     if (selection.visible) selection.position.set(activeShooter.p[0], activeShooter.p[1] + .12, 1.55);
     if (shake > 0 && !reducedMotion.matches) { camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake; shake *= 0.88; }
@@ -512,16 +594,16 @@ export function createScene(container) {
       if (mesh.userData.weapon === 'heavy') predicted.x += .5 * currentWind * (WEAPONS.heavy.windFactor || 1) * age * age;
       mesh.position.lerp(predicted, reducedMotion.matches ? 1 : 1 - Math.exp(-dt * 28));
     }
-    if (now - trailAt > 45 && !reducedMotion.matches) {
-      const trails = [...projectileMeshes.values()].filter(m => m.userData.weapon === 'rocket');
+    if (now - trailAt > 55 && !reducedMotion.matches) {
+      const trails = [...projectileMeshes.values()];
       if (shot) trails.push(shot);
       if (trails.length) {
         trailAt = now;
-        for (const projectile of trails) addParticle(sphere(projectile.position.x, projectile.position.y, 0, .13, 0xf6d8a3), 0, .3, 0, .45);
+        for (const projectile of trails) spawnProjectileTrail(projectile);
       }
     }
     particles = particles.filter(p => {
-      p.life -= dt; if (p.life <= 0) { scene.remove(p.mesh); return false; }
+      p.life -= dt; if (p.life <= 0) { scene.remove(p.mesh); if (p.mesh.userData.effectMaterial) p.mesh.material.dispose(); return false; }
       if (p.ring) { p.mesh.scale.addScalar(dt * 9); return true; }
       p.vy -= (p.debris ? 12 : 3) * dt;
       p.mesh.position.x += p.vx * dt; p.mesh.position.y += p.vy * dt; p.mesh.position.z += p.vz * dt;
@@ -532,7 +614,13 @@ export function createScene(container) {
       } else p.mesh.scale.multiplyScalar(1 - dt * 1.8);
       return true;
     });
+    impactMarks = impactMarks.filter(mark => {
+      mark.life -= dt; mark.mesh.material.opacity = .28 * Math.min(1, mark.life / 1.5);
+      if (mark.life > 0) return true;
+      scene.remove(mark.mesh); mark.mesh.material.dispose(); mark.mesh.geometry.dispose(); return false;
+    });
     container.dataset.fragments = particles.filter(p => p.debris).length;
+    container.dataset.vfxParticles = String(particles.filter(p => !p.debris).length); container.dataset.impactMarks = String(impactMarks.length);
     blastLight.intensity = Math.max(0, blastLight.intensity - dt * 95);
 
     if (!reducedMotion.matches) {

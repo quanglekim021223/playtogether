@@ -50,9 +50,19 @@ test('environment meshes render and a fuel blast produces bounded effects and au
   await page.evaluate(snapshot => window.environmentScene.update(snapshot), game.snapshot());
   await expect(page.locator('#scene')).toHaveAttribute('data-fuel-barrels', '1');
   await expect(page.locator('#scene')).toHaveAttribute('data-last-environment-event', 'barrelBlast');
+  await expect(page.locator('#scene')).toHaveAttribute('data-impact-camera', 'active');
+  await expect.poll(() => page.locator('#scene').getAttribute('data-impact-marks').then(Number)).toBeGreaterThan(0);
   expect(await page.evaluate(() => window.environmentSounds)).toContain('barrel');
   await expect.poll(() => page.locator('#scene').getAttribute('data-fragments').then(Number)).toBeLessThanOrEqual(180);
   await page.screenshot({ path: 'artifacts/environment-barrel-blast.png', scale: 'css' });
+  await page.evaluate(snapshot => {
+    snapshot.events.push({ id: 9999, type: 'blast', time: snapshot.time, x: 1, y: 2.5, radius: 5.2, weapon: 'pulse' });
+    window.environmentScene.update(snapshot);
+  }, game.snapshot());
+  await expect(page.locator('#scene')).toHaveAttribute('data-last-weapon-vfx', 'pulse');
+  await expect(page.locator('#scene')).toHaveAttribute('data-weapon-vfx', 'active');
+  await expect.poll(() => page.locator('#scene').getAttribute('data-vfx-particles').then(Number)).toBeGreaterThan(0);
+  await page.screenshot({ path: 'artifacts/weapon-vfx-pulse.png', scale: 'css' });
   expect(errors).toEqual([]);
 });
 
