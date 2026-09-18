@@ -146,7 +146,7 @@ export function createScene(container) {
     birds.push({ bird, left, right });
   }
   const objects = new Map(); const projectileMeshes = new Map(); let shot = null; let particles = []; let impactMarks = []; let lastEvent = 0; let shake = 0; let trailAt = 0; let mode = 'home';
-  let impactPauseUntil = 0, replayTurn = null, replayFrames = [], replay = null;
+  let impactPauseUntil = 0, replayTurn = null, replayFrames = [], replayEventCursor = 0, replay = null, lastReplayFinal = null;
   const mapDecor = new T.Group(); mapDecor.name = 'MapDecor'; scene.add(mapDecor);
   let currentMap = null, activeShooter = null, gamePhase = 'aim', overview = false, currentWind = 0, tacticalTarget = new T.Vector3();
   const selection = new T.Mesh(new T.TorusGeometry(.68, .035, 6, 36), new T.MeshBasicMaterial({ color: 0xffd376, depthTest: false }));
@@ -373,20 +373,38 @@ export function createScene(container) {
     aimPreview(data.team, data.aim, currentWind, gamePhase === 'aim' && mode === 'game', data.impact);
   }
   const copySnapshot = data => typeof structuredClone === 'function' ? structuredClone(data) : JSON.parse(JSON.stringify(data));
+  function compactReplayFrame(data, events) {
+    return copySnapshot({
+      mapId: data.mapId, mapName: data.mapName, time: data.time, turn: data.turn, phase: data.phase,
+      team: data.team, shooterId: data.shooterId, winner: data.winner, wind: data.wind,
+      weather: data.weather, airdrop: data.airdrop, aim: data.aim, aimImpact: data.aimImpact,
+      items: data.items, environment: data.environment, projectile: data.projectile, projectiles: data.projectiles, events,
+    });
+  }
   function captureReplayFrame(data) {
-    if (data.turn !== replayTurn) { replayTurn = data.turn; replayFrames = []; }
-    if (!['flight', 'settle', 'over'].includes(data.phase)) return;
-    replayFrames.push(copySnapshot(data));
+    if (data.turn !== replayTurn) { replayTurn = data.turn; replayFrames = []; replayEventCursor = 0; }
+    const events = data.events || [], newestEvent = events.at(-1)?.id || replayEventCursor;
+    if (!['flight', 'settle', 'over'].includes(data.phase)) { replayEventCursor = newestEvent; return; }
+    const freshEvents = events.filter(event => event.id > replayEventCursor); replayEventCursor = newestEvent;
+    replayFrames.push(compactReplayFrame(data, freshEvents));
     if (replayFrames.length > 100) replayFrames.shift();
   }
   function beginReplay(finalSnapshot) {
     if (replay || reducedMotion.matches || finalSnapshot.winner == null || replayFrames.length < 3) return false;
     const frames = replayFrames.slice(-90), eventIds = frames.flatMap(frame => frame.events || []).map(event => event.id).filter(Number.isFinite);
-    replay = { frames, index: 0, startAt: performance.now() + 420, sourceStart: frames[0].time, speed: .72, finalSnapshot: copySnapshot(finalSnapshot) };
+    const shooter = frames[0].items.find(item => item.id === frames[0].shooterId), now = performance.now();
+    lastReplayFinal = copySnapshot(finalSnapshot);
+    replay = {
+      frames, index: 0, playAt: now + 850, lastAt: now + 850, sourceTime: frames[0].time,
+      baseSpeed: .72, impactSlowUntil: 0, completeAt: 0, stage: 'shooter',
+      shooterP: shooter?.p || [0, 2, 0], weapon: shooter?.weapon || frames[0].projectile?.weapon || 'pebble',
+      finalSnapshot: lastReplayFinal,
+    };
     lastEvent = eventIds.length ? Math.min(...eventIds) - 1 : lastEvent; eventBaseline = true;
-    container.dataset.replay = 'playing'; container.dataset.replayFrames = String(frames.length);
+    impactFocus = null; shake = 0;
+    container.dataset.replay = 'playing'; container.dataset.replayFrames = String(frames.length); container.dataset.replayStage = 'shooter'; container.dataset.replaySpeed = '0.00';
     update(frames[0], true);
-    window.dispatchEvent(new CustomEvent('replay-start'));
+    window.dispatchEvent(new CustomEvent('replay-start', { detail: { weapon: replay.weapon, weaponName: WEAPONS[replay.weapon]?.name || 'Vũ khí' } }));
     window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'replayStart' } }));
     return true;
   }
@@ -395,6 +413,7 @@ export function createScene(container) {
     const finalSnapshot = replay.finalSnapshot; replay = null; update(finalSnapshot, true);
     container.dataset.replay = 'complete'; window.dispatchEvent(new CustomEvent('replay-end'));
   }
+  function replayLast() { return lastReplayFinal ? beginReplay(lastReplayFinal) : false; }
   function triggerImpactPause() {
     if (reducedMotion.matches || replay) return;
     impactPauseUntil = Math.max(impactPauseUntil, performance.now() + 300);
@@ -595,6 +614,10 @@ export function createScene(container) {
         blastLight.distance = Math.max(18, (event.radius || 3) * 7); blastLight.userData.decayRate = 105;
         spawnWeaponBlast(event);
         focusImpact(event.x, event.y, event.weapon === 'pulse' ? 650 : 480);
+        if (fromReplay && replay) {
+          replay.stage = 'impact'; replay.impactP = new T.Vector3(event.x, Math.max(1.2, event.y), 0); replay.impactSlowUntil = performance.now() + 720;
+          container.dataset.replayStage = 'impact';
+        }
         window.dispatchEvent(new CustomEvent('game-blast'));
       }
       if (event.type === 'barrelBlast') {
@@ -726,9 +749,9 @@ export function createScene(container) {
     if (shot) scene.remove(shot); shot = null; for (const m of projectileMeshes.values()) scene.remove(m); projectileMeshes.clear();
     for (const p of particles) { p.mesh.removeFromParent(); if (p.mesh.userData.effectMaterial) p.mesh.material.dispose(); } particles = [];
     for (const mark of impactMarks) { mark.mesh.removeFromParent(); mark.mesh.material.dispose(); } impactMarks = []; impactFocus = null;
-    impactPauseUntil = 0; replayTurn = null; replayFrames = []; replay = null; shake = 0;
+    impactPauseUntil = 0; replayTurn = null; replayFrames = []; replayEventCursor = 0; replay = null; lastReplayFinal = null; shake = 0;
     mapDecor.clear(); container.dataset.mapDecor = '0'; container.dataset.structureDecor = '0';
-    container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.impactMarks = '0'; container.dataset.attachedDecals = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; container.dataset.airdrop = 'none'; container.dataset.weatherParticles = 'none'; container.dataset.replay = 'idle'; container.dataset.impactPause = 'idle'; delete container.dataset.weather; delete container.dataset.trajectoryDots; delete container.dataset.lastAirdropEvent; delete container.dataset.lastMaterial; delete container.dataset.collapseDust; delete container.dataset.lastEnvironmentEvent; delete container.dataset.lastWeaponVfx; delete container.dataset.shakeStrength;
+    container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.impactMarks = '0'; container.dataset.attachedDecals = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; container.dataset.airdrop = 'none'; container.dataset.weatherParticles = 'none'; container.dataset.replay = 'idle'; container.dataset.impactPause = 'idle'; delete container.dataset.replayStage; delete container.dataset.weather; delete container.dataset.trajectoryDots; delete container.dataset.lastAirdropEvent; delete container.dataset.lastMaterial; delete container.dataset.collapseDust; delete container.dataset.lastEnvironmentEvent; delete container.dataset.lastWeaponVfx; delete container.dataset.shakeStrength;
   }
   let width, height, composer = null, ssaoPass = null, bloomPass = null, vignettePass = null;
   function setupPostProcessing() {
@@ -765,28 +788,38 @@ export function createScene(container) {
   let lastTime = performance.now();
   function render(now) {
     requestAnimationFrame(render); const dt = Math.min(0.05, (now - lastTime) / 1000); lastTime = now;
-    if (replay && now >= replay.startAt) {
-      const replayTime = replay.sourceStart + (now - replay.startAt) / 1000 * replay.speed;
-      while (replay.index + 1 < replay.frames.length && replay.frames[replay.index + 1].time <= replayTime) update(replay.frames[++replay.index], true);
-      if (replay.index === replay.frames.length - 1 || now - replay.startAt > 8000) finishReplay();
+    if (replay && now >= replay.playAt) {
+      if (replay.stage === 'shooter') { replay.stage = 'projectile'; container.dataset.replayStage = 'projectile'; replay.lastAt = now; }
+      const replaySpeed = now < replay.impactSlowUntil ? .24 : replay.baseSpeed;
+      container.dataset.replaySpeed = replaySpeed.toFixed(2);
+      replay.sourceTime += Math.max(0, now - replay.lastAt) / 1000 * replaySpeed; replay.lastAt = now;
+      while (replay.index + 1 < replay.frames.length && replay.frames[replay.index + 1].time <= replay.sourceTime) update(replay.frames[++replay.index], true);
+      if (replay.index === replay.frames.length - 1) {
+        replay.completeAt ||= now + 850;
+        if (now >= replay.completeAt) finishReplay();
+      } else if (now - replay.playAt > 8000) finishReplay();
     }
     const impactPaused = now < impactPauseUntil;
     if (!impactPaused && container.dataset.impactPause === 'active') container.dataset.impactPause = 'idle';
-    const presentationScale = impactPaused ? .06 : replay ? replay.speed : 1;
+    const presentationScale = impactPaused ? .06 : replay ? (now < replay.impactSlowUntil ? .24 : replay.baseSpeed) : 1;
     const visualDt = dt * presentationScale;
     const portrait = width / height < 1.15;
     const distance = Math.max(43, 79.5 / (width / height));
     const closeMove = mode === 'game' && gamePhase === 'move' && activeShooter && !overview && !reducedMotion.matches;
     const tacticalAim = mode === 'game' && gamePhase === 'aim' && activeShooter && !overview && !reducedMotion.matches;
     const focusingImpact = impactFocus && now < impactFocus.until;
-    const replayProjectile = replay ? projectileMeshes.values().next().value : null;
+    const replayShooter = replay?.stage === 'shooter' ? activeShooter : null;
+    const replayProjectile = replay?.stage === 'projectile' ? projectileMeshes.values().next().value : null;
+    const replayImpact = replay?.stage === 'impact' ? replay.impactP : null;
     if (impactFocus && !focusingImpact) { impactFocus = null; container.dataset.impactCamera = 'idle'; }
     const target = focusingImpact ? impactFocus.p
+      : replayImpact ? replayImpact
+      : replayShooter ? new T.Vector3(replayShooter.p[0], replayShooter.p[1] + 1.1, 0)
       : replayProjectile ? new T.Vector3(replayProjectile.position.x, Math.max(1.5, replayProjectile.position.y), 0)
       : closeMove ? new T.Vector3(activeShooter.p[0] + (activeShooter.team === 0 ? 3 : -3), activeShooter.p[1] + 1.2, 0)
       : tacticalAim ? tacticalTarget
       : new T.Vector3(mode === 'lobby' && !portrait ? -4.6 : 0, mode === 'home' ? 10 : 2, 0);
-    const desiredDistance = focusingImpact ? Math.max(29, 48 / (width / height)) : replayProjectile ? Math.max(25, 40 / (width / height)) : closeMove ? Math.max(22, 34 / (width / height)) : tacticalAim ? Math.max(41, 72 / (width / height)) : mode === 'home' ? Math.max(distance, 57) : distance;
+    const desiredDistance = focusingImpact || replayImpact ? Math.max(29, 48 / (width / height)) : replayShooter ? Math.max(20, 32 / (width / height)) : replayProjectile ? Math.max(25, 40 / (width / height)) : closeMove ? Math.max(22, 34 / (width / height)) : tacticalAim ? Math.max(41, 72 / (width / height)) : mode === 'home' ? Math.max(distance, 57) : distance;
     const blend = reducedMotion.matches ? 1 : 1 - Math.exp(-visualDt * 5);
     viewTarget.lerp(target, blend); viewDistance += (desiredDistance - viewDistance) * blend;
     camera.position.set(viewTarget.x + (mode === 'lobby' && !portrait ? 6.6 : 0), viewTarget.y + Math.max(10, viewDistance * .32), viewDistance);
@@ -827,7 +860,7 @@ export function createScene(container) {
       rainGeo.attributes.position.needsUpdate = true;
     }
     camera.lookAt(viewTarget);
-    container.dataset.cameraMode = focusingImpact ? 'impact' : replayProjectile ? 'replay-projectile' : closeMove ? 'shooter' : tacticalAim ? 'tactical' : 'overview'; container.dataset.cameraX = viewTarget.x.toFixed(2);
+    container.dataset.cameraMode = focusingImpact || replayImpact ? 'replay-impact' : replayShooter ? 'replay-shooter' : replayProjectile ? 'replay-projectile' : closeMove ? 'shooter' : tacticalAim ? 'tactical' : 'overview'; container.dataset.cameraX = viewTarget.x.toFixed(2);
     selection.visible = mode === 'game' && ['move', 'aim'].includes(gamePhase) && Boolean(activeShooter);
     if (selection.visible) selection.position.set(activeShooter.p[0], activeShooter.p[1] + .12, 1.55);
     if (shake > 0 && !reducedMotion.matches) {
@@ -913,5 +946,5 @@ export function createScene(container) {
     if (composer) composer.render(dt); else renderer.render(scene, camera);
   }
   requestAnimationFrame(render);
-  return { update, updateAim, reset, aimPreview, skipReplay: finishReplay, setOverview: value => { overview = value; }, setMode: value => { mode = value; } };
+  return { update, updateAim, reset, aimPreview, skipReplay: finishReplay, replayLast, canReplay: () => Boolean(lastReplayFinal && !reducedMotion.matches), setOverview: value => { overview = value; }, setMode: value => { mode = value; } };
 }

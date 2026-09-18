@@ -111,7 +111,7 @@ Từ lượt 4, thùng tiếp tế có thể hạ dù trong pha settle xuống n
 
 Vụ nổ làm rung vị trí và góc camera theo sức mạnh, bán kính và khoảng cách tới điểm nổ. Bazooka, Rocket, Pulse và thùng xăng có cường độ riêng. Đạn trúng trực tiếp cư dân hoặc phá khối đang đỡ một movement node tạo impact pause 0.3 giây kèm âm thanh trầm; đây chỉ là hiệu ứng phía TV nên mô phỏng server và tay cầm vẫn tiếp tục đồng bộ.
 
-Client giữ tối đa 100 snapshot gần nhất của pha flight/settle trong lượt hiện tại. Nếu phát bắn kết thúc trận, TV phát lại tối đa 90 frame ở tốc độ 0.72 lần, dựng lại chuyển động đạn, công trình và VFX rồi mới hiện kết quả. Người xem có thể bỏ qua replay. Chế độ reduced motion tắt rung, impact pause và replay tự động.
+Client giữ tối đa 100 frame gọn của pha flight/settle trong lượt hiện tại; mỗi frame chỉ mang dữ liệu render và các event mới phát sinh. Nếu phát bắn kết thúc trận, TV phát lại tối đa 90 frame: camera mở bằng cận cảnh người bắn, bám theo viên đạn rồi khóa vào điểm va chạm. Tốc độ nền là 0.72 lần và hạ còn 0.24 lần tại impact. Letterbox hiển thị tên vũ khí và nút bỏ qua; màn hình kết quả có nút xem lại cú bắn. Chế độ reduced motion tắt rung, impact pause và replay tự động.
 
 ## Vật liệu và hình ảnh
 

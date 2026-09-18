@@ -2,6 +2,7 @@
 /* Map selection uses silhouettes drawn from the same blocks as the real arena. */
 .map-selection{max-width:460px;pointer-events:auto;margin-top:20px}
 .replay-hud{position:absolute;left:4.3%;right:4.3%;bottom:28px;display:flex;align-items:center;justify-content:space-between;gap:18px;color:#fff8e9;font-size:11px;font-weight:850;letter-spacing:2px;text-shadow:0 2px 10px #172a33}.replay-hud span{background:#253b48d9;padding:12px 18px;border-radius:999px}.replay-hud .button{pointer-events:auto;background:#fff8e9e8;color:#253b48;text-shadow:none;letter-spacing:0}
+.replay-hud strong{display:block;margin-top:5px;color:#ffd06b;font-size:9px;letter-spacing:1px}.replay-letterbox{position:fixed;inset:0}.replay-letterbox::before,.replay-letterbox::after{content:"";position:fixed;left:0;right:0;height:8.5vh;background:#111;box-shadow:0 0 30px #0008}.replay-letterbox::before{top:0}.replay-letterbox::after{bottom:0}.result-actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:25px}.results .result-actions .button{margin:0}
 #map-picker{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 .map-option{position:relative;display:flex;align-items:center;gap:9px;padding:9px 12px 9px 6px;border:2px solid #fff8e980;background:#fff8e9ee;border-radius:15px;min-height:88px;text-align:left;transition:transform .15s,border-color .15s}
 .map-option:hover{transform:translateY(-2px)}

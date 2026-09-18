@@ -29,28 +29,44 @@ test('combat presentation applies distance shake, impact pause and final-shot re
     document.querySelector('#app').remove(); document.body.classList.remove('controller');
     const container = document.querySelector('#scene'); container.style.cssText = 'position:fixed;inset:0';
     window.combatScene = createScene(container); window.combatScene.setMode('game'); window.combatScene.update(snapshot);
+    window.replayDetails = []; window.addEventListener('replay-start', event => window.replayDetails.push(event.detail));
   }, initial);
 
   const eventId = 9000;
   const flight = structuredClone(initial); flight.phase = 'flight'; flight.time = 1;
+  flight.items.find(item => item.id === flight.shooterId).weapon = 'heavy';
   flight.projectiles = [{ id: 77, weapon: 'heavy', p: [0, 6, 0], q: [0, 0, 0, 1], v: [8, 2, 0] }]; flight.projectile = flight.projectiles[0];
-  flight.events.push(
-    { id: eventId, time: 1, type: 'directHit', residentId: 6, x: 8, y: 1, weapon: 'heavy' },
-    { id: eventId + 1, time: 1, type: 'blast', x: 8, y: 1, radius: 5, weapon: 'heavy', hitItemId: 6 },
-  );
+  flight.events.push({ id: eventId, time: 1, type: 'shot', shooterId: flight.shooterId, weapon: 'heavy' });
   await page.evaluate(snapshot => window.combatScene.update(snapshot), flight);
+
+  const impact = structuredClone(flight); impact.time = 2;
+  impact.events.push(
+    { id: eventId + 1, time: 2, type: 'directHit', residentId: 6, x: 8, y: 1, weapon: 'heavy' },
+    { id: eventId + 2, time: 2, type: 'blast', x: 8, y: 1, radius: 5, weapon: 'heavy', hitItemId: 6 },
+  );
+  await page.evaluate(snapshot => window.combatScene.update(snapshot), impact);
   const scene = page.locator('#scene');
   await expect(scene).toHaveAttribute('data-impact-pause', 'active');
   await expect.poll(() => scene.getAttribute('data-shake-strength').then(Number)).toBeGreaterThan(0);
 
-  const settle = structuredClone(flight); settle.phase = 'settle'; settle.time = 2; settle.events = flight.events;
-  const over = structuredClone(settle); over.phase = 'over'; over.time = 3; over.winner = 0;
+  const settle = structuredClone(impact); settle.phase = 'settle'; settle.time = 3; settle.projectiles = []; settle.projectile = null;
+  const over = structuredClone(settle); over.phase = 'over'; over.time = 4; over.winner = 0;
   await page.evaluate(([a, b]) => { window.combatScene.update(a); window.combatScene.update(b); }, [settle, over]);
   await expect(scene).toHaveAttribute('data-replay', 'playing');
-  await expect(scene).toHaveAttribute('data-camera-mode', 'replay-projectile');
-  await expect.poll(() => scene.getAttribute('data-replay-frames').then(Number)).toBeGreaterThanOrEqual(3);
+  await expect(scene).toHaveAttribute('data-replay-stage', 'shooter');
+  await expect(scene).toHaveAttribute('data-camera-mode', 'replay-shooter');
+  await expect.poll(() => scene.getAttribute('data-replay-frames').then(Number)).toBeGreaterThanOrEqual(4);
+  await expect.poll(() => scene.getAttribute('data-replay-stage'), { timeout: 2500 }).toBe('projectile');
+  await expect.poll(() => scene.getAttribute('data-camera-mode')).toBe('replay-projectile');
+  await expect.poll(() => scene.getAttribute('data-replay-stage'), { timeout: 3000 }).toBe('impact');
+  await expect(scene).toHaveAttribute('data-replay-speed', '0.24');
+  expect(await page.evaluate(() => window.replayDetails.at(-1))).toMatchObject({ weapon: 'heavy' });
   await page.evaluate(() => window.combatScene.skipReplay());
   await expect(scene).toHaveAttribute('data-replay', 'complete');
+  expect(await page.evaluate(() => window.combatScene.canReplay())).toBe(true);
+  expect(await page.evaluate(() => window.combatScene.replayLast())).toBe(true);
+  await expect(scene).toHaveAttribute('data-replay-stage', 'shooter');
+  await page.evaluate(() => window.combatScene.skipReplay());
   expect(errors).toEqual([]);
 });
 

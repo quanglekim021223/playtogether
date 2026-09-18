@@ -9,7 +9,7 @@ let controller = params.has('room') || params.has('controller');
 if (controller) document.body.classList.add('controller');
 let token = sessionStorage.getItem('bp-token');
 if (!token) { token = globalThis.crypto?.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(24)), v => v.toString(16).padStart(2, '0')).join(''); sessionStorage.setItem('bp-token', token); }
-let state = null, scene = null, playerId = null, screenKey = '', qrCode = '', connection = null, lastTurn = null, replayActive = false;
+let state = null, scene = null, playerId = null, screenKey = '', qrCode = '', connection = null, lastTurn = null, replayActive = false, replayWeapon = '';
 let mapCatalog = [], previewRequest = 0, previewMap = null;
 let autoJoinFailed = false;
 let draft = { angle: 42, power: 30, weapon: 'pebble' };
@@ -28,7 +28,7 @@ window.addEventListener('game-blast', () => audio.play('blast'));
 window.addEventListener('game-shot', () => audio.play('shot'));
 window.addEventListener('material-sound', e => audio.play(e.detail.material, e.detail.strength));
 window.addEventListener('weapon-sound', e => audio.play(e.detail.type));
-window.addEventListener('replay-start', () => { if (!controller) { replayActive = true; render(); } });
+window.addEventListener('replay-start', event => { if (!controller) { replayActive = true; replayWeapon = event.detail?.weaponName || ''; render(); } });
 window.addEventListener('replay-end', () => { if (!controller) { replayActive = false; render(); } });
 function updateWindIndicator(element, value, weather = null) {
   if (!element) return;
@@ -437,12 +437,13 @@ function updateGameUI() {
 function renderOver() {
   clearGesture(); document.body.classList.remove('controller-playing');
   screenKey = 'over'; const game = state.game;
-  app.innerHTML = `${header()}<main class="results"><span class="eyebrow">HÀNG XÓM NHỚ NHAU LÂU</span><div class="trophy">✦</div><h1>${game.winner === -1 ? 'Hòa rồi!' : `${teams[game.winner]}<br>thắng rồi!`}</h1><p>${game.turn} lượt bắn. Một cuộc vui đáng nhớ.</p>${controller ? '<p>Chờ chủ phòng mở ván tiếp theo.</p>' : '<button id="again" class="button primary">Về sảnh · Chơi tiếp <span>↻</span></button>'}</main>`;
-  bindHeader(); document.querySelector('#again')?.addEventListener('click', () => emit('lobby'));
+  const actions = controller ? '<p>Chờ chủ phòng mở ván tiếp theo.</p>' : `<div class="result-actions">${scene?.canReplay?.() ? '<button id="watch-replay" class="button secondary">Xem lại cú bắn <span>▶</span></button>' : ''}<button id="again" class="button primary">Về sảnh · Chơi tiếp <span>↻</span></button></div>`;
+  app.innerHTML = `${header()}<main class="results"><span class="eyebrow">HÀNG XÓM NHỚ NHAU LÂU</span><div class="trophy">✦</div><h1>${game.winner === -1 ? 'Hòa rồi!' : `${teams[game.winner]}<br>thắng rồi!`}</h1><p>${game.turn} lượt bắn. Một cuộc vui đáng nhớ.</p>${actions}</main>`;
+  bindHeader(); document.querySelector('#again')?.addEventListener('click', () => emit('lobby')); document.querySelector('#watch-replay')?.addEventListener('click', () => scene?.replayLast());
 }
 function renderReplay() {
   screenKey = 'replay';
-  app.innerHTML = `${header()}<div class="replay-hud"><span>PHÁT LẠI CÚ BẮN QUYẾT ĐỊNH</span><button id="skip-replay" class="button secondary compact">Bỏ qua ›</button></div>`;
+  app.innerHTML = `${header()}<div class="replay-letterbox" aria-hidden="true"></div><div class="replay-hud"><span>PHÁT LẠI CÚ BẮN QUYẾT ĐỊNH${replayWeapon ? `<strong>${escape(replayWeapon)}</strong>` : ''}</span><button id="skip-replay" class="button secondary compact">Bỏ qua ›</button></div>`;
   bindHeader(); document.querySelector('#skip-replay')?.addEventListener('click', () => scene?.skipReplay());
 }
 function render() {
