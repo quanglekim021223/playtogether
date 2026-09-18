@@ -112,11 +112,12 @@ const towerNodes = [
   { id: 'tower-node-3', label: 'Mái cánh phụ', x: -4.35, y: 5.39, supportId: 'tower-wing-roof', neighbors: ['tower-node-10', 'tower-node-9'] },
   { id: 'tower-node-4', label: 'Chòi vườn', x: -6.6, y: 1.93, supportId: 'tower-lookout', neighbors: ['tower-node-7', 'tower-node-10'] },
   { id: 'tower-node-5', label: 'Ban công cao', x: 4, y: 5.39, supportId: 'tower-beam-1', neighbors: ['tower-node-9'] },
-  { id: 'tower-node-6', label: 'Chân tháp trước', x: 2.15, y: 0.53, supportId: null, neighbors: ['tower-node-0', 'tower-node-7', 'tower-node-1', 'tower-node-8'] },
-  { id: 'tower-node-7', label: 'Chân tháp sau', x: -2.15, y: 0.53, supportId: null, neighbors: ['tower-node-6', 'tower-node-4', 'tower-node-10'] },
+  { id: 'tower-node-6', label: 'Chân tháp trước', x: 2.15, y: 0.53, supportId: null, neighbors: ['tower-node-0', 'tower-node-7', 'tower-node-1', 'tower-node-8', 'tower-drop-center'] },
+  { id: 'tower-node-7', label: 'Chân tháp sau', x: -2.15, y: 0.53, supportId: null, neighbors: ['tower-node-6', 'tower-node-4', 'tower-node-10', 'tower-drop-center'] },
   { id: 'tower-node-8', label: 'Hành lang lầu 1', x: 0, y: 2.94, supportId: 'tower-beam-0', neighbors: ['tower-node-1', 'tower-node-6', 'tower-node-9', 'tower-node-10'] },
   { id: 'tower-node-9', label: 'Hành lang lầu 2', x: 0, y: 5.39, supportId: 'tower-beam-1', neighbors: ['tower-node-8', 'tower-node-5', 'tower-node-3', 'tower-node-2'] },
   { id: 'tower-node-10', label: 'Hiên cánh phụ', x: -4.35, y: 2.94, supportId: 'tower-wing-beam', neighbors: ['tower-node-7', 'tower-node-8', 'tower-node-3', 'tower-node-4'] },
+  { id: 'tower-drop-center', label: 'Sân trung tâm', x: 0, y: 0.53, neutral: true, supportId: null, neighbors: ['tower-node-6', 'tower-node-7'] },
 ];
 
 const townhouseNodes = [
@@ -126,11 +127,12 @@ const townhouseNodes = [
   { id: 'townhouse-node-3', label: 'Mái phía sau', x: -3.9, y: 5.39, supportId: 'townhouse-roof-back', neighbors: ['townhouse-node-4', 'townhouse-node-9', 'townhouse-node-2'] },
   { id: 'townhouse-node-4', label: 'Chòi vườn', x: -6.6, y: 1.53, supportId: 'townhouse-lookout', neighbors: ['townhouse-node-7', 'townhouse-node-3'] },
   { id: 'townhouse-node-5', label: 'Mái phía trước', x: 3.9, y: 5.39, supportId: 'townhouse-roof-front', neighbors: ['townhouse-node-1', 'townhouse-node-8', 'townhouse-node-10'] },
-  { id: 'townhouse-node-6', label: 'Sân giữa', x: 2.6, y: 0.53, supportId: null, neighbors: ['townhouse-node-0', 'townhouse-node-7', 'townhouse-node-8'] },
-  { id: 'townhouse-node-7', label: 'Sân sau', x: -2.6, y: 0.53, supportId: null, neighbors: ['townhouse-node-6', 'townhouse-node-4', 'townhouse-node-9'] },
+  { id: 'townhouse-node-6', label: 'Sân giữa', x: 2.6, y: 0.53, supportId: null, neighbors: ['townhouse-node-0', 'townhouse-node-7', 'townhouse-node-8', 'townhouse-drop-center'] },
+  { id: 'townhouse-node-7', label: 'Sân sau', x: -2.6, y: 0.53, supportId: null, neighbors: ['townhouse-node-6', 'townhouse-node-4', 'townhouse-node-9', 'townhouse-drop-center'] },
   { id: 'townhouse-node-8', label: 'Ban công giữa', x: 1.3, y: 2.94, supportId: 'townhouse-beam-mid-1', neighbors: ['townhouse-node-6', 'townhouse-node-1', 'townhouse-node-9', 'townhouse-node-5'] },
   { id: 'townhouse-node-9', label: 'Hành lang sau lầu 1', x: -1.3, y: 2.94, supportId: 'townhouse-beam-mid-2', neighbors: ['townhouse-node-7', 'townhouse-node-8', 'townhouse-node-3', 'townhouse-node-2'] },
   { id: 'townhouse-node-10', label: 'Đỉnh mái trước', x: 1.3, y: 7.84, supportId: 'townhouse-roof-2', neighbors: ['townhouse-node-5', 'townhouse-node-2'] },
+  { id: 'townhouse-drop-center', label: 'Sân trung tâm', x: 0, y: 0.53, neutral: true, supportId: null, neighbors: ['townhouse-node-6', 'townhouse-node-7'] },
 ];
 
 const bridgeNodes = [
@@ -140,11 +142,12 @@ const bridgeNodes = [
   { id: 'bridge-node-3', label: 'Đỉnh tháp sau', x: -3, y: 8.39, supportId: 'bridge-roof-back', neighbors: ['bridge-node-9'] },
   { id: 'bridge-node-4', label: 'Chòi vườn', x: 6.6, y: 1.93, supportId: 'bridge-lookout', neighbors: ['bridge-node-0', 'bridge-node-1'] },
   { id: 'bridge-node-5', label: 'Cầu nối', x: 0.65, y: 5.71, supportId: 'bridge-span', neighbors: ['bridge-node-8', 'bridge-node-10'] },
-  { id: 'bridge-node-6', label: 'Chân tháp trước', x: 3, y: 0.53, supportId: null, neighbors: ['bridge-node-0', 'bridge-node-7', 'bridge-node-1'] },
-  { id: 'bridge-node-7', label: 'Chân tháp sau', x: -3, y: 0.53, supportId: null, neighbors: ['bridge-node-6', 'bridge-node-9'] },
+  { id: 'bridge-node-6', label: 'Chân tháp trước', x: 3, y: 0.53, supportId: null, neighbors: ['bridge-node-0', 'bridge-node-7', 'bridge-node-1', 'bridge-drop-center'] },
+  { id: 'bridge-node-7', label: 'Chân tháp sau', x: -3, y: 0.53, supportId: null, neighbors: ['bridge-node-6', 'bridge-node-9', 'bridge-drop-center'] },
   { id: 'bridge-node-8', label: 'Cửa cầu tháp trước', x: 3, y: 5.39, supportId: 'bridge-beam-front-2', neighbors: ['bridge-node-1', 'bridge-node-5', 'bridge-node-2'] },
   { id: 'bridge-node-9', label: 'Cửa cầu tháp sau', x: -3, y: 5.39, supportId: 'bridge-beam-back-2', neighbors: ['bridge-node-7', 'bridge-node-10', 'bridge-node-3'] },
   { id: 'bridge-node-10', label: 'Cầu nối sau', x: -0.65, y: 5.71, supportId: 'bridge-span', neighbors: ['bridge-node-5', 'bridge-node-9'] },
+  { id: 'bridge-drop-center', label: 'Sân trung tâm', x: 0, y: 0.53, neutral: true, supportId: null, neighbors: ['bridge-node-6', 'bridge-node-7'] },
 ];
 
 const fortressNodes = [
@@ -154,27 +157,28 @@ const fortressNodes = [
   { id: 'fortress-node-3', label: 'Tháp gác sau', x: -4.35, y: 5.9, supportId: 'fortress-roof-back', neighbors: ['fortress-node-7', 'fortress-node-9', 'fortress-node-5'] },
   { id: 'fortress-node-4', label: 'Chòi ngoài', x: 6.5, y: 1.93, supportId: 'fortress-lookout', neighbors: ['fortress-node-0', 'fortress-node-6'] },
   { id: 'fortress-node-5', label: 'Đỉnh thành sau', x: -2.6, y: 8.67, supportId: 'fortress-beam-top', neighbors: ['fortress-node-3', 'fortress-node-10'] },
-  { id: 'fortress-node-6', label: 'Cổng thành trước', x: 4.35, y: 0.53, supportId: null, neighbors: ['fortress-node-0', 'fortress-node-4', 'fortress-node-8', 'fortress-node-1'] },
-  { id: 'fortress-node-7', label: 'Chân thành sau', x: -4.35, y: 0.53, supportId: null, neighbors: ['fortress-node-8', 'fortress-node-3'] },
+  { id: 'fortress-node-6', label: 'Cổng thành trước', x: 4.35, y: 0.53, supportId: null, neighbors: ['fortress-node-0', 'fortress-node-4', 'fortress-node-8', 'fortress-node-1', 'fortress-drop-center'] },
+  { id: 'fortress-node-7', label: 'Chân thành sau', x: -4.35, y: 0.53, supportId: null, neighbors: ['fortress-node-8', 'fortress-node-3', 'fortress-drop-center'] },
   { id: 'fortress-node-8', label: 'Tầng hầm thành', x: 0, y: 2.94, supportId: 'fortress-beam-base', neighbors: ['fortress-node-6', 'fortress-node-7', 'fortress-node-9'] },
   { id: 'fortress-node-9', label: 'Gian giữa lầu 2', x: 0, y: 5.39, supportId: 'fortress-beam-mid', neighbors: ['fortress-node-8', 'fortress-node-1', 'fortress-node-3', 'fortress-node-10'] },
   { id: 'fortress-node-10', label: 'Vọng lâu chính diện', x: 0, y: 8.67, supportId: 'fortress-beam-top', neighbors: ['fortress-node-9', 'fortress-node-2', 'fortress-node-5'] },
+  { id: 'fortress-drop-center', label: 'Sân trung tâm', x: 0, y: 0.53, neutral: true, supportId: null, neighbors: ['fortress-node-6', 'fortress-node-7'] },
 ];
 
 // Shared neutral objects sit in the open middle lane. They use world coordinates,
 // while buildings above are authored locally and mirrored per team.
 const arenaObjects = [
-  { id: 'fuel-left', kind: 'fuelBarrel', x: -2.4, y: .58, size: [.88, 1.16, .88], mass: 1.4, hp: 42 },
-  { id: 'fuel-right', kind: 'fuelBarrel', x: 2.4, y: .58, size: [.88, 1.16, .88], mass: 1.4, hp: 42 },
-  { id: 'pad-left', kind: 'bouncePad', x: -.78, y: .15, size: [1.25, .3, 1.65], mass: 0, angle: .2 },
-  { id: 'pad-right', kind: 'bouncePad', x: .78, y: .15, size: [1.25, .3, 1.65], mass: 0, angle: -.2 },
+  { id: 'fuel-left', kind: 'fuelBarrel', x: -3.4, y: .58, size: [.88, 1.16, .88], mass: 1.4, hp: 42 },
+  { id: 'fuel-right', kind: 'fuelBarrel', x: 3.4, y: .58, size: [.88, 1.16, .88], mass: 1.4, hp: 42 },
+  { id: 'pad-left', kind: 'bouncePad', x: -1.65, y: .15, size: [1.25, .3, 1.65], mass: 0, angle: .2 },
+  { id: 'pad-right', kind: 'bouncePad', x: 1.65, y: .15, size: [1.25, .3, 1.65], mass: 0, angle: -.2 },
 ];
 
 export const MAPS = {
-  townhouse: { id: 'townhouse', name: 'Nhà phố', tag: 'BỐN GIAN · BA TẦNG', description: 'Khu nhà bốn gian với tầng áp mái và sáu cư dân. Chọn phòng và nhắm từng trụ.', tip: 'Thử phá trụ giữa hai gian nhà.', center: 15, parts: townhouse, nodes: townhouseNodes, arenaObjects },
-  tower: { id: 'tower', name: 'Tháp cao', tag: 'ĐỔ DÂY CHUYỀN', description: 'Tháp bốn tầng và cánh phụ hai tầng, sáu cư dân. Phá chân trụ để kéo cả tháp xuống.', tip: 'Bắn từ ban công; phá trụ tạo phản ứng dây chuyền.', center: 13, parts: tower, nodes: towerNodes, arenaObjects },
-  bridge: { id: 'bridge', name: 'Cầu trên không', tag: 'HAI THÁP · MỘT CẦU', description: 'Hai tháp ba tầng, sáu cư dân và cầu gỗ trên cao. Cư dân canh trên cầu, mái tháp và sân.', tip: 'Bắn cầu nối để hạ cư dân trên cao.', center: 15, parts: bridge, nodes: bridgeNodes, arenaObjects },
-  fortress: { id: 'fortress', name: 'Pháo đài', tag: 'TƯỜNG CHẮN PHÍA TRƯỚC', description: 'Thành ba tầng, sáu cư dân, tháp gác và tường đá. Bắn vòng qua hoặc phá tường.', tip: 'Nâng góc từ chòi gác để vượt tường chắn.', center: 15, parts: fortress, nodes: fortressNodes, arenaObjects },
+  townhouse: { id: 'townhouse', name: 'Nhà phố', tag: 'BỐN GIAN · BA TẦNG', description: 'Khu nhà bốn gian với tầng áp mái và sáu cư dân. Chọn phòng và nhắm từng trụ.', tip: 'Thử phá trụ giữa hai gian nhà.', center: 15, parts: townhouse, nodes: townhouseNodes, dropNodes: ['townhouse-drop-center'], arenaObjects },
+  tower: { id: 'tower', name: 'Tháp cao', tag: 'ĐỔ DÂY CHUYỀN', description: 'Tháp bốn tầng và cánh phụ hai tầng, sáu cư dân. Phá chân trụ để kéo cả tháp xuống.', tip: 'Bắn từ ban công; phá trụ tạo phản ứng dây chuyền.', center: 13, parts: tower, nodes: towerNodes, dropNodes: ['tower-drop-center'], arenaObjects },
+  bridge: { id: 'bridge', name: 'Cầu trên không', tag: 'HAI THÁP · MỘT CẦU', description: 'Hai tháp ba tầng, sáu cư dân và cầu gỗ trên cao. Cư dân canh trên cầu, mái tháp và sân.', tip: 'Bắn cầu nối để hạ cư dân trên cao.', center: 15, parts: bridge, nodes: bridgeNodes, dropNodes: ['bridge-drop-center'], arenaObjects },
+  fortress: { id: 'fortress', name: 'Pháo đài', tag: 'TƯỜNG CHẮN PHÍA TRƯỚC', description: 'Thành ba tầng, sáu cư dân, tháp gác và tường đá. Bắn vòng qua hoặc phá tường.', tip: 'Nâng góc từ chòi gác để vượt tường chắn.', center: 15, parts: fortress, nodes: fortressNodes, dropNodes: ['fortress-drop-center'], arenaObjects },
 };
 export const DEFAULT_MAP = 'tower';
-export const MAP_CATALOG = Object.values(MAPS).map(({ parts, nodes, arenaObjects: _arenaObjects, ...map }) => ({ ...map, thumbnail: parts.map(({ kind, x, y, size, material }) => ({ kind, x, y, size, material })) }));
+export const MAP_CATALOG = Object.values(MAPS).map(({ parts, nodes, dropNodes: _dropNodes, arenaObjects: _arenaObjects, ...map }) => ({ ...map, thumbnail: parts.map(({ kind, x, y, size, material }) => ({ kind, x, y, size, material })) }));

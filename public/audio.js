@@ -14,6 +14,10 @@ const profiles = {
   boost: { frequency: 260, filter: 1500, duration: .2, tone: 'sawtooth', noise: .35 },
   barrel: { frequency: 54, filter: 720, duration: .72, tone: 'triangle', noise: 1 },
   pad: { frequency: 880, filter: 3100, duration: .2, tone: 'sine', noise: .18 },
+  airdropSpawn: { frequency: 260, filter: 1400, duration: .42, tone: 'triangle', noise: .18 },
+  airdropLand: { frequency: 92, filter: 520, duration: .32, tone: 'triangle', noise: .72 },
+  airdropCollect: { frequency: 880, filter: 3400, duration: .38, tone: 'sine', noise: .08 },
+  airdropBreak: { frequency: 115, filter: 900, duration: .4, tone: 'square', noise: .9 },
 };
 export function synthesize(context, output, type, strength = 1) {
   const p = profiles[type]; if (!p) return;

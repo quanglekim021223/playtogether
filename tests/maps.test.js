@@ -7,7 +7,7 @@ import { MAPS } from '../maps.js';
 for (const mapId of Object.keys(MAPS)) {
   test(`${mapId}: movement graph has valid supports and bidirectional neighbors`, () => {
     const map = MAPS[mapId], partIds = new Set(map.parts.map(p => p.id)), nodeIds = new Set(map.nodes.map(n => n.id));
-    assert.equal(map.nodes.length, 11);
+    assert.equal(map.nodes.length, 12);
     for (const node of map.nodes) {
       if (node.supportId) assert.ok(partIds.has(node.supportId), `${node.id} support is missing`);
       for (const neighborId of node.neighbors) {
@@ -55,7 +55,7 @@ for (const mapId of Object.keys(MAPS)) {
     // Bridge needs a little more power to clear the new center-field interactives.
     const [angle, power] = mapId === 'bridge' ? [25, 30] : [25, 20];
     for (const team of [0, 1]) {
-      const game = new Match(mapId); game.team = team; game.shooterCursor[team] = 1; game.wind = 0; game.syncShooter();
+      const game = new Match(mapId, { weather: 'clear' }); game.team = team; game.shooterCursor[team] = 1; game.wind = 0; game.syncShooter();
       const origin = muzzlePosition(game.shooter.body.position.toArray(), team, angle);
       game.readyAim();
       assert.equal(game.fire({ angle, power, weapon: game.shooter.weapon }), true);

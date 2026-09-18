@@ -28,17 +28,21 @@ window.addEventListener('game-blast', () => audio.play('blast'));
 window.addEventListener('game-shot', () => audio.play('shot'));
 window.addEventListener('material-sound', e => audio.play(e.detail.material, e.detail.strength));
 window.addEventListener('weapon-sound', e => audio.play(e.detail.type));
-function updateWindIndicator(element, value) {
+function updateWindIndicator(element, value, weather = null) {
   if (!element) return;
   const wind = Number.isFinite(value) ? value : 0;
   const direction = wind < -.05 ? 'left' : wind > .05 ? 'right' : 'calm';
   const arrow = direction === 'left' ? '←' : direction === 'right' ? '→' : '•';
   const label = direction === 'left' ? 'sang trái' : direction === 'right' ? 'sang phải' : 'lặng';
+  const isStorm = Boolean(weather?.windAllWeapons);
+  const note = isStorm ? 'Bão lớn: Gió đẩy mọi vũ khí!' : 'Chỉ ảnh hưởng Bazooka';
   element.dataset.direction = direction;
+  if (isStorm) element.dataset.storm = 'true';
+  else delete element.dataset.storm;
   element.style.setProperty('--wind-strength', `${Math.min(100, Math.abs(wind) / 1.5 * 100)}%`);
-  element.setAttribute('aria-label', `Gió ${label}, cường độ ${Math.abs(wind).toFixed(1)}. Chỉ ảnh hưởng Bazooka.`);
-  element.title = 'Gió chỉ ảnh hưởng Bazooka';
-  element.innerHTML = `<span class="wind-arrow" aria-hidden="true">${arrow}</span><span class="wind-name">GIÓ</span><span class="wind-track" aria-hidden="true"><i></i></span><b>${Math.abs(wind).toFixed(1)}</b>`;
+  element.setAttribute('aria-label', `Gió ${label}, cường độ ${Math.abs(wind).toFixed(1)}. ${note}.`);
+  element.title = isStorm ? 'Bão lớn: Gió đẩy mọi vũ khí!' : 'Gió chỉ ảnh hưởng Bazooka';
+  element.innerHTML = `<span class="wind-arrow" aria-hidden="true">${arrow}</span><span class="wind-name">${isStorm ? 'BÃO' : 'GIÓ'}</span><span class="wind-track" aria-hidden="true"><i></i></span><b>${Math.abs(wind).toFixed(1)}</b>`;
 }
 const brand = `<a class="brand" href="/" aria-label="Block Party trang chủ"><span class="brand-mark">b<span>p</span></span><span>BLOCK<br>PARTY<span class="brand-sub">ĐẠI CHIẾN HÀNG XÓM</span></span></a>`;
 function header() { return `<header>${brand}<div class="header-actions"><span class="connection"><i></i><span id="network-label">Đã kết nối</span></span><button id="sound" class="icon-button" aria-label="Bật hoặc tắt âm thanh">${muted ? 'Âm thanh: tắt' : 'Âm thanh: bật'}</button><button id="fullscreen" class="icon-button" aria-label="Toàn màn hình">⛶</button></div></header>`; }
@@ -54,7 +58,7 @@ async function requestLandscapeLock() {
   } catch {}
 }
 function controls() {
-  return `<section class="controller-weapons"><div class="shooter-card"><span id="shooter-icon" class="shooter-icon"></span><div><strong id="shooter-weapon"></strong><span id="shooter-spot"></span><small id="shooter-hint"></small></div></div><div id="move-options" class="move-options" hidden></div><button id="ready-aim" class="button primary compact ready-aim-button" hidden>Sẵn sàng ngắm</button><button id="skill-btn" class="button primary compact skill-button" hidden>⚡ Kích hoạt</button></section>
+  return `<section class="controller-weapons"><div class="shooter-card"><span id="shooter-icon" class="shooter-icon"></span><div><strong id="shooter-weapon"></strong><span id="shooter-spot"></span><span id="shooter-buff" class="shooter-buff" hidden></span><small id="shooter-hint"></small></div></div><div id="move-options" class="move-options" hidden></div><button id="ready-aim" class="button primary compact ready-aim-button" hidden>Sẵn sàng ngắm</button><button id="skill-btn" class="button primary compact skill-button" hidden>⚡ Kích hoạt</button></section>
   <section class="controller-touch"><div class="pull-heading"><span id="pull-status">CHẠM · KÉO · THẢ</span><span class="pull-power"><output id="pull-angle">—</output><small>°</small><output id="pull-power">0</output><small>% LỰC</small></span></div>
     <div id="aim-pad" role="application" aria-label="Vùng kéo ná để ngắm và thả để bắn" aria-disabled="true">
       <div class="pad-grid" aria-hidden="true"></div><div id="pull-cord" aria-hidden="true"></div><div id="pull-anchor" aria-hidden="true"></div><div id="pull-knob" aria-hidden="true">✦</div>
@@ -202,9 +206,15 @@ function updateControls() {
     const moves = isMove && Array.isArray(state?.game?.availableMoves) ? state.game.availableMoves : [];
     if (moves.length > 0) {
       moveOptions.hidden = false;
-      const html = moves.map(m => `<button class="button secondary compact move-btn" data-node="${m.id}" style="margin-top:4px;font-size:10px;padding:6px 10px;width:100%">🏃 ${escape(m.label)}</button>`).join('');
-      if (moveOptions.dataset.signature !== moves.map(m => m.id).join(',')) {
-        moveOptions.dataset.signature = moves.map(m => m.id).join(',');
+      const html = moves.map(m => {
+        const buffLabel = m.airdropBuff === 'heal' ? '+35 HP' : m.airdropBuff === 'power' ? 'x1.5 Dmg' : 'Khiên -50%';
+        const airdropBadge = m.hasAirdrop ? ` 🎁 [${buffLabel}]` : '';
+        const airdropClass = m.hasAirdrop ? ' airdrop-node' : '';
+        return `<button class="button secondary compact move-btn${airdropClass}" data-node="${m.id}" style="margin-top:4px;font-size:10px;padding:6px 10px;width:100%">🏃 ${escape(m.label)}${airdropBadge}</button>`;
+      }).join('');
+      const sig = moves.map(m => `${m.id}:${m.hasAirdrop}`).join(',');
+      if (moveOptions.dataset.signature !== sig) {
+        moveOptions.dataset.signature = sig;
         moveOptions.innerHTML = html;
         moveOptions.querySelectorAll('.move-btn').forEach(btn => {
           btn.onclick = async () => {
@@ -345,9 +355,9 @@ function renderLobby() {
 function renderGame() {
   screenKey = 'game'; scene?.setMode('game'); document.body.classList.toggle('controller-playing', controller);
   if (controller) {
-    app.innerHTML = `<main class="gamepad"><div class="gamepad-status"><span class="eyebrow" id="phone-team"></span><strong id="turn-heading"></strong><span class="wind" id="wind"></span><span class="timer" id="timer"></span></div><div class="gamepad-body">${controls()}</div></main>`;
+    app.innerHTML = `<main class="gamepad"><div class="gamepad-status"><span class="eyebrow" id="phone-team"></span><strong id="turn-heading"></strong><span id="weather-badge" class="weather-badge"></span><span class="wind" id="wind"></span><span class="timer" id="timer"></span></div><div class="gamepad-body">${controls()}</div></main>`;
   } else {
-    app.innerHTML = `${header()}<div class="match-hud"><div class="score coral"><span>SAN HÔ</span><div id="health-0"></div></div><div class="round"><span id="round-label"></span><small class="wind" id="wind"></small><strong id="timer"></strong></div><div class="score teal"><span>NGỌC LAM</span><div id="health-1"></div></div></div><div class="turn-banner"><span class="turn-dot"></span><span id="turn-heading"></span><small id="turn-detail"></small><div id="aim-readout" class="aim-readout"></div></div><div class="bottom-game"><button id="back-lobby" class="button secondary compact">← Về sảnh</button><div class="spectator-note">Kéo trên điện thoại · Bắn từ nhân vật</div><button id="camera-toggle" class="button secondary compact" aria-pressed="false">Toàn cảnh</button><span class="room-badge"><span id="match-map"></span> · PHÒNG <b>${state.code}</b></span></div>`;
+    app.innerHTML = `${header()}<div class="match-hud"><div class="score coral"><span>SAN HÔ</span><div id="health-0"></div></div><div class="round"><span id="round-label"></span><span id="weather-badge" class="weather-badge"></span><small class="wind" id="wind"></small><strong id="timer"></strong></div><div class="score teal"><span>NGỌC LAM</span><div id="health-1"></div></div></div><div class="turn-banner"><span class="turn-dot"></span><span id="turn-heading"></span><small id="turn-detail"></small><div id="aim-readout" class="aim-readout"></div></div><div class="bottom-game"><button id="back-lobby" class="button secondary compact">← Về sảnh</button><div class="spectator-note">Kéo trên điện thoại · Bắn từ nhân vật</div><button id="camera-toggle" class="button secondary compact" aria-pressed="false">Toàn cảnh</button><span class="room-badge"><span id="match-map"></span> · PHÒNG <b>${state.code}</b></span></div>`;
     document.querySelector('#back-lobby').onclick = () => emit('lobby');
     scene?.setOverview(false);
     document.querySelector('#camera-toggle').onclick = event => {
@@ -375,7 +385,13 @@ function updateGameUI() {
   const shooter = game.items.find(i => i.id === game.shooterId), weapon = WEAPONS[shooter?.weapon];
   const mapLabel = document.querySelector('#match-map'); if (mapLabel) mapLabel.textContent = game.mapName;
   updateAimReadout(game);
-  updateWindIndicator(document.querySelector('#wind'), game.wind);
+  updateWindIndicator(document.querySelector('#wind'), game.wind, game.weather);
+  const weatherBadge = document.querySelector('#weather-badge');
+  if (weatherBadge && game.weather) {
+    const weatherIcons = { clear: '☀️', rain: '🌧️', fog: '🌫️', storm: '⛈️' };
+    weatherBadge.textContent = `${weatherIcons[game.weather.type] || '☀️'} ${game.weather.name || ''}`;
+    weatherBadge.dataset.weather = game.weather.type;
+  }
   const activeLabel = state.mode === 'practice' && game.team === 1 ? 'Máy' : `Phe ${teams[game.team]}`;
   const mine = controller && state.activeId === playerId;
   const isMove = game.phase === 'move';
@@ -396,6 +412,20 @@ function updateGameUI() {
     document.querySelector('#shooter-weapon').textContent = weapon?.name || '';
     document.querySelector('#shooter-icon').textContent = weapon?.icon || '';
     document.querySelector('#shooter-hint').textContent = weapon?.hint || '';
+    const buffEl = document.querySelector('#shooter-buff');
+    if (buffEl) {
+      if (shooter?.buff) {
+        buffEl.hidden = false;
+        buffEl.className = `shooter-buff buff-${shooter.buff.type}`;
+        buffEl.textContent = shooter.buff.type === 'power'
+          ? `⚡ Sát thương x1.5 (${shooter.buff.charges})`
+          : shooter.buff.type === 'armor'
+          ? `🛡️ Khiên -50% (${shooter.buff.charges})`
+          : `❤️ Hồi máu`;
+      } else {
+        buffEl.hidden = true;
+      }
+    }
     const me = state.players.find(p => p.id === playerId);
     document.querySelector('#phone-team').textContent = `${teams[me?.team || 0].toUpperCase()} · LƯỢT ${game.turn}`;
     document.body.dataset.team = me?.team || 0;

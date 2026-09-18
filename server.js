@@ -102,7 +102,7 @@ export function createApp({ port = 3000 } = {}) {
       if (mode === 'practice' && !room.players.some(p => p.team === 0 && p.connected)) return { error: 'Kết nối một điện thoại vào đội San Hô để đấu bot.' };
       const mapIds = Object.keys(MAPS);
       const mapId = room.mapId === 'random' ? mapIds[randomInt(mapIds.length)] : room.mapId;
-      room.mode = mode; room.game = new Match(mapId); broadcast(room);
+      room.mode = mode; room.game = new Match(mapId, mode === 'practice' ? { weather: 'clear' } : { randomWeather: true }); broadcast(room);
     });
     const canMove = () => room?.game?.phase === 'move' && activePlayer(room)?.id === socket.id;
     const canAim = () => room?.game?.phase === 'aim' && activePlayer(room)?.id === socket.id;

@@ -101,6 +101,12 @@ Gió được tạo lại ở đầu mỗi lượt trong khoảng `-1.5…+1.5`.
 
 Hai thùng xăng là body động có 42 HP. Đạn chạm trực tiếp sẽ kích nổ; va đập mạnh hoặc vụ nổ gần cũng có thể phá thùng. Vụ nổ bán kính 2.5 gây sát thương, lực đẩy và có thể kích hoạt thùng khác nếu người chơi đã đẩy chúng lại gần. Hai tấm nảy là collider tĩnh; chúng phản xạ mọi projectile theo pháp tuyến bề mặt, tăng tốc 12% có giới hạn và chống va chạm lặp trong thời gian ngắn. Server phát sự kiện riêng để TV dựng lửa, tia nảy, rung camera và âm thanh tổng hợp.
 
+## Thời tiết và thùng tiếp tế
+
+Phòng party chọn thời tiết theo trọng số: nắng, mưa, sương hoặc bão; practice dùng trời quang để người chơi học đường đạn ổn định. Mưa tăng trọng lực riêng của projectile 8% mà không làm công trình nặng thêm. Sương rút đường dự báo xuống 9 chấm. Bão tăng gió 1.6 lần và tác động mọi vũ khí. Server, bot, đường preview và nội suy client dùng chung các modifier; TV hiển thị mưa, sương, chớp sáng và chuyển động cây/cờ tương ứng.
+
+Từ lượt 4, thùng tiếp tế có thể hạ dù trong pha settle xuống node trung lập ở giữa sân. Collider chỉ xuất hiện sau khi thùng tiếp đất và được xóa trước khi cư dân bước vào node. Thùng có 40 HP, có thể bị đạn hoặc vụ nổ phá, và hết hạn sau bốn lượt. Người nhặt nhận một trong ba hiệu ứng: hồi 35 HP, tăng 1.5 lần sát thương của phát bắn kế tiếp gồm cả đạn con và sát thương tiếp xúc, hoặc giảm một nửa đòn sát thương kế tiếp. Trạng thái weather, airdrop và buff đều nằm trong snapshot để reconnect khôi phục đúng trận đấu.
+
 ## Vật liệu và hình ảnh
 
 - **Gỗ**: 72% HP cơ sở, tiếng gãy ngắn và dằm dài.

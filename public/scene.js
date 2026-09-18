@@ -60,6 +60,7 @@ export function createScene(container) {
   sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 22, bottom: -22, near: 1, far: 80 });
   sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.025; scene.add(sun);
   const blastLight = new T.PointLight(0xff9b45, 0, 22, 2); blastLight.position.z = 4; blastLight.userData.decayRate = 95; scene.add(blastLight);
+  const weatherLight = new T.PointLight(0xc9e3ff, 0, 70, 1.6); weatherLight.position.set(0, 18, 8); scene.add(weatherLight);
   const lightingThemes = {
     townhouse: { sky: 0xe7faff, ground: 0x809085, sun: 0xffdfad, exposure: 1.05 },
     tower: { sky: 0xdff6ff, ground: 0x718b87, sun: 0xffd39a, exposure: 1.08 },
@@ -267,6 +268,72 @@ export function createScene(container) {
   shaft.rotation.z = -Math.PI / 2; shaft.renderOrder = 10; aimArrow.add(shaft);
   const arrowhead = new T.Mesh(new T.ConeGeometry(0.34, 0.72, 12), arrowMaterial);
   arrowhead.rotation.z = -Math.PI / 2; arrowhead.renderOrder = 10; aimArrow.add(arrowhead);
+
+  let currentWeather = null;
+  const rainCount = 300;
+  const rainGeo = new T.BufferGeometry();
+  const rainPositions = new Float32Array(rainCount * 3);
+  for (let i = 0; i < rainCount; i++) {
+    rainPositions[i * 3] = (Math.random() - 0.5) * 60;
+    rainPositions[i * 3 + 1] = Math.random() * 25;
+    rainPositions[i * 3 + 2] = (Math.random() - 0.5) * 15;
+  }
+  rainGeo.setAttribute('position', new T.BufferAttribute(rainPositions, 3));
+  const rainMat = new T.PointsMaterial({ color: 0x98c5e9, size: 0.18, transparent: true, opacity: 0.55, depthWrite: false });
+  const rainPoints = new T.Points(rainGeo, rainMat);
+  rainPoints.visible = false;
+  scene.add(rainPoints);
+
+  let airdropMesh = null;
+  function updateAirdrop(drop) {
+    if (!drop) {
+      if (airdropMesh) airdropMesh.visible = false;
+      container.dataset.airdrop = 'none';
+      return;
+    }
+    if (!airdropMesh) {
+      airdropMesh = new T.Group();
+      const crateGeo = new T.BoxGeometry(0.9, 0.9, 0.9);
+      const crateMat = new T.MeshStandardMaterial({ color: 0x8a5229, roughness: 0.7 });
+      const crate = new T.Mesh(crateGeo, crateMat);
+      crate.castShadow = true;
+      crate.receiveShadow = true;
+      airdropMesh.add(crate);
+
+      const bandGeo = new T.BoxGeometry(0.92, 0.25, 0.92);
+      const bandMat = new T.MeshStandardMaterial({ color: 0xf5a623, roughness: 0.3, emissive: 0x442200 });
+      const band = new T.Mesh(bandGeo, bandMat);
+      band.name = 'band';
+      airdropMesh.add(band);
+
+      const glow = new T.PointLight(0xf5a623, 0, 5, 2);
+      glow.name = 'crateGlow'; glow.position.set(0, .65, 1); airdropMesh.add(glow);
+
+      const chuteGeo = new T.ConeGeometry(1.6, 1.1, 16, 1, true);
+      const chuteMat = new T.MeshStandardMaterial({ color: 0xffffff, side: T.DoubleSide, roughness: 0.5 });
+      const chute = new T.Mesh(chuteGeo, chuteMat);
+      chute.position.y = 1.6;
+      chute.name = 'chute';
+      airdropMesh.add(chute);
+      scene.add(airdropMesh);
+    }
+    airdropMesh.visible = true;
+    const targetY = drop.y + 0.45;
+    if (!Number.isFinite(airdropMesh.userData.targetY) || Math.abs(airdropMesh.position.y - targetY) > 4) airdropMesh.position.y = targetY;
+    airdropMesh.userData.targetY = targetY; airdropMesh.userData.landed = drop.landed;
+    container.dataset.airdrop = drop.landed ? 'landed' : 'falling';
+    airdropMesh.position.x = drop.x; airdropMesh.position.z = 0;
+    const chute = airdropMesh.getObjectByName('chute');
+    if (chute) chute.visible = !drop.landed;
+    const band = airdropMesh.getObjectByName('band');
+    if (band) {
+      const colors = { heal: 0x2ec4b6, power: 0xe71d36, armor: 0xff9f1c };
+      band.material.color.setHex(colors[drop.buff] || 0xf5a623);
+      band.material.emissive.setHex(colors[drop.buff] ? colors[drop.buff] >> 2 : 0x442200);
+      const glow = airdropMesh.getObjectByName('crateGlow'); if (glow) glow.color.setHex(colors[drop.buff] || 0xf5a623);
+    }
+  }
+
   function aimPreview(team, aim, wind, visible, impact = null) {
     if (!activeShooter) { aimArrow.visible = false; impactMarker.visible = false; container.dataset.impactMarker = 'false'; dots.forEach(d => { d.visible = false; }); return; }
     const angle = aim.angle * Math.PI / 180, rotation = team === 0 ? angle : Math.PI - angle;
@@ -281,11 +348,17 @@ export function createScene(container) {
     arrowhead.position.x = length - 0.36;
     arrowMaterial.color.set(team === 0 ? 0xe45b3a : 0x167b79);
     dots.forEach((dot, i) => {
-      const t = (i + 1) * .095; const y = origin[1] + velocity.y * t - 4.91 * t * t;
-      const windX = activeShooter.weapon === 'heavy' ? .5 * wind * (WEAPONS.heavy.windFactor || 1) * t * t : 0;
+      const maxVisibleDots = currentWeather?.trajectoryDots ?? 15;
+      const t = (i + 1) * .095;
+      const g = 4.91 * (currentWeather?.gravityMod || 1.0);
+      const y = origin[1] + velocity.y * t - g * t * t;
+      const isHeavy = activeShooter.weapon === 'heavy';
+      const windFactor = isHeavy ? (WEAPONS.heavy.windFactor || 1) : (currentWeather?.windAllWeapons ? 0.6 : 0);
+      const windX = .5 * wind * (currentWeather?.windMod || 1.0) * windFactor * t * t;
       const x = origin[0] + velocity.x * t + windX;
       const passedImpact = impact?.p && (team === 0 ? x > impact.p[0] + .15 : x < impact.p[0] - .15);
-      dot.visible = visible && y > 0 && !passedImpact; dot.position.set(x, y, 1.45);
+      dot.visible = visible && y > 0 && !passedImpact && (i < maxVisibleDots);
+      dot.position.set(x, y, 1.45);
       dot.scale.setScalar(0.065 * Math.max(.35, 1 - i / 38));
     });
     impactMarker.visible = visible && Boolean(impact?.p) && Boolean(impact?.blockedByOwn);
@@ -304,6 +377,18 @@ export function createScene(container) {
     container.setAttribute('aria-label', `Đấu trường 3D · ${data.mapName}`);
     if (currentMap !== data.mapId) { reset(); currentMap = data.mapId; applyLightingTheme(currentMap); rebuildMapDecor(); }
     activeShooter = data.items.find(i => i.id === data.shooterId) || null; gamePhase = data.phase; currentWind = data.wind || 0;
+    currentWeather = data.weather || null;
+    if (currentWeather) {
+      container.dataset.weather = currentWeather.type;
+      container.dataset.trajectoryDots = String(currentWeather.trajectoryDots ?? 15);
+      const isRain = currentWeather.type === 'rain' || currentWeather.type === 'storm';
+      rainPoints.visible = isRain && !reducedMotion.matches;
+      container.dataset.weatherParticles = isRain ? (reducedMotion.matches ? 'reduced' : 'rain') : 'none';
+      if (isRain) {
+        rainMat.opacity = currentWeather.type === 'storm' ? 0.85 : 0.45;
+      }
+    }
+    updateAirdrop(data.airdrop);
     const enemies = data.items.filter(i => i.kind === 'resident' && i.team !== data.team && i.hp > 0);
     const enemyX = enemies.length ? enemies.reduce((sum, item) => sum + item.p[0], 0) / enemies.length : 0;
     const enemyY = enemies.length ? enemies.reduce((sum, item) => sum + item.p[1], 0) / enemies.length : 2;
@@ -334,6 +419,23 @@ export function createScene(container) {
       obj.userData.activeResident = item.kind === 'resident' && item.id === data.shooterId;
       obj.userData.gamePhase = data.phase;
       obj.visible = item.kind !== 'resident' || item.hp > 0;
+      if (item.kind === 'resident') {
+        let buffMarker = obj.getObjectByName('buffMarker');
+        if (item.buff) {
+          if (!buffMarker) {
+            const bGeo = new T.SphereGeometry(0.22, 8, 8);
+            const bMat = new T.MeshBasicMaterial({ color: item.buff.type === 'power' ? 0xe71d36 : 0xff9f1c });
+            buffMarker = new T.Mesh(bGeo, bMat);
+            buffMarker.name = 'buffMarker';
+            buffMarker.position.set(0, 1.4, 0);
+            obj.add(buffMarker);
+          }
+          buffMarker.visible = true;
+          buffMarker.material.color.setHex(item.buff.type === 'power' ? 0xe71d36 : 0xff9f1c);
+        } else if (buffMarker) {
+          buffMarker.visible = false;
+        }
+      }
     }
     container.dataset.residentModels = String([...objects.values()].filter(obj => obj.userData.assetAnimator).length);
     container.dataset.weaponModels = String([...objects.values()].filter(obj => obj.userData.weaponModel).length);
@@ -394,6 +496,27 @@ export function createScene(container) {
         const sound = event.action === 'cluster' ? 'cluster' : event.action === 'steer' ? 'rocket' : event.action === 'airburst' ? 'pulse' : event.action === 'boost' ? 'boost' : 'shot';
         if (event.action === 'cluster') for (let i = 0; i < 12; i++) addParticle(sphere(event.x, event.y, .6, .08, 0xdc93bd), (Math.random() - .5) * 7, (Math.random() - .5) * 7, 0, .45);
         window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: sound } }));
+      }
+      if (event.type === 'airdrop_spawn') {
+        container.dataset.lastAirdropEvent = 'spawn';
+        window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'airdropSpawn' } }));
+      }
+      if (event.type === 'airdrop_land') {
+        for (let i = 0; i < (reducedMotion.matches ? 3 : 10); i++) {
+          const dust = sphere(event.x, event.y + .15, .8, .06 + Math.random() * .08, 0xd6b989);
+          addParticle(dust, (Math.random() - .5) * 3, .5 + Math.random() * 1.8, (Math.random() - .5), .45 + Math.random() * .3);
+        }
+        container.dataset.lastAirdropEvent = 'land';
+        window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'airdropLand' } }));
+      }
+      if (event.type === 'airdrop_remove') {
+        const color = event.buff === 'heal' ? 0x2ec4b6 : event.buff === 'power' ? 0xe71d36 : 0xffb43b;
+        const count = event.reason === 'destroyed' ? 16 : event.reason === 'collected' ? 12 : 5;
+        for (let i = 0; i < (reducedMotion.matches ? Math.min(4, count) : count); i++) {
+          addParticle(effectSphere(event.x, event.y + .55, 1, .06 + Math.random() * .09, color, .72), (Math.random() - .5) * 6, 1 + Math.random() * 5, (Math.random() - .5) * 2, .35 + Math.random() * .35);
+        }
+        container.dataset.lastAirdropEvent = event.reason;
+        window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: event.reason === 'destroyed' ? 'airdropBreak' : 'airdropCollect' } }));
       }
       if (event.type === 'break' || event.type === 'hit') {
         const count = event.type === 'break' ? MATERIALS[event.material].fragments : 3;
@@ -556,12 +679,13 @@ export function createScene(container) {
   }
   function reset() {
     aimArrow.visible = false; impactMarker.visible = false; dots.forEach(dot => { dot.visible = false; }); lastEvent = 0; eventBaseline = false; matchWinner = null; activeShooter = null; selection.visible = false;
+    rainPoints.visible = false; weatherLight.intensity = 0; currentWeather = null; if (airdropMesh) airdropMesh.visible = false;
     for (const obj of objects.values()) scene.remove(obj); objects.clear();
     if (shot) scene.remove(shot); shot = null; for (const m of projectileMeshes.values()) scene.remove(m); projectileMeshes.clear();
     for (const p of particles) { p.mesh.removeFromParent(); if (p.mesh.userData.effectMaterial) p.mesh.material.dispose(); } particles = [];
     for (const mark of impactMarks) { mark.mesh.removeFromParent(); mark.mesh.material.dispose(); } impactMarks = []; impactFocus = null;
     mapDecor.clear(); container.dataset.mapDecor = '0'; container.dataset.structureDecor = '0';
-    container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.impactMarks = '0'; container.dataset.attachedDecals = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; delete container.dataset.lastMaterial; delete container.dataset.collapseDust; delete container.dataset.lastEnvironmentEvent; delete container.dataset.lastWeaponVfx;
+    container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.impactMarks = '0'; container.dataset.attachedDecals = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; container.dataset.airdrop = 'none'; container.dataset.weatherParticles = 'none'; delete container.dataset.weather; delete container.dataset.trajectoryDots; delete container.dataset.lastAirdropEvent; delete container.dataset.lastMaterial; delete container.dataset.collapseDust; delete container.dataset.lastEnvironmentEvent; delete container.dataset.lastWeaponVfx;
   }
   let width, height, composer = null, ssaoPass = null, bloomPass = null, vignettePass = null;
   function setupPostProcessing() {
@@ -612,7 +736,42 @@ export function createScene(container) {
     const blend = reducedMotion.matches ? 1 : 1 - Math.exp(-dt * 5);
     viewTarget.lerp(target, blend); viewDistance += (desiredDistance - viewDistance) * blend;
     camera.position.set(viewTarget.x + (mode === 'lobby' && !portrait ? 6.6 : 0), viewTarget.y + Math.max(10, viewDistance * .32), viewDistance);
-    scene.fog.near = Math.max(80, viewDistance + 30); scene.fog.far = Math.max(190, viewDistance + 140);
+    if (airdropMesh?.visible) {
+      const dropBlend = reducedMotion.matches ? 1 : 1 - Math.exp(-dt * 12);
+      airdropMesh.position.y += (airdropMesh.userData.targetY - airdropMesh.position.y) * dropBlend;
+      const chute = airdropMesh.getObjectByName('chute');
+      if (chute?.visible) chute.rotation.z = reducedMotion.matches ? 0 : Math.sin(now / 260) * .09 + currentWind * .025;
+      const glow = airdropMesh.getObjectByName('crateGlow');
+      if (glow) glow.intensity = airdropMesh.userData.landed && !reducedMotion.matches ? 2.2 + Math.sin(now / 230) * .7 : 0;
+    }
+    if (currentWeather?.type === 'storm' && !reducedMotion.matches) {
+      const lightningPhase = (now / 1000) % 8;
+      weatherLight.intensity = lightningPhase < .08 ? 22 * (1 - lightningPhase / .08) : lightningPhase > .18 && lightningPhase < .23 ? 8 * (1 - (lightningPhase - .18) / .05) : 0;
+    } else weatherLight.intensity = 0;
+    if (currentWeather?.type === 'fog') {
+      scene.fog.near = Math.max(15, viewDistance * 0.4);
+      scene.fog.far = Math.max(55, viewDistance * 1.1);
+      scene.fog.color.setHex(0xb2c2cf);
+    } else {
+      scene.fog.near = Math.max(80, viewDistance + 30);
+      scene.fog.far = Math.max(190, viewDistance + 140);
+      scene.fog.color.setHex(0x9bd8ff);
+    }
+    if (rainPoints.visible && !reducedMotion.matches) {
+      const pos = rainGeo.attributes.position.array;
+      const isStorm = currentWeather?.type === 'storm';
+      const fallSpeed = isStorm ? dt * 34 : dt * 22;
+      const windPush = isStorm ? dt * (currentWind * 5 - 6) : dt * (currentWind * 2);
+      for (let i = 0; i < rainCount; i++) {
+        pos[i * 3 + 1] -= fallSpeed;
+        pos[i * 3] += windPush;
+        if (pos[i * 3 + 1] < 0) {
+          pos[i * 3 + 1] = 22 + Math.random() * 3;
+          pos[i * 3] = (Math.random() - 0.5) * 60;
+        }
+      }
+      rainGeo.attributes.position.needsUpdate = true;
+    }
     camera.lookAt(viewTarget);
     container.dataset.cameraMode = focusingImpact ? 'impact' : closeMove ? 'shooter' : tacticalAim ? 'tactical' : 'overview'; container.dataset.cameraX = viewTarget.x.toFixed(2);
     selection.visible = mode === 'game' && ['move', 'aim'].includes(gamePhase) && Boolean(activeShooter);
@@ -645,8 +804,11 @@ export function createScene(container) {
       if (!mesh.userData.serverP) continue;
       const age = Math.min(.12, Math.max(0, (now - mesh.userData.snapshotAt) / 1000));
       const predicted = mesh.userData.serverP.clone().addScaledVector(mesh.userData.velocity, age);
-      predicted.y -= 4.91 * age * age;
-      if (mesh.userData.weapon === 'heavy') predicted.x += .5 * currentWind * (WEAPONS.heavy.windFactor || 1) * age * age;
+      const g = 4.91 * (currentWeather?.gravityMod || 1.0);
+      predicted.y -= g * age * age;
+      const isHeavy = mesh.userData.weapon === 'heavy';
+      const windFactor = isHeavy ? (WEAPONS.heavy.windFactor || 1) : (currentWeather?.windAllWeapons ? 0.6 : 0);
+      predicted.x += .5 * currentWind * (currentWeather?.windMod || 1.0) * windFactor * age * age;
       mesh.position.lerp(predicted, reducedMotion.matches ? 1 : 1 - Math.exp(-dt * 28));
     }
     if (now - trailAt > 55 && !reducedMotion.matches) {

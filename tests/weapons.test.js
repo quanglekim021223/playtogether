@@ -145,7 +145,7 @@ test('weapons: pulse airburst detonates on command and delivers heavy impulse', 
 
 test('weapons: wind affects only bazooka trajectory and bot aim compensates', () => {
   const fireAndStep = (weapon, wind) => {
-    const game = new Match('townhouse'); game.shooter.weapon = weapon; game.wind = wind; game.readyAim();
+    const game = new Match('townhouse', { weather: 'clear' }); game.shooter.weapon = weapon; game.wind = wind; game.readyAim();
     game.fire({ angle: 65, power: 35, weapon });
     for (let i = 0; i < 30 && game.projectile; i++) game.step();
     return game.projectile?.body.position.x;
@@ -153,8 +153,8 @@ test('weapons: wind affects only bazooka trajectory and bot aim compensates', ()
   assert.ok(Math.abs(fireAndStep('pebble', 1.5) - fireAndStep('pebble', 0)) < .001, 'wind must not move pebble');
   assert.ok(Math.abs(fireAndStep('heavy', 1.5) - fireAndStep('heavy', 0)) > .02, 'wind must move bazooka');
 
-  const calm = new Match('townhouse'); calm.shooter.weapon = 'heavy'; calm.wind = 0;
-  const windy = new Match('townhouse'); windy.shooter.weapon = 'heavy'; windy.wind = 1.5;
+  const calm = new Match('townhouse', { weather: 'clear' }); calm.shooter.weapon = 'heavy'; calm.wind = 0;
+  const windy = new Match('townhouse', { weather: 'clear' }); windy.shooter.weapon = 'heavy'; windy.wind = 1.5;
   assert.notDeepEqual(windy.botAim(), calm.botAim(), 'bot aim must change when bazooka wind changes');
 });
 

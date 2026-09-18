@@ -5,7 +5,7 @@ test('material audio produces distinct, finite, non-silent waveforms', async ({ 
   await page.goto('/?controller=1');
   const results = await page.evaluate(async () => {
     const { synthesize } = await import('/audio.js'); const results = [];
-    for (const type of ['wood', 'brick', 'stone', 'glass', 'barrel', 'pad']) {
+    for (const type of ['wood', 'brick', 'stone', 'glass', 'barrel', 'pad', 'airdropSpawn', 'airdropLand', 'airdropCollect', 'airdropBreak']) {
       const ctx = new OfflineAudioContext(1, 44100, 44100);
       synthesize(ctx, ctx.destination, type);
       const buffer = await ctx.startRendering(), data = buffer.getChannelData(0);
@@ -18,6 +18,40 @@ test('material audio produces distinct, finite, non-silent waveforms', async ({ 
   for (const result of results) { expect(result.finite).toBe(true); expect(result.energy).toBeGreaterThan(.01); expect(result.peak).toBeLessThan(1); }
   expect(new Set(results.filter(r => ['wood', 'brick', 'stone', 'glass'].includes(r.type)).map(r => r.crossings)).size).toBe(4);
   expect(results.find(r => r.type === 'glass').crossings).toBeGreaterThan(results.find(r => r.type === 'stone').crossings * 4);
+});
+
+test('weather and airdrop states render, animate and clean up from authoritative snapshots', async ({ page }) => {
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/?controller=1');
+  const game = new Match('tower', { weather: 'storm' }); game.spawnAirdrop('power');
+  await page.evaluate(async snapshot => {
+    const { createScene } = await import('/scene.js');
+    document.querySelector('#app').remove(); document.body.classList.remove('controller');
+    const container = document.querySelector('#scene'); container.style.cssText = 'position:fixed;inset:0';
+    window.module3Scene = createScene(container); window.module3Scene.setMode('game'); window.module3Scene.update(snapshot);
+  }, game.snapshot());
+  const scene = page.locator('#scene');
+  await expect(scene).toHaveAttribute('data-weather', 'storm');
+  await expect(scene).toHaveAttribute('data-weather-particles', 'rain');
+  await expect(scene).toHaveAttribute('data-airdrop', 'falling');
+
+  for (let i = 0; i < 23; i++) game.step(.1);
+  await page.evaluate(snapshot => window.module3Scene.update(snapshot), game.snapshot());
+  await expect(scene).toHaveAttribute('data-airdrop', 'landed');
+  await expect(scene).toHaveAttribute('data-last-airdrop-event', 'land');
+  await page.screenshot({ path: 'artifacts/weather-airdrop.png', scale: 'css' });
+
+  game.damageAirdrop(999, 'test');
+  await page.evaluate(snapshot => window.module3Scene.update(snapshot), game.snapshot());
+  await expect(scene).toHaveAttribute('data-airdrop', 'none');
+  await expect(scene).toHaveAttribute('data-last-airdrop-event', 'destroyed');
+
+  const fog = new Match('tower', { weather: 'fog' });
+  await page.evaluate(snapshot => { window.module3Scene.reset(); window.module3Scene.update(snapshot); }, fog.snapshot());
+  await expect(scene).toHaveAttribute('data-weather', 'fog');
+  await expect(scene).toHaveAttribute('data-trajectory-dots', '9');
+  await expect(scene).toHaveAttribute('data-weather-particles', 'none');
+  expect(errors).toEqual([]);
 });
 
 test('environment meshes render and a fuel blast produces bounded effects and audio', async ({ page }) => {

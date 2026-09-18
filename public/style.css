@@ -27,3 +27,11 @@
 /* Twelve residents stay legible on TV and within narrow spectator screens. */
 .match-hud{gap:26px;padding:14px 23px}.score>div{gap:7px}.score>span{letter-spacing:1.4px}
 @media(max-width:620px){.match-hud{gap:12px;padding:12px 13px;max-width:96vw}.score>div{gap:4px}.life{width:14px;font-size:18px}.round{min-width:50px}.score>span{font-size:8px;letter-spacing:1px}}
+.weather-badge{display:inline-block;margin:2px auto 4px;padding:3px 8px;border-radius:12px;font-size:9px;font-weight:750;letter-spacing:0.5px;background:#eef4f2;color:#355c65}
+.weather-badge[data-weather="storm"]{background:#ffdcd6;color:#9e2a1b}
+.weather-badge[data-weather="rain"]{background:#dcedf9;color:#23597d}
+.weather-badge[data-weather="fog"]{background:#e7e8ea;color:#555a60}
+.weather-badge[data-weather="clear"]{background:#fff2d4;color:#855c0c}
+.wind[data-storm="true"]{color:#b32f1e}
+.wind[data-storm="true"] .wind-arrow{background:#ffdcd6;color:#b32f1e}
+.wind[data-storm="true"] .wind-track i{background:#d93826}

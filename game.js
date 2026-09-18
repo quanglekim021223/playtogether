@@ -13,10 +13,39 @@ export const SKILL_LABELS = {
   pulse: '◎ Sóng chấn',
 };
 export const PHASE_DURATIONS = Object.freeze({ move: 12, aim: 30, flight: 7, settle: 2.6 });
+export function getWeatherConfig(type) {
+  switch (type) {
+    case 'rain':
+      return { type: 'rain', name: 'Mưa', gravityMod: 1.08, windMod: 1.0, trajectoryDots: 15, windAllWeapons: false };
+    case 'fog':
+      return { type: 'fog', name: 'Sương mù', gravityMod: 1.0, windMod: 1.0, trajectoryDots: 9, windAllWeapons: false };
+    case 'storm':
+      return { type: 'storm', name: 'Bão', gravityMod: 1.0, windMod: 1.6, trajectoryDots: 15, windAllWeapons: true };
+    case 'clear':
+    default:
+      return { type: 'clear', name: 'Nắng', gravityMod: 1.0, windMod: 1.0, trajectoryDots: 15, windAllWeapons: false };
+  }
+}
+export function rollWeather(rng = Math.random) {
+  const r = rng();
+  if (r < 0.40) return 'clear';
+  if (r < 0.65) return 'rain';
+  if (r < 0.85) return 'fog';
+  return 'storm';
+}
 export class Match {
-  constructor(mapId = DEFAULT_MAP) {
+  constructor(mapId = DEFAULT_MAP, options = {}) {
     if (!Object.hasOwn(MAPS, mapId)) throw new Error('Unknown map');
     this.map = MAPS[mapId];
+    this.options = options;
+    this.rng = options.rng || Math.random;
+    // Engine instances stay deterministic by default; live party rooms opt into a weighted roll.
+    this.weather = options.weather
+      ? this.getWeatherConfig(options.weather)
+      : options.randomWeather ? this.rollWeather(this.rng) : this.getWeatherConfig('clear');
+    this.airdrop = null;
+    this.airdropIdSeq = 0;
+    this.nextAirdropTurn = 4;
     this.shooterCursor = [0, 0]; this.aimShooterId = null;
     this.world = new C.World({ gravity: new C.Vec3(0, -9.82, 0) });
     this.world.solver.iterations = 15;
@@ -49,7 +78,16 @@ export class Match {
     }
     this.syncShooter();
   }
-  rollWind() { return Math.round((Math.random() * 3 - 1.5) * 10) / 10; }
+  getWeatherConfig(type) {
+    return getWeatherConfig(type);
+  }
+  rollWeather(rng = this.rng || Math.random) {
+    return this.getWeatherConfig(rollWeather(rng));
+  }
+  rollWind() {
+    const rng = this.rng || Math.random;
+    return Math.round((rng() * 3 - 1.5) * 10) / 10;
+  }
   get projectile() {
     return this.projectiles.values().next().value || null;
   }
@@ -67,6 +105,9 @@ export class Match {
   enterPhase(phase, duration) {
     this.phase = phase;
     this.deadline = this.time + duration;
+    if (phase === 'settle') {
+      this.checkAirdropSpawn();
+    }
   }
   readyAim() {
     if (this.phase !== 'move') return false;
@@ -74,12 +115,86 @@ export class Match {
     this.syncShooter();
     return true;
   }
+  checkAirdropSpawn() {
+    if (this.airdrop && this.turn >= this.airdrop.expiresOnTurn) {
+      this.removeAirdrop('expired');
+      this.nextAirdropTurn = this.turn + 4;
+    }
+    if (this.turn >= this.nextAirdropTurn && !this.airdrop) {
+      this.spawnAirdrop();
+    }
+  }
+  spawnAirdrop(forcedBuff = null) {
+    const dropNodeIds = this.map.dropNodes || (this.map.nodes ? this.map.nodes.filter(n => n.neutral || !n.supportId).map(n => n.id) : []);
+    if (!dropNodeIds.length) return;
+    const availableNodeIds = dropNodeIds.filter(id => !this.items.some(i => i.kind === 'resident' && i.hp > 0 && i.nodeId === id));
+    if (!availableNodeIds.length) return false;
+    const chosenId = availableNodeIds[Math.floor(this.rng() * availableNodeIds.length)];
+    const nodeDef = this.map.nodes.find(n => n.id === chosenId);
+    if (!nodeDef) return;
+    const targetPos = this.nodePosition(nodeDef, 0);
+    const spawnY = 12;
+    // Movement nodes store the resident's center. The airdrop stores its base.
+    const landedY = Math.max(0, targetPos.y - 0.53);
+    const fallDuration = 2.2;
+    const buffRoll = this.rng();
+    const buff = forcedBuff || (buffRoll < 0.40 ? 'heal' : (buffRoll < 0.75 ? 'power' : 'armor'));
+    this.airdrop = {
+      id: `airdrop-${++this.airdropIdSeq}`,
+      nodeId: chosenId,
+      x: targetPos.x,
+      y: spawnY,
+      landedY,
+      spawnY,
+      spawnTime: this.time,
+      fallDuration,
+      fallSpeed: (spawnY - landedY) / fallDuration,
+      buff,
+      landed: false,
+      status: 'falling',
+      hp: 40,
+      maxHp: 40,
+      body: null,
+      expiresOnTurn: this.turn + 4,
+    };
+    this.event('airdrop_spawn', { airdropId: this.airdrop.id, nodeId: chosenId, buff, x: targetPos.x, y: spawnY });
+    return true;
+  }
+  createAirdropBody() {
+    if (!this.airdrop || this.airdrop.body) return;
+    const body = new C.Body({
+      mass: 0,
+      shape: new C.Box(new C.Vec3(0.45, 0.45, 0.45)),
+      position: new C.Vec3(this.airdrop.x, this.airdrop.y + 0.45, 0),
+    });
+    this.world.addBody(body);
+    this.airdrop.body = body;
+  }
+  damageAirdrop(amount, cause = 'blast') {
+    if (!this.airdrop || !this.airdrop.landed || this.airdrop.hp <= 0) return;
+    this.airdrop.hp = Math.max(0, this.airdrop.hp - amount);
+    this.event('airdrop_hit', { airdropId: this.airdrop.id, hp: this.airdrop.hp, damage: amount, cause });
+    if (this.airdrop.hp <= 0) {
+      this.removeAirdrop('destroyed');
+      this.nextAirdropTurn = this.turn + 4;
+    }
+  }
+  removeAirdrop(reason = 'removed') {
+    if (!this.airdrop) return;
+    if (this.airdrop.body) {
+      try { this.world.removeBody(this.airdrop.body); } catch {}
+      this.airdrop.body = null;
+    }
+    const { id: dropId, x, y, buff } = this.airdrop;
+    this.airdrop = null;
+    this.event('airdrop_remove', { airdropId: dropId, reason, x, y, buff });
+  }
   isNodeAvailable(nodeId, team) {
     if (!this.map.nodes) return true;
     const nodeDef = this.map.nodes.find(n => n.id === nodeId);
     if (!nodeDef) return false;
     if (!nodeDef.supportId) return true;
-    const supportItem = this.items.find(i => i.team === team && i.partId === nodeDef.supportId);
+    const supportItem = this.items.find(i => (nodeDef.neutral || i.team === team) && i.partId === nodeDef.supportId);
     if (!supportItem || supportItem.hp <= 0 || supportItem.destroyed) return false;
     if (supportItem.body.position.distanceTo(supportItem.homeP) > 1.2) return false;
     const q = supportItem.body.quaternion, h = supportItem.homeQ;
@@ -88,6 +203,11 @@ export class Match {
     return true;
   }
   nodePosition(nodeDef, team) {
+    if (typeof nodeDef === 'string') nodeDef = this.map.nodes?.find(node => node.id === nodeDef);
+    if (!nodeDef) throw new Error('Unknown movement node');
+    if (nodeDef.neutral) {
+      return new C.Vec3(nodeDef.x, nodeDef.y, 0);
+    }
     const direction = team === 0 ? 1 : -1;
     const center = team === 0 ? -this.map.center : this.map.center;
     const authored = new C.Vec3(center + nodeDef.x * direction, nodeDef.y, 0);
@@ -111,10 +231,15 @@ export class Match {
       const neighborDef = this.map.nodes.find(n => n.id === neighborId);
       if (!neighborDef) continue;
       if (!this.isNodeAvailable(neighborId, this.team)) continue;
-      const occupied = this.items.some(i => i.kind === 'resident' && i.team === this.team && i.hp > 0 && i.id !== shooter.id && i.nodeId === neighborId);
+      const occupied = this.items.some(i => i.kind === 'resident' && i.hp > 0 && i.id !== shooter.id && i.nodeId === neighborId && (neighborDef.neutral || i.team === this.team));
       if (occupied) continue;
       const target = this.nodePosition(neighborDef, this.team);
-      moves.push({ id: neighborDef.id, label: neighborDef.label, x: target.x, y: target.y });
+      const move = { id: neighborDef.id, label: neighborDef.label, x: target.x, y: target.y };
+      if (this.airdrop && this.airdrop.landed && this.airdrop.nodeId === neighborDef.id) {
+        move.hasAirdrop = true;
+        move.airdropBuff = this.airdrop.buff;
+      }
+      moves.push(move);
     }
     return moves;
   }
@@ -128,6 +253,24 @@ export class Match {
     const nodeDef = this.map.nodes.find(n => n.id === targetNodeId);
     if (!nodeDef) return { ok: false, error: 'Node không tồn tại.' };
 
+    let collectedBuff = null;
+    if (this.airdrop && this.airdrop.landed && this.airdrop.nodeId === targetNodeId) {
+      collectedBuff = this.airdrop.buff;
+      this.removeAirdrop('collected');
+      this.nextAirdropTurn = this.turn + 4;
+
+      if (collectedBuff === 'heal') {
+        const healAmount = 35;
+        shooter.hp = Math.min(shooter.maxHp, shooter.hp + healAmount);
+        this.event('heal', { residentId: shooter.id, amount: healAmount, hp: shooter.hp });
+      } else if (collectedBuff === 'power') {
+        shooter.buff = { type: 'power', damageMod: 1.5, charges: 1 };
+      } else if (collectedBuff === 'armor') {
+        shooter.buff = { type: 'armor', reduction: 0.5, charges: 1 };
+      }
+      this.event('collect_airdrop', { residentId: shooter.id, buff: collectedBuff, team: this.team });
+    }
+
     const target = this.nodePosition(nodeDef, this.team);
 
     shooter.nodeId = targetNodeId;
@@ -137,8 +280,8 @@ export class Match {
     shooter.body.angularVelocity.set(0, 0, 0);
     shooter.body.wakeUp();
 
-    this.events.push({ id: ++this.eventSeq, type: 'move', shooterId: shooter.id, team: this.team, nodeId: targetNodeId, spot: nodeDef.label });
-    return { ok: true, nodeId: targetNodeId, spot: nodeDef.label };
+    this.event('move', { shooterId: shooter.id, team: this.team, nodeId: targetNodeId, spot: nodeDef.label, buff: collectedBuff });
+    return { ok: true, nodeId: targetNodeId, spot: nodeDef.label, collectedBuff };
   }
   add(kind, team, x, y, size, mass, hp, material = null) {
     if (kind !== 'resident' && !Object.hasOwn(MATERIALS, material)) throw new Error('Unknown material');
@@ -232,8 +375,12 @@ export class Match {
     if (muzzleHit) return muzzleHit;
     let from = new C.Vec3(...origin);
     for (let t = .08; t <= 4; t += .08) {
-      const windX = shooter.weapon === 'heavy' ? .5 * this.wind * WEAPONS.heavy.windFactor * t * t : 0;
-      const to = new C.Vec3(origin[0] + velocity.x * t + windX, origin[1] + velocity.y * t - 4.91 * t * t, 0);
+      let windFactor = 0;
+      if (shooter.weapon === 'heavy') windFactor = WEAPONS.heavy.windFactor;
+      else if (this.weather.windAllWeapons) windFactor = 0.6;
+      const windX = .5 * this.wind * this.weather.windMod * windFactor * t * t;
+      const g = 4.91 * this.weather.gravityMod;
+      const to = new C.Vec3(origin[0] + velocity.x * t + windX, origin[1] + velocity.y * t - g * t * t, 0);
       const hit = cast(from, to);
       if (hit) return hit;
       if (Math.abs(to.x) > 28 || to.y < -1) return { p: [to.x, Math.max(0, to.y), 0], itemId: null, kind: 'out', team: null, blockedByOwn: false };
@@ -251,6 +398,12 @@ export class Match {
     this.world.raycastAll(new C.Vec3(shooter.body.position.x, shooter.body.position.y + .18, 0), new C.Vec3(...origin), {}, hit => {
       if (hit.body !== shooter.body && hit.distance < nearest) { nearest = hit.distance; obstruction = hit.hitPointWorld.clone(); }
     });
+    let damageMod = 1.0;
+    if (shooter.buff?.type === 'power' && shooter.buff.charges > 0) {
+      damageMod = shooter.buff.damageMod || 1.5;
+      shooter.buff.charges--;
+      if (shooter.buff.charges <= 0) shooter.buff = null;
+    }
     const projectileId = ++this.projectileIdSeq;
     const body = new C.Body({ mass: WEAPONS[weapon].mass, shape: new C.Sphere(.22), position: obstruction || new C.Vec3(...origin) });
     body.velocity.set(velocity.x, velocity.y, 0); body.linearDamping = 0;
@@ -271,6 +424,7 @@ export class Match {
       lastSteerSequence: -1,
       createdAt: this.time,
       initialVelocity: { ...velocity },
+      damageMod,
     };
     this.bindProjectile(proj);
     this.world.addBody(body);
@@ -286,6 +440,12 @@ export class Match {
   handleProjectileCollision({ proj, hitBody, normal, velocity }) {
     if (!this.projectiles.has(proj.id) || this.time < (proj.ignoreCollisionsUntil || 0)) return;
     const { body, weapon } = proj;
+    if (this.airdrop?.landed && this.airdrop.body === hitBody) {
+      proj.hitItemId = 'airdrop';
+      proj.collided = true;
+      this.damageAirdrop(WEAPONS[weapon].damage * (proj.damageMod || 1), 'projectile');
+      return;
+    }
     const hitItem = this.items.find(i => i.body === hitBody);
     const hitEnvironment = this.environmentItems.find(i => i.body === hitBody);
     if (hitEnvironment?.kind === 'bouncePad') {
@@ -308,7 +468,7 @@ export class Match {
     }
     if (proj.pierces < proj.maxPierces && hitItem && hitItem.kind !== 'resident' && hitBody !== proj.lastPiercedBody) {
       proj.pierces++; proj.lastPiercedBody = hitBody;
-      this.damage(hitItem, 55, 'pierce', body.position.clone(), velocity.length());
+      this.damage(hitItem, 55 * (proj.damageMod || 1), 'pierce', body.position.clone(), velocity.length());
       body.velocity.copy(velocity.scale(.75));
       const dir = body.velocity.clone(); if (dir.length() > .001) dir.normalize();
       const exitDistance = Math.abs(dir.x) * hitItem.size[0] + Math.abs(dir.y) * hitItem.size[1] + .5;
@@ -319,7 +479,7 @@ export class Match {
     }
     if (proj.bounces < proj.maxBounces && (!hitItem || hitItem.kind !== 'resident')) {
       proj.bounces++;
-      if (hitItem) this.damage(hitItem, 40, 'bounce', body.position.clone(), velocity.length());
+      if (hitItem) this.damage(hitItem, 40 * (proj.damageMod || 1), 'bounce', body.position.clone(), velocity.length());
       if (velocity.dot(normal) > 0) normal.negate(normal);
       body.velocity.copy(velocity.vsub(normal.scale(2 * velocity.dot(normal))).scale(.7));
       body.position.vadd(normal.scale(.28), body.position);
@@ -329,10 +489,17 @@ export class Match {
     }
     proj.hitItemId = hitItem?.id ?? null; proj.collided = true;
   }
-  event(type, data) { this.events.push({ id: ++this.eventSeq, time: this.time, type, ...data }); this.events = this.events.slice(-96); }
+  event(type, data = {}) { this.events.push({ ...data, id: ++this.eventSeq, time: this.time, type }); this.events = this.events.slice(-96); }
   damage(item, amount, cause = 'blast', impactPoint = null, impactStrength = 0) {
     if (item.destroyed || item.hp <= 0 || !Number.isFinite(amount) || amount <= 0) return;
-    item.hp = Math.max(0, item.hp - amount);
+    let effectiveAmount = amount;
+    if (item.kind === 'resident' && item.buff?.type === 'armor' && item.buff.charges > 0) {
+      effectiveAmount = amount * (1 - (item.buff.reduction || 0.5));
+      item.buff.charges--;
+      if (item.buff.charges <= 0) item.buff = null;
+      this.event('armor_absorb', { residentId: item.id, originalDamage: amount, damage: effectiveAmount });
+    }
+    item.hp = Math.max(0, item.hp - effectiveAmount);
     if (item.kind === 'resident') return;
     const data = { itemId: item.id, material: item.material, p: item.body.position.toArray(), q: item.body.quaternion.toArray(), size: item.size, cause };
     if (impactPoint) {
@@ -345,7 +512,7 @@ export class Match {
       // Sleeping upper floors must fall when their supporting body disappears.
       for (const body of this.world.bodies) if (body.mass > 0) body.wakeUp();
       this.event('break', data);
-    } else this.event('hit', { ...data, damage: amount });
+    } else this.event('hit', { ...data, damage: effectiveAmount });
   }
   damageEnvironment(item, amount, cause = 'blast') {
     if (!item || item.kind !== 'fuelBarrel' || item.destroyed || !Number.isFinite(amount) || amount <= 0) return;
@@ -370,6 +537,14 @@ export class Match {
       diff.y = Math.max(.3, diff.y); diff.z = 0;
       item.body.wakeUp(); item.body.applyImpulse(diff.scale(stats.impulse * strength), new C.Vec3(0, .15, 0));
     }
+    if (this.airdrop?.landed && this.airdrop.body) {
+      const diff = this.airdrop.body.position.vsub(position);
+      const distance = diff.length();
+      if (distance <= stats.radius) {
+        const strength = 1 - distance / stats.radius;
+        this.damageAirdrop(stats.damage * (0.45 + strength), cause);
+      }
+    }
   }
   detonateBarrel(item, cause = 'blast') {
     if (!item || item.destroyed) return;
@@ -383,7 +558,10 @@ export class Match {
     const proj = projectileId ? this.projectiles.get(projectileId) : this.projectile;
     if (!proj) return;
     const { body, weapon } = proj;
-    const position = body.position.clone(); const stats = WEAPONS[weapon];
+    const position = body.position.clone();
+    const baseStats = WEAPONS[weapon];
+    const mod = proj.damageMod || 1.0;
+    const stats = { ...baseStats, damage: baseStats.damage * mod, damageMod: mod };
     this.applyRadialBlast(position, stats);
     this.event('blast', { x: position.x, y: position.y, radius: stats.radius, weapon, projectileId: proj.id, hitItemId: proj.hitItemId ?? null });
     try { this.world.removeBody(body); } catch {}
@@ -444,6 +622,7 @@ export class Match {
         turn: this.turn,
         createdAt: this.time,
         initialVelocity: { x: secondBody.velocity.x, y: secondBody.velocity.y },
+        damageMod: proj.damageMod || 1.0,
       };
       this.bindProjectile(secondProj);
       this.world.addBody(secondBody);
@@ -484,6 +663,7 @@ export class Match {
           turn: this.turn,
           createdAt: this.time,
           initialVelocity: { x: cBody.velocity.x, y: cBody.velocity.y },
+          damageMod: proj.damageMod || 1.0,
         };
         this.bindProjectile(cProj);
         this.world.addBody(cBody);
@@ -516,11 +696,33 @@ export class Match {
   }
   step(dt = 1 / 60) {
     this.time += dt;
+    if (this.airdrop && !this.airdrop.landed) {
+      const elapsed = this.time - this.airdrop.spawnTime;
+      if (elapsed >= this.airdrop.fallDuration) {
+        this.airdrop.y = this.airdrop.landedY;
+        this.airdrop.landed = true;
+        this.airdrop.status = 'landed';
+        this.createAirdropBody();
+        this.event('airdrop_land', { airdropId: this.airdrop.id, nodeId: this.airdrop.nodeId, x: this.airdrop.x, y: this.airdrop.y });
+      } else {
+        this.airdrop.y = this.airdrop.spawnY - this.airdrop.fallSpeed * elapsed;
+      }
+    }
     // Small fixed steps keep fast projectiles from tunnelling through narrow pillars.
     for (let substep = 0; substep < 3; substep++) {
       if (this.phase === 'flight') for (const p of this.projectiles.values()) {
         if (p.ignoreCollisionsUntil && this.time >= p.ignoreCollisionsUntil) { p.body.collisionResponse = true; p.ignoreCollisionsUntil = 0; }
-        if (p.weapon === 'heavy' && this.wind !== 0) p.body.force.x += this.wind * WEAPONS.heavy.windFactor * p.body.mass;
+        if (this.weather.gravityMod !== 1) {
+          const extraGravity = 9.82 * (this.weather.gravityMod - 1);
+          p.body.force.y -= p.body.mass * extraGravity;
+        }
+        if (this.wind !== 0) {
+          if (p.weapon === 'heavy') {
+            p.body.force.x += this.wind * this.weather.windMod * WEAPONS.heavy.windFactor * p.body.mass;
+          } else if (this.weather.windAllWeapons) {
+            p.body.force.x += this.wind * this.weather.windMod * 0.6 * p.body.mass;
+          }
+        }
       }
       this.world.step(dt / 3);
     }
@@ -579,21 +781,25 @@ export class Match {
     const targets = this.items.filter(i => i.kind === 'resident' && i.team !== this.team && i.hp > 0);
     const target = targets.sort((a, b) => Math.abs(a.body.position.x - shooter.body.position.x) - Math.abs(b.body.position.x - shooter.body.position.x))[0];
     if (!target) return this.aim;
+    const windFactor = shooter.weapon === 'heavy' ? WEAPONS.heavy.windFactor : (this.weather.windAllWeapons ? 0.6 : 0);
+    const windEffect = windFactor ? this.wind * this.weather.windMod * windFactor * (this.team === 0 ? 1 : -1) * 0.45 : 0;
+    const effectiveG = 9.82 * this.weather.gravityMod;
     // High arcs help shooters on rear terraces clear their own architecture.
     for (const angle of [65, 72, 78, 80, 55, 45]) {
       const origin = muzzlePosition(shooter.body.position.toArray(), this.team, angle);
       const rawDistance = Math.abs(target.body.position.x - origin[0]);
-      const windEffect = shooter.weapon === 'heavy' ? this.wind * WEAPONS.heavy.windFactor * (this.team === 0 ? 1 : -1) * 0.45 : 0;
       const distance = Math.max(1, rawDistance - windEffect);
       const dy = target.body.position.y - origin[1], radians = angle * Math.PI / 180;
       const denominator = 2 * Math.cos(radians) ** 2 * (distance * Math.tan(radians) - dy);
       if (denominator <= 0) continue;
-      const speed = Math.sqrt(9.82 * distance ** 2 / denominator), power = (speed / WEAPONS[shooter.weapon].speed - 9) / .21;
+      const speed = Math.sqrt(effectiveG * distance ** 2 / denominator), power = (speed / WEAPONS[shooter.weapon].speed - 9) / .21;
       if (power >= 15 && power <= 100) {
         const velocity = launchVelocity(this.team, angle, power, shooter.weapon);
         let clear = true, from = new C.Vec3(...origin);
         for (let t = .08; t <= distance / Math.abs(velocity.x); t += .08) {
-          const to = new C.Vec3(origin[0] + velocity.x * t, origin[1] + velocity.y * t - 4.91 * t * t, 0);
+          const windX = .5 * this.wind * this.weather.windMod * windFactor * t * t;
+          const g = 4.91 * this.weather.gravityMod;
+          const to = new C.Vec3(origin[0] + velocity.x * t + windX, origin[1] + velocity.y * t - g * t * t, 0);
           let first = null, nearest = Infinity;
           // Sweep the projectile's radius as well as its center to avoid clipping ledges.
           for (const [dx, dy] of [[0, 0], [.24, 0], [-.24, 0], [0, .24], [0, -.24]]) {
@@ -609,6 +815,19 @@ export class Match {
     }
     return { angle: 55, power: 70, weapon: shooter.weapon };
   }
+  getAirdropSnapshot() {
+    if (!this.airdrop) return null;
+    return {
+      id: this.airdrop.id,
+      nodeId: this.airdrop.nodeId,
+      x: Math.round(this.airdrop.x * 100) / 100,
+      y: Math.round(this.airdrop.y * 100) / 100,
+      buff: this.airdrop.buff,
+      landed: this.airdrop.landed,
+      hp: this.airdrop.hp,
+      maxHp: this.airdrop.maxHp,
+    };
+  }
   snapshot() {
     const pose = body => ({ p: [body.position.x, body.position.y, body.position.z], q: [body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w] });
     const mainProj = this.projectile;
@@ -618,6 +837,8 @@ export class Match {
       aimImpact: this.phase === 'aim' ? this.traceAim() : null, winner: this.winner,
       availableMoves: this.getAvailableMoves(),
       wind: Math.round(this.wind * 10) / 10,
+      weather: { ...this.weather },
+      airdrop: this.getAirdropSnapshot(),
       activeSkill: (this.phase === 'flight' && mainProj && (mainProj.weapon === 'rocket' || !mainProj.skillUsed)) ? {
         weapon: mainProj.weapon,
         label: SKILL_LABELS[mainProj.weapon] || 'Kỹ năng',
@@ -625,10 +846,14 @@ export class Match {
         action: { pebble: 'secondShot', heavy: 'boost', bloom: 'cluster', rocket: 'steer', drill: 'overdrive', pulse: 'airburst' }[mainProj.weapon],
         available: !mainProj.collided,
       } : null,
-      items: this.items.filter(i => !i.destroyed).map(i => ({ id: i.id, kind: i.kind, team: i.team, size: i.size, hp: i.hp, maxHp: i.maxHp, material: i.material, weapon: i.weapon, spot: i.spot, nodeId: i.nodeId, terrace: i.terrace, crack: crackStage(i.hp, i.maxHp), ...pose(i.body) })),
+      items: this.items.filter(i => !i.destroyed).map(i => ({
+        id: i.id, kind: i.kind, team: i.team, size: i.size, hp: i.hp, maxHp: i.maxHp, material: i.material, weapon: i.weapon, spot: i.spot, nodeId: i.nodeId, terrace: i.terrace,
+        buff: i.buff ? { type: i.buff.type, charges: i.buff.charges } : null,
+        crack: crackStage(i.hp, i.maxHp), ...pose(i.body)
+      })),
       environment: this.environmentItems.filter(i => !i.destroyed).map(i => ({ id: i.id, environmentId: i.environmentId, kind: i.kind, size: i.size, hp: i.hp, maxHp: i.maxHp, ...pose(i.body) })),
-      projectile: mainProj ? { id: mainProj.id, weapon: mainProj.weapon, v: mainProj.body.velocity.toArray(), ...pose(mainProj.body) } : null,
-      projectiles: Array.from(this.projectiles.values()).map(p => ({ id: p.id, weapon: p.weapon, v: p.body.velocity.toArray(), ...pose(p.body) })),
+      projectile: mainProj ? { id: mainProj.id, weapon: mainProj.weapon, damageMod: mainProj.damageMod || 1, v: mainProj.body.velocity.toArray(), ...pose(mainProj.body) } : null,
+      projectiles: Array.from(this.projectiles.values()).map(p => ({ id: p.id, weapon: p.weapon, damageMod: p.damageMod || 1, v: p.body.velocity.toArray(), ...pose(p.body) })),
       events: this.events.slice(),
     };
   }

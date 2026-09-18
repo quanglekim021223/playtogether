@@ -73,3 +73,11 @@
 .shooter-card>div{display:flex;flex-direction:column;gap:2px;min-width:0}.shooter-card strong{font-size:13px}.shooter-card span:not(.shooter-icon){font-size:9px;color:#61776d}.shooter-card small{font-size:8px;line-height:1.25;color:#61776d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .life.active{outline:2px solid currentColor;outline-offset:4px;border-radius:8px}
 @media(orientation:landscape) and (max-height:360px){.shooter-card{padding:7px;gap:7px}.shooter-icon{font-size:23px}.shooter-card strong{font-size:12px}.shooter-card small{font-size:7px}}
+.move-btn.airdrop-node{background:#fff0d4;border:1px solid #e5a93b;border-bottom:3px solid #d49520;color:#6b4300;font-weight:700}
+.shooter-buff{display:inline-flex;align-items:center;padding:2px 8px;border-radius:12px;font-size:8px;font-weight:800;letter-spacing:0.5px;width:fit-content;margin-top:2px}
+.shooter-buff.buff-power{background:#ffe3d6;color:#c84b31;border:1px solid #f9a084}
+.shooter-buff.buff-armor{background:#dcf3f0;color:#226f68;border:1px solid #7bc8bf}
+.shooter-buff.buff-heal{background:#e2f7df;color:#286b20;border:1px solid #84d678}
+.wind[data-storm="true"]{background:#ffdcd6!important;color:#9b2a1a!important}
+.wind[data-storm="true"] .wind-arrow{background:#ffb8ac!important;color:#9b2a1a!important}
+.wind[data-storm="true"] .wind-track i{background:#d93826!important}
