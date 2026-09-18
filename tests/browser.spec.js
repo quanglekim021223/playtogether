@@ -91,8 +91,13 @@ test('landscape controllers: orientation, cancel, mirrored pull, turns, reconnec
     await a.phone.screenshot({ path: 'artifacts/controller-auto-landscape.png', scale: 'css' });
     await a.phone.locator('#ready-aim').click();
     await expect(a.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'false');
+    await a.phone.evaluate(() => {
+      globalThis.testVibrations = [];
+      Object.defineProperty(navigator, 'vibrate', { configurable: true, value: duration => { globalThis.testVibrations.push(duration); return true; } });
+    });
     await pullStart(a, -35, -40);
     await expect(a.phone.locator('#aim-pad')).toHaveClass(/armed/);
+    await expect.poll(() => a.phone.evaluate(() => globalThis.testVibrations)).toContain(8);
     await cancel(a);
     await a.phone.setViewportSize({ width: 844, height: 390 });
     await expect.poll(() => a.phone.locator('#app').evaluate(element => getComputedStyle(element).transform)).toBe('none');
@@ -103,7 +108,10 @@ test('landscape controllers: orientation, cancel, mirrored pull, turns, reconnec
     await pullStart(a, 50, 35); await release(a); await expect(page.locator('#round-label')).toHaveText('LƯỢT 1');
     await pullStart(a, -50, 35); await cancel(a); await expect(a.phone.locator('#aim-pad')).not.toHaveClass(/dragging/);
     const origin = await pullStart(a, -45, 35);
-    await a.touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [origin] }); await release(a);
+    await a.touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [origin] });
+    await expect(a.phone.locator('#pull-status')).toHaveText('THẢ ĐỂ HỦY CÚ BẮN');
+    await expect(a.phone.locator('#aim-pad')).toHaveClass(/canceling/);
+    await release(a);
     await expect(a.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'false');
     // Rotating mid-pull cancels it instead of releasing a shot.
     await pullStart(a, -40, 35); await a.phone.setViewportSize({ width: 390, height: 844 }); await cancel(a);

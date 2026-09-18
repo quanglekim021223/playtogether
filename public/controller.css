@@ -37,10 +37,16 @@
 .pad-cue{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:12px;font-weight:700;gap:5px;pointer-events:none}
 .pad-cue>span:first-child{font:500 34px/1 system-ui;color:#edc68c;margin-bottom:3px}
 .pad-cue small{font-size:9px;font-weight:400;color:#b9cac7}
-#pull-anchor,#pull-knob,#pull-cord{display:none;position:absolute;pointer-events:none}
-.dragging #pull-anchor,.dragging #pull-knob,.dragging #pull-cord{display:block}
+#pull-anchor,#pull-knob,#pull-cord,#pull-cancel{display:none;position:absolute;pointer-events:none}
+.dragging #pull-anchor,.dragging #pull-knob,.dragging #pull-cord,.dragging #pull-cancel{display:block}
 .dragging .pad-cue{opacity:0}
 #pull-anchor{width:16px;height:16px;border:2px solid #fff8e9;border-radius:50%;transform:translate(-50%,-50%);z-index:2;box-shadow:0 0 0 10px #fff8e918}
+#pull-cancel{width:58px;height:58px;border:2px dashed #fff8e970;border-radius:50%;transform:translate(-50%,-50%);z-index:1;place-items:center;background:#152a3266;transition:border-color .1s,background .1s,transform .1s}
+#pull-cancel span{font:800 8px/1 system-ui;letter-spacing:.12em;color:#fff8e9aa}
+.dragging #pull-cancel{display:grid}
+.canceling #pull-cancel{border-color:#ff765f;background:#ff765f33;transform:translate(-50%,-50%) scale(1.08)}
+.canceling #pull-cancel span{color:#fff8e9}
+.canceling #pull-cord{opacity:.25}
 #pull-knob{display:grid;place-items:center;width:54px;height:54px;background:var(--team-color);border:5px solid #fff8e9;border-radius:50%;transform:translate(-50%,-50%);font-size:25px;box-shadow:0 3px 12px #0003;z-index:3}
 #aim-pad:not(.dragging) #pull-knob{display:none}
 #pull-cord{height:5px;background:#d6c29a;width:0;transform-origin:0 50%;margin-top:-2.5px;border-radius:5px}

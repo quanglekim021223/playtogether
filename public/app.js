@@ -1,4 +1,4 @@
-import { aimPullRange, dragAim } from './aim.js';
+import { AIM_CANCEL_RADIUS, aimPullRange, crossedPowerMilestones, dragAim, smoothAimPoint } from './aim.js';
 import { createGameAudio } from './audio.js';
 import { MATERIALS } from './materials.js';
 import { WEAPONS } from './weapons.js';
@@ -63,7 +63,7 @@ function controls() {
   return `<section class="controller-weapons"><div class="shooter-card"><span id="shooter-icon" class="shooter-icon"></span><div><strong id="shooter-weapon"></strong><span id="shooter-spot"></span><span id="shooter-buff" class="shooter-buff" hidden></span><small id="shooter-hint"></small></div></div><div id="move-options" class="move-options" hidden></div><button id="ready-aim" class="button primary compact ready-aim-button" hidden>Sẵn sàng ngắm</button><button id="skill-btn" class="button primary compact skill-button" hidden>⚡ Kích hoạt</button></section>
   <section class="controller-touch"><div class="pull-heading"><span id="pull-status">CHẠM · KÉO · THẢ</span><span class="pull-power"><output id="pull-angle">—</output><small>°</small><output id="pull-power">0</output><small>% LỰC</small></span></div>
     <div id="aim-pad" role="application" aria-label="Vùng kéo ná để ngắm và thả để bắn" aria-disabled="true">
-      <div class="pad-grid" aria-hidden="true"></div><div id="pull-cord" aria-hidden="true"></div><div id="pull-anchor" aria-hidden="true"></div><div id="pull-knob" aria-hidden="true">✦</div>
+      <div class="pad-grid" aria-hidden="true"></div><div id="pull-cord" aria-hidden="true"></div><div id="pull-cancel" aria-hidden="true"><span>HỦY</span></div><div id="pull-anchor" aria-hidden="true"></div><div id="pull-knob" aria-hidden="true">✦</div>
       <div class="pad-cue"><span id="pull-direction">←</span><span id="pull-hint">Kéo trái lấy lực · lên/xuống chỉnh góc</span><small>Nhìn mũi tên trên màn hình lớn</small></div>
     </div><div class="pull-footer"><span>Ngang = lực · Dọc = góc · Thả = bắn</span><span>Kéo về điểm chạm để hủy</span></div>
   </section>`;
@@ -99,8 +99,8 @@ function clearGesture({ steer = true } = {}) {
   clearTimeout(aimTimer); aimTimer = null;
   const pad = document.querySelector('#aim-pad'); const previous = gesture; gesture = null;
   if (previous && pad?.hasPointerCapture(previous.id)) pad.releasePointerCapture(previous.id);
-  pad?.classList.remove('dragging', 'armed');
-  for (const id of ['pull-anchor', 'pull-knob', 'pull-cord']) document.getElementById(id)?.removeAttribute('style');
+  pad?.classList.remove('dragging', 'armed', 'canceling');
+  for (const id of ['pull-anchor', 'pull-knob', 'pull-cord', 'pull-cancel']) document.getElementById(id)?.removeAttribute('style');
   const power = document.querySelector('#pull-power'); if (power) power.textContent = '0';
   const angle = document.querySelector('#pull-angle'); if (angle) angle.textContent = '—';
   if (steer) clearSteerGesture();
@@ -111,18 +111,31 @@ function moveGesture(event) {
   if (!canControl() || gesture.turn !== state.game.turn) { cancelGesture(); return; }
   const point = padPoint(event, document.querySelector('#aim-pad'));
   const dx = point.x - gesture.x, dy = point.y - gesture.y;
-  const distance = Math.hypot(dx, dy); const scale = Math.min(1, gesture.maxPull / Math.max(1, distance));
+  const rawDistance = Math.hypot(dx, dy);
+  const canceling = rawDistance < AIM_CANCEL_RADIUS;
+  gesture.filtered = canceling ? { x: dx, y: dy } : smoothAimPoint(gesture.filtered, { x: dx, y: dy });
+  const shownDx = gesture.filtered.x, shownDy = gesture.filtered.y;
+  const distance = Math.hypot(shownDx, shownDy); const scale = Math.min(1, gesture.maxPull / Math.max(1, distance));
   const pad = document.querySelector('#aim-pad');
-  const aim = dragAim(dx, dy, state.game.team, gesture.maxPull);
-  gesture.aim = aim;
+  const rawAim = dragAim(dx, dy, state.game.team, gesture.maxPull);
+  const previewAim = canceling ? null : dragAim(shownDx, shownDy, state.game.team, gesture.maxPull);
+  gesture.rawAim = rawAim;
+  gesture.aim = previewAim;
+  const crossed = crossedPowerMilestones(gesture.lastPower, rawAim?.power, gesture.milestones);
+  if (crossed.length) {
+    crossed.forEach(mark => gesture.milestones.add(mark));
+    navigator.vibrate?.(crossed.includes(100) ? 14 : 8);
+  }
+  gesture.lastPower = rawAim?.power || 0;
   const knob = document.querySelector('#pull-knob'), cord = document.querySelector('#pull-cord');
-  knob.style.left = `${gesture.localX + dx * scale}px`; knob.style.top = `${gesture.localY + dy * scale}px`;
-  cord.style.width = `${Math.min(distance, gesture.maxPull)}px`; cord.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
-  pad.classList.toggle('armed', Boolean(aim));
-  document.querySelector('#pull-power').textContent = aim ? Math.round(aim.power) : '0';
-  document.querySelector('#pull-angle').textContent = aim ? Math.round(aim.angle) : '—';
-  document.querySelector('#pull-status').textContent = aim ? 'THẢ TAY ĐỂ BẮN' : 'KÉO NGANG NGƯỢC ĐỐI THỦ';
-  if (aim) { draft = { ...draft, ...aim }; sendAim(); }
+  knob.style.left = `${gesture.localX + shownDx * scale}px`; knob.style.top = `${gesture.localY + shownDy * scale}px`;
+  cord.style.width = `${Math.min(distance, gesture.maxPull)}px`; cord.style.transform = `rotate(${Math.atan2(shownDy, shownDx)}rad)`;
+  pad.classList.toggle('armed', Boolean(rawAim));
+  pad.classList.toggle('canceling', canceling);
+  document.querySelector('#pull-power').textContent = previewAim ? Math.round(previewAim.power) : '0';
+  document.querySelector('#pull-angle').textContent = previewAim ? Math.round(previewAim.angle) : '—';
+  document.querySelector('#pull-status').textContent = canceling ? 'THẢ ĐỂ HỦY CÚ BẮN' : rawAim ? 'THẢ TAY ĐỂ BẮN' : 'KÉO NGANG NGƯỢC ĐỐI THỦ';
+  if (previewAim) { draft = { ...draft, ...previewAim }; sendAim(); }
 }
 function bindControls() {
   const pad = document.querySelector('#aim-pad'); if (!pad) return;
@@ -135,9 +148,9 @@ function bindControls() {
     if (!canControl() || shotPending || gesture || event.isPrimary === false || (event.pointerType !== 'touch' && event.button !== 0)) return;
     event.preventDefault(); unlockAudio();
     const point = padPoint(event, pad);
-    gesture = { id: event.pointerId, x: point.x, y: point.y, localX: point.x, localY: point.y, maxPull: aimPullRange(pad.clientWidth), turn: state.game.turn, aim: null };
+    gesture = { id: event.pointerId, x: point.x, y: point.y, localX: point.x, localY: point.y, maxPull: aimPullRange(pad.clientWidth), turn: state.game.turn, aim: null, rawAim: null, filtered: null, lastPower: 0, milestones: new Set() };
     pad.setPointerCapture(event.pointerId); pad.classList.add('dragging');
-    for (const id of ['pull-anchor', 'pull-knob', 'pull-cord']) {
+    for (const id of ['pull-anchor', 'pull-knob', 'pull-cord', 'pull-cancel']) {
       const element = document.getElementById(id); element.style.left = `${gesture.localX}px`; element.style.top = `${gesture.localY}px`;
     }
     updateControls();
@@ -154,7 +167,7 @@ function bindControls() {
     if (steerGesture && event.pointerId === steerGesture.id) { clearGesture(); updateControls(); return; }
     if (!gesture || event.pointerId !== gesture.id) return;
     moveGesture(event);
-    const aim = gesture?.aim; const turn = gesture?.turn;
+    const aim = gesture?.rawAim; const turn = gesture?.turn;
     const shouldFire = aim && canControl() && !shotPending && turn === state.game.turn;
     const input = { ...draft, ...aim, turn, shooterId: state.game.shooterId };
     clearGesture();
