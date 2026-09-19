@@ -136,6 +136,9 @@ test('environment meshes render and a fuel blast produces bounded effects and au
   await expect.poll(() => page.locator('#scene').getAttribute('data-weapon-models').then(Number)).toBeGreaterThan(0);
   await expect.poll(() => page.locator('#scene').getAttribute('data-map-decor').then(Number)).toBeGreaterThanOrEqual(6);
   await expect.poll(() => page.locator('#scene').getAttribute('data-structure-decor').then(Number)).toBeGreaterThan(0);
+  await page.evaluate(snapshot => { window.environmentScene.reset(); window.environmentScene.update(snapshot); }, game.snapshot());
+  await expect.poll(() => page.locator('#scene').getAttribute('data-map-decor').then(Number)).toBeGreaterThanOrEqual(6);
+  await expect.poll(() => page.locator('#scene').getAttribute('data-structure-decor').then(Number)).toBeGreaterThan(0);
   game.damageEnvironment(game.environmentItems.find(i => i.kind === 'fuelBarrel'), 999, 'test');
   await page.evaluate(snapshot => window.environmentScene.update(snapshot), game.snapshot());
   await expect(page.locator('#scene')).toHaveAttribute('data-fuel-barrels', '1');
@@ -154,6 +157,23 @@ test('environment meshes render and a fuel blast produces bounded effects and au
   await expect.poll(() => page.locator('#scene').getAttribute('data-vfx-particles').then(Number)).toBeGreaterThan(0);
   await page.screenshot({ path: 'artifacts/weapon-vfx-pulse.png', scale: 'css' });
   expect(errors).toEqual([]);
+});
+
+test('one broken GLB keeps the rest of the asset kit available', async ({ page }) => {
+  await page.route('**/assets/kit/bp_residentteal.glb', route => route.abort());
+  await page.goto('/?controller=1');
+  const snapshot = new Match('tower').snapshot();
+  await page.evaluate(async data => {
+    const { createScene } = await import('/scene.js');
+    document.querySelector('#app').remove(); document.body.classList.remove('controller');
+    const container = document.querySelector('#scene'); container.style.cssText = 'position:fixed;inset:0';
+    window.partialAssetScene = createScene(container); window.partialAssetScene.update(data);
+  }, snapshot);
+  const scene = page.locator('#scene');
+  await expect(scene).toHaveAttribute('data-asset-kit', '21');
+  await expect(scene).toHaveAttribute('data-asset-failures', '1');
+  await expect(scene).toHaveAttribute('data-resident-assets', '1');
+  await expect.poll(() => scene.getAttribute('data-weapon-models').then(Number)).toBeGreaterThan(0);
 });
 
 test('cracks, material fragments, event deduplication, expiry and reconnect', async ({ page }) => {

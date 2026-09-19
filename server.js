@@ -163,7 +163,10 @@ export function createApp({ port = 3000 } = {}) {
     socket.on('disconnect', () => {
       if (!room) return;
       if (host && room.hostSocket === socket.id) room.hostSocket = null;
-      if (player && player.id === socket.id) player.connected = false;
+      if (player && player.id === socket.id) {
+        if (room.game) player.connected = false;
+        else room.players = room.players.filter(candidate => candidate !== player);
+      }
       room.touched = Date.now(); broadcast(room);
     });
   });

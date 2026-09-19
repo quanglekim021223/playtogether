@@ -241,10 +241,12 @@ export function createScene(container) {
   const ktx2Loader = new KTX2Loader().setTranscoderPath('/vendor/three-addons/libs/basis/').detectSupport(renderer);
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).setKTX2Loader(ktx2Loader);
   container.dataset.meshCompression = 'meshopt'; container.dataset.textureCompression = 'ktx2-ready';
-  Promise.all(Object.entries(kitFiles).map(async ([key, [file, size]]) => {
+  Promise.allSettled(Object.entries(kitFiles).map(async ([key, [file, size]]) => {
     const loaded = await loader.loadAsync(`/assets/kit/${file}`); kit.set(key, { scene: loaded.scene, size });
-  })).then(() => {
-    container.dataset.assetKit = String(kit.size);
+  })).then(results => {
+    const failures = results.filter(result => result.status === 'rejected').length;
+    container.dataset.assetKit = kit.size ? String(kit.size) : 'fallback';
+    container.dataset.assetFailures = String(failures);
     container.dataset.residentAssets = String([...kit.keys()].filter(key => key.startsWith('resident')).length);
     container.dataset.weaponAssets = String([...kit.keys()].filter(key => key.startsWith('weapon:')).length);
     container.dataset.decorAssets = String([...kit.keys()].filter(key => key.startsWith('decor:')).length);
@@ -753,7 +755,7 @@ export function createScene(container) {
     for (const p of particles) { p.mesh.removeFromParent(); if (p.mesh.userData.effectMaterial) p.mesh.material.dispose(); } particles = [];
     for (const mark of impactMarks) { mark.mesh.removeFromParent(); mark.mesh.material.dispose(); } impactMarks = []; impactFocus = null;
     impactPauseUntil = 0; replayTurn = null; replayFrames = []; replayEventCursor = 0; replay = null; lastReplayFinal = null; shake = 0;
-    mapDecor.clear(); container.dataset.mapDecor = '0'; container.dataset.structureDecor = '0';
+    mapDecor.clear(); currentMap = null; container.dataset.mapDecor = '0'; container.dataset.structureDecor = '0';
     container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.impactMarks = '0'; container.dataset.attachedDecals = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; container.dataset.airdrop = 'none'; container.dataset.weatherParticles = 'none'; container.dataset.replay = 'idle'; container.dataset.impactPause = 'idle'; delete container.dataset.replayStage; delete container.dataset.weather; delete container.dataset.trajectoryDots; delete container.dataset.lastAirdropEvent; delete container.dataset.lastMaterial; delete container.dataset.collapseDust; delete container.dataset.lastEnvironmentEvent; delete container.dataset.lastWeaponVfx; delete container.dataset.shakeStrength;
   }
   let width, height, composer = null, ssaoPass = null, bloomPass = null, vignettePass = null;

@@ -58,6 +58,15 @@ test('room authorization, capacity, turn ownership, reconnect, and QR', async t 
   const qr = await fetch(`${base}/connection?room=${code}`).then(r => r.json()); assert.ok(qr.qr.startsWith('data:image/png;base64,')); assert.ok(qr.url.endsWith(`/?room=${code}`));
   assert.equal((await fetch(`${base}/connection?room=BAD`)).status, 404);
   assert.ok((await send(host, 'lobby')).ok); assert.equal(server.rooms.get(code).game, null);
+  players[1].c.disconnect();
+  await new Promise((resolve, reject) => {
+    const deadline = Date.now() + 1000;
+    const poll = () => server.rooms.get(code).players.length === 7 ? resolve() : Date.now() > deadline ? reject(new Error('Disconnected lobby player was not removed')) : setTimeout(poll, 10);
+    poll();
+  });
+  const newcomer = await connect();
+  assert.equal((await send(newcomer, 'join', { code, token: randomUUID() })).id, newcomer.id);
+  assert.equal(server.rooms.get(code).players.length, 8);
   host.disconnect(); const resumed = await connect();
   assert.equal((await send(resumed, 'resumeHost', { code, token: hostToken })).code, code);
   assert.equal(server.rooms.get(code).mapId, 'bridge');
