@@ -48,7 +48,7 @@ export function createScene(container) {
     wood: ['bp_woodblock.glb', [1.4, 1.5, 1.4]], brick: ['bp_brickblock.glb', [1.4, 1.5, 1.4]],
     stone: ['bp_stoneblock.glb', [1.4, 1.5, 1.4]], glass: ['bp_glassblock.glb', [1.4, 1.5, .13]],
     fuelBarrel: ['bp_fuelbarrel.glb', [.72, 1.18, .72]], bouncePad: ['bp_bouncepad.glb', [1.45, .34, .95]],
-    resident0: ['bp_residentcoral.glb', [1, 1.65, .75]], resident1: ['bp_residentteal.glb', [1, 1.65, .75]],
+    resident0: ['bp_residentcoral_v2.glb', [1, 1.65, .75]], resident1: ['bp_residentteal.glb', [1, 1.65, .75]],
     'weapon:pebble': ['bp_weaponpebble.glb', [1, .75, .3]], 'weapon:heavy': ['bp_weaponheavy.glb', [1.25, .65, .5]],
     'weapon:bloom': ['bp_weaponbloom.glb', [1.2, .72, .68]], 'weapon:rocket': ['bp_weaponrocket.glb', [1.35, .62, .55]],
     'weapon:drill': ['bp_weapondrill.glb', [1.4, .72, .55]], 'weapon:pulse': ['bp_weaponpulse.glb', [1.28, .72, .58]],
@@ -235,24 +235,32 @@ export function createScene(container) {
     if (item.kind === 'resident') return `resident${item.team}`;
     return item.kind === 'block' ? item.material : null;
   }
-  function residentClips() {
+  function residentClips(model) {
     const scalar = (name, duration, times, values) => new T.NumberKeyframeTrack(`${name}.rotation[z]`, times.map(t => t * duration), values);
     const bounce = (duration, height) => new T.VectorKeyframeTrack('CharacterRig.position', [0, duration * .5, duration], [0, 0, 0, 0, height, 0, 0, 0, 0]);
+    const available = tracks => tracks.filter(track => model.getObjectByName(track.name.split('.')[0]));
     return [
-      new T.AnimationClip('idle', 1.8, [bounce(1.8, .025), scalar('Head', 1.8, [0, .5, 1], [-.025, .025, -.025])]),
-      new T.AnimationClip('move', .62, [bounce(.62, .075), scalar('Leg_L', .62, [0, .5, 1], [-.48, .48, -.48]), scalar('Leg_R', .62, [0, .5, 1], [.48, -.48, .48]), scalar('Arm_L', .62, [0, .5, 1], [.34, -.34, .34]), scalar('Arm_R', .62, [0, .5, 1], [-.34, .34, -.34])]),
-      new T.AnimationClip('aim', .8, [bounce(.8, .012), scalar('Arm_L', .8, [0, .5, 1], [-1.05, -.98, -1.05]), scalar('Arm_R', .8, [0, .5, 1], [1.05, .98, 1.05])]),
-      new T.AnimationClip('hit', .28, [scalar('CharacterRig', .28, [0, .25, .5, .75, 1], [0, -.16, .14, -.08, 0]), scalar('Head', .28, [0, .5, 1], [0, .15, 0])]),
-      new T.AnimationClip('celebrate', .72, [bounce(.72, .20), scalar('Arm_L', .72, [0, .5, 1], [-2.1, -2.45, -2.1]), scalar('Arm_R', .72, [0, .5, 1], [2.1, 2.45, 2.1])])
+      new T.AnimationClip('idle', 1.8, available([bounce(1.8, .025), scalar('Head', 1.8, [0, .5, 1], [-.025, .025, -.025])])),
+      new T.AnimationClip('move', .62, available([bounce(.62, .075), scalar('Leg_L', .62, [0, .5, 1], [-.48, .48, -.48]), scalar('Leg_R', .62, [0, .5, 1], [.48, -.48, .48]), scalar('Arm_L', .62, [0, .5, 1], [.34, -.34, .34]), scalar('Arm_R', .62, [0, .5, 1], [-.34, .34, -.34])])),
+      new T.AnimationClip('aim', .8, available([bounce(.8, .012), scalar('Arm_L', .8, [0, .5, 1], [-1.05, -.98, -1.05]), scalar('Arm_R', .8, [0, .5, 1], [1.05, .98, 1.05])])),
+      new T.AnimationClip('hit', .28, available([scalar('CharacterRig', .28, [0, .25, .5, .75, 1], [0, -.16, .14, -.08, 0]), scalar('Head', .28, [0, .5, 1], [0, .15, 0])])),
+      new T.AnimationClip('celebrate', .72, available([bounce(.72, .20), scalar('Arm_L', .72, [0, .5, 1], [-2.1, -2.45, -2.1]), scalar('Arm_R', .72, [0, .5, 1], [2.1, 2.45, 2.1])]))
     ];
   }
   function attachResidentAsset(obj, asset) {
     if (obj.userData.assetModel) return;
-    const model = asset.scene.clone(true);
-    model.scale.setScalar(.78); model.position.y = -.03;
+    const visual = asset.scene.clone(true), model = new T.Group(); model.name = 'ResidentAsset';
+    let characterRig = visual.getObjectByName('CharacterRig');
+    if (characterRig) model.add(visual);
+    else { characterRig = new T.Group(); characterRig.name = 'CharacterRig'; characterRig.add(visual); model.add(characterRig); }
+    model.updateMatrixWorld(true);
+    const bounds = new T.Box3().setFromObject(model), dimensions = bounds.getSize(new T.Vector3());
+    const scale = 1.56 / dimensions.y; model.scale.setScalar(scale); model.updateMatrixWorld(true);
+    bounds.setFromObject(model); const center = bounds.getCenter(new T.Vector3());
+    model.position.set(-center.x, -.73 - bounds.min.y, -center.z);
     model.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
     obj.userData.rig.visible = false; obj.add(model); obj.userData.assetModel = model;
-    const mixer = new T.AnimationMixer(model), actions = Object.fromEntries(residentClips().map(clip => [clip.name, mixer.clipAction(clip)]));
+    const mixer = new T.AnimationMixer(model), actions = Object.fromEntries(residentClips(model).map(clip => [clip.name, mixer.clipAction(clip)]));
     actions.hit.setLoop(T.LoopOnce, 1); actions.hit.clampWhenFinished = true;
     actions.idle.play(); obj.userData.assetAnimator = { mixer, actions, current: 'idle' };
     obj.userData.assetItem = null;
