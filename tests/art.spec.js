@@ -134,9 +134,11 @@ test('environment meshes render and a fuel blast produces bounded effects and au
   await expect(page.locator('#scene')).toHaveAttribute('data-environment-lighting', 'hdri');
   await expect(page.locator('#scene')).toHaveAttribute('data-environment-backdrop', 'world-3d');
   await expect(page.locator('#scene')).toHaveAttribute('data-terrain-mesh', 'glb');
-  await expect(page.locator('#scene')).toHaveAttribute('data-water-shader', 'world-surface');
+  await expect(page.locator('#scene')).toHaveAttribute('data-water-shader', 'gerstner-lod');
+  await expect(page.locator('#scene')).toHaveAttribute('data-water-reflection', 'pmrem-hdr');
+  await expect(page.locator('#scene')).toHaveAttribute('data-shoreline-foam', 'terrain-depth');
   await expect(page.locator('#scene')).toHaveAttribute('data-water-quality', /^(balanced|high)$/);
-  await expect(page.locator('#scene')).toHaveAttribute('data-environment-motion', 'water-boats-clouds');
+  await expect(page.locator('#scene')).toHaveAttribute('data-environment-motion', 'gerstner-water-boats-clouds-spray');
   const firstMotion = await page.evaluate(() => window.environmentScene.environmentMotion());
   await page.waitForTimeout(180);
   const secondMotion = await page.evaluate(() => window.environmentScene.environmentMotion());

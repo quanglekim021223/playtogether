@@ -55,6 +55,7 @@ export function createScene(container) {
   container.dataset.environmentLighting = 'loading';
   container.dataset.environmentBackdrop = 'loading';
   container.dataset.waterShader = environment.waterMode; container.dataset.waterQuality = environment.waterQuality;
+  container.dataset.waterReflection = environment.waterReflection; container.dataset.shorelineFoam = environment.shorelineFoam;
   container.dataset.environmentMotion = environment.motionLayers;
   environment.lightingReady.then(source => { container.dataset.environmentLighting = source; });
   environment.backgroundReady.then(source => { container.dataset.environmentBackdrop = source; });
@@ -973,7 +974,7 @@ export function createScene(container) {
     if (!reducedMotion.matches) {
       pennants.forEach((f, i) => { f.rotation.y = currentWind * .11 + Math.sin(now / 650 + i) * (.04 + Math.abs(currentWind) * .035); });
       treeCrowns.forEach((c, i) => { c.rotation.z = Math.sin(now / 1900 + i) * .025; });
-      environment.animate(now);
+      environment.animate(now, camera);
       birds.forEach(({ bird, left, right }, i) => {
         bird.position.set(Math.sin(now / 14000 + i * 2) * 32, 14 + i * 1.1 + Math.sin(now / 2500 + i) * .5, -23 - i * 4);
         left.rotation.z = Math.sin(now / 190 + i) * .35; right.rotation.z = -left.rotation.z;

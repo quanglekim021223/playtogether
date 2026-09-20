@@ -31,7 +31,7 @@ Game tải bộ GLB một lần rồi clone asset cho các khối vật liệu v
 "/Applications/Blender.app/Contents/MacOS/Blender" --background --python tools/blender/generate_coastal_terrain.py -- --output public/assets/environment/arena_coast.glb
 ```
 
-Mesh này có mặt sân phẳng, bờ dốc nhiều lớp, màu đỉnh biến thiên nhẹ và các cụm đá/đá cuội không lặp theo hàng. Nó chỉ thay phần nhìn; mặt phẳng vật lý và vị trí các công trình vẫn do server quản lý. Nếu GLB không tải được, game dùng đảo geometry cũ làm dự phòng.
+Mesh này có mặt sân phẳng, bờ dốc chuyển từ cát khô qua cát ẩm đến đá ướt, cùng các cụm đá/đá cuội xám-nâu được chôn vào bờ thay vì lặp theo hàng. Nó chỉ thay phần nhìn; mặt phẳng vật lý và vị trí các công trình vẫn do server quản lý. Nếu GLB không tải được, game dùng đảo geometry cũ làm dự phòng.
 
 Script Blender tự tạo base-color, roughness và normal map nhỏ cho gỗ, gạch, đá, kim loại và vải. `npm run assets:optimize` chạy glTF Transform với Meshopt, giữ nguyên hierarchy và tên node phục vụ animation. Pipeline tự dùng KTX2 khi máy build có `toktx`; runtime luôn cấu hình MeshoptDecoder và KTX2Loader. Image-based lighting dùng `studio_small_09_1k.hdr` của Sergej Majboroda/Poly Haven (CC0), với `RoomEnvironment` làm dự phòng nếu HDRI không tải được.
 
@@ -89,7 +89,7 @@ Browser tests dùng Google Chrome đã cài trên máy và touch events qua CDP.
 
 Mỗi bên có sáu cư dân. Phải loại hết sáu người mới thắng; điện thoại luân phiên điều khiển cư dân đang đến lượt của đội. HUD hiển thị đủ cư dân và vừa màn hình hẹp; hình thu nhỏ tự căn theo kích thước nhà.
 
-Cảnh vịnh biển dùng bầu trời shader, mặt nước 3D có sóng và phản sáng, địa hình GLB, hai mũi đất dạng mesh, làng bậc thang, hải đăng, thuyền buồm hai cánh có vệt nước và mây trong không gian 3D — không còn lấy ảnh tĩnh làm nền hiển thị. Chi tiết cảnh xa dùng instancing và tự hạ mật độ biển/tắt SSAO trên thiết bị yếu hoặc renderer tự động để giữ thao tác mượt. Nhà thêm mái dốc, ống khói, gờ sàn và bồn hoa gắn theo từng khối. Chi tiết trang trí không có collider riêng; hình khối chịu lực vẫn theo dữ liệu map. Cảnh nền không tham gia va chạm và dừng chuyển động khi bật reduced motion.
+Cảnh vịnh biển dùng bầu trời shader và đại dương ba tầng LOD bám theo camera. Mặt nước kết hợp tám lớp Gerstner Wave, hai normal map thủ tục chạy chéo, Fresnel phản chiếu HDR, màu theo độ sâu, foam ở đỉnh sóng/đường bờ và splash particle tại đá ven nước. Địa hình GLB, hai mũi đất dạng mesh, làng bậc thang, hải đăng, thuyền buồm hai cánh có vệt nước và mây đều nằm trong không gian 3D — không còn lấy ảnh tĩnh làm nền hiển thị. Chi tiết cảnh xa dùng instancing và tự hạ mật độ biển/tắt SSAO trên thiết bị yếu hoặc renderer tự động để giữ thao tác mượt. Nhà thêm mái dốc, ống khói, gờ sàn và bồn hoa gắn theo từng khối. Chi tiết trang trí không có collider riêng; hình khối chịu lực vẫn theo dữ liệu map. Cảnh nền không tham gia va chạm và dừng chuyển động khi bật reduced motion.
 
 ## Cư dân tự bắn và vũ khí riêng
 
