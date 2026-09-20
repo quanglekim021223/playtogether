@@ -73,6 +73,30 @@ test('combat presentation applies distance shake, impact pause and final-shot re
   expect(errors).toEqual([]);
 });
 
+test('rigged resident visibly moves arms and head when firing', async ({ page }) => {
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/?controller=1');
+  const game = new Match('tower'), initial = game.snapshot();
+  await page.evaluate(async snapshot => {
+    const { createScene } = await import('/scene.js');
+    document.querySelector('#app').remove(); document.body.classList.remove('controller');
+    const container = document.querySelector('#scene'); container.style.cssText = 'position:fixed;inset:0';
+    window.rigScene = createScene(container); window.rigScene.setMode('game'); window.rigScene.update(snapshot);
+  }, initial);
+  await expect.poll(() => page.locator('#scene').getAttribute('data-resident-models').then(Number)).toBeGreaterThan(0);
+  const before = await page.evaluate(() => window.rigScene.residentMotion());
+  const firing = structuredClone(initial); firing.phase = 'flight'; firing.time += .1;
+  firing.events.push({ id: 99001, time: firing.time, type: 'shot', shooterId: firing.shooterId, weapon: 'pebble' });
+  await page.evaluate(snapshot => window.rigScene.update(snapshot), firing);
+  await expect.poll(() => page.evaluate(() => window.rigScene.residentMotion().state)).toBe('shoot');
+  await page.waitForTimeout(110);
+  const during = await page.evaluate(() => window.rigScene.residentMotion());
+  expect(Math.abs(during.armL - before.armL)).toBeGreaterThan(.15);
+  expect(Math.abs(during.armR - before.armR)).toBeGreaterThan(.15);
+  expect(Math.abs(during.head - before.head)).toBeGreaterThan(.04);
+  expect(errors).toEqual([]);
+});
+
 test('weather and airdrop states render, animate and clean up from authoritative snapshots', async ({ page }) => {
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/?controller=1');

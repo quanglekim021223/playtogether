@@ -243,6 +243,13 @@ export function createScene(container) {
       new T.AnimationClip('idle', 1.8, available([bounce(1.8, .025), scalar('Head', 1.8, [0, .5, 1], [-.025, .025, -.025])])),
       new T.AnimationClip('move', .62, available([bounce(.62, .075), scalar('Leg_L', .62, [0, .5, 1], [-.48, .48, -.48]), scalar('Leg_R', .62, [0, .5, 1], [.48, -.48, .48]), scalar('Arm_L', .62, [0, .5, 1], [.34, -.34, .34]), scalar('Arm_R', .62, [0, .5, 1], [-.34, .34, -.34])])),
       new T.AnimationClip('aim', .8, available([bounce(.8, .012), scalar('Arm_L', .8, [0, .5, 1], [-1.05, -.98, -1.05]), scalar('Arm_R', .8, [0, .5, 1], [1.05, .98, 1.05])])),
+      new T.AnimationClip('shoot', .48, available([
+        bounce(.48, .055),
+        scalar('CharacterRig', .48, [0, .16, .48, .72, 1], [0, -.16, .07, -.035, 0]),
+        scalar('Arm_L', .48, [0, .16, .48, .72, 1], [-1.05, -.42, -1.32, -1.12, -1.05]),
+        scalar('Arm_R', .48, [0, .16, .48, .72, 1], [1.05, .42, 1.32, 1.12, 1.05]),
+        scalar('Head', .48, [0, .2, .52, 1], [0, -.16, .065, 0])
+      ])),
       new T.AnimationClip('hit', .28, available([scalar('CharacterRig', .28, [0, .25, .5, .75, 1], [0, -.16, .14, -.08, 0]), scalar('Head', .28, [0, .5, 1], [0, .15, 0])])),
       new T.AnimationClip('celebrate', .72, available([bounce(.72, .20), scalar('Arm_L', .72, [0, .5, 1], [-2.1, -2.45, -2.1]), scalar('Arm_R', .72, [0, .5, 1], [2.1, 2.45, 2.1])]))
     ];
@@ -261,7 +268,7 @@ export function createScene(container) {
     model.traverse(child => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
     obj.userData.rig.visible = false; obj.add(model); obj.userData.assetModel = model;
     const mixer = new T.AnimationMixer(model), actions = Object.fromEntries(residentClips(model).map(clip => [clip.name, mixer.clipAction(clip)]));
-    actions.hit.setLoop(T.LoopOnce, 1); actions.hit.clampWhenFinished = true;
+    for (const name of ['shoot', 'hit']) { actions[name].setLoop(T.LoopOnce, 1); actions[name].clampWhenFinished = true; }
     actions.idle.play(); obj.userData.assetAnimator = { mixer, actions, current: 'idle' };
     obj.userData.assetItem = null;
   }
@@ -752,7 +759,7 @@ export function createScene(container) {
       }
       if (event.type === 'directHit') triggerImpactPause(70);
       if (event.type === 'shot') {
-        const actor = objects.get(event.shooterId); if (actor) actor.userData.recoil = .18;
+        const actor = objects.get(event.shooterId); if (actor) { actor.userData.recoil = .25; actor.userData.shotUntil = performance.now() / 1000 + .48; }
         spawnMuzzleFlash(event);
         window.dispatchEvent(new CustomEvent('game-shot'));
       }
@@ -1034,15 +1041,18 @@ export function createScene(container) {
     }
     for (const obj of objects.values()) {
       obj.userData.moving = obj.position.distanceToSquared(obj.userData.targetP) > .001;
-      obj.position.lerp(obj.userData.targetP, Math.min(1, visualDt * 22)); obj.quaternion.slerp(obj.userData.targetQ, Math.min(1, visualDt * 22));
+      const followSpeed = obj.userData.rig ? 9 : 22;
+      obj.position.lerp(obj.userData.targetP, Math.min(1, visualDt * followSpeed)); obj.quaternion.slerp(obj.userData.targetQ, Math.min(1, visualDt * followSpeed));
       art.animateResident(obj, now, reducedMotion.matches, matchWinner);
       const animator = obj.userData.assetAnimator;
       if (animator) {
         const hurt = now / 1000 < obj.userData.hurtUntil;
-        const next = matchWinner === obj.userData.team ? 'celebrate' : hurt ? 'hit' : obj.userData.moving ? 'move' : obj.userData.activeResident && ['aim', 'flight'].includes(obj.userData.gamePhase) ? 'aim' : 'idle';
+        const shooting = now / 1000 < (obj.userData.shotUntil || 0);
+        const next = matchWinner === obj.userData.team ? 'celebrate' : hurt ? 'hit' : shooting ? 'shoot' : obj.userData.moving ? 'move' : obj.userData.activeResident && ['aim', 'flight'].includes(obj.userData.gamePhase) ? 'aim' : 'idle';
         if (animator.current !== next) {
           const previous = animator.actions[animator.current], action = animator.actions[next];
-          previous.fadeOut(.12); action.reset().fadeIn(.12).play(); animator.current = next;
+          const blend = next === 'shoot' ? .035 : .12;
+          previous.fadeOut(blend); action.reset().fadeIn(blend).play(); animator.current = next;
         }
         animator.mixer.timeScale = reducedMotion.matches ? 0 : presentationScale; animator.mixer.update(dt);
         if (obj.userData.activeResident) {
@@ -1111,5 +1121,11 @@ export function createScene(container) {
     if (composer) composer.render(dt); else renderer.render(scene, camera);
   }
   requestAnimationFrame(render);
-  return { update, updateAim, reset, aimPreview, skipReplay: finishReplay, replayLast, environmentMotion: environment.motionSample, canReplay: () => Boolean(lastReplayFinal && !reducedMotion.matches), setOverview: value => { overview = value; }, setMode: value => { mode = value; } };
+  function residentMotion() {
+    const resident = [...objects.values()].find(obj => obj.userData.activeResident && obj.userData.assetAnimator);
+    const model = resident?.userData.assetModel;
+    const rotation = name => model?.getObjectByName(name)?.rotation.z || 0;
+    return { state: resident?.userData.assetAnimator?.current || 'none', head: rotation('Head'), armL: rotation('Arm_L'), armR: rotation('Arm_R') };
+  }
+  return { update, updateAim, reset, aimPreview, skipReplay: finishReplay, replayLast, environmentMotion: environment.motionSample, residentMotion, canReplay: () => Boolean(lastReplayFinal && !reducedMotion.matches), setOverview: value => { overview = value; }, setMode: value => { mode = value; } };
 }
