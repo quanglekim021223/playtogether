@@ -303,24 +303,60 @@ export function createEnvironment(scene, renderer) {
     stones.instanceMatrix.needsUpdate = true; if (stones.instanceColor) stones.instanceColor.needsUpdate = true;
     stones.computeBoundingSphere();
   }
-  // The left slope carries a small stepped village; roofs follow the terrain.
-  const village = headlands[0];
-  const houses = new T.InstancedMesh(cube, material(0xffffff), 12);
-  const roofs = new T.InstancedMesh(roofGeometry, material(0xffffff), 12);
-  const windows = new T.InstancedMesh(cube, material(0x63818a), 12);
-  const instance = new T.Object3D(); scene.add(houses, roofs, windows);
-  houses.name = 'Hillside houses'; roofs.name = 'Terracotta roofs'; windows.name = 'Village windows';
-  for (let i = 0; i < 12; i++) {
-    const x = -36 - i % 4 * 7.3, z = -42 - Math.floor(i / 4) * 6.3;
-    const base = coastHeight(village, x, z), height = 2.5 + i % 3 * .6;
-    instance.rotation.set(0, 0, 0); instance.position.set(x, base + height / 2, z); instance.scale.set(3.3, height, 3); instance.updateMatrix();
-    houses.setMatrixAt(i, instance.matrix); houses.setColorAt(i, new T.Color([0xf0dac0, 0xe7c1ad, 0xe3d9bd, 0xd8e0cf][i % 4]));
-    instance.rotation.y = Math.PI / 4; instance.position.set(x, base + height + .85, z); instance.scale.set(2.45, 1.7, 2.25); instance.updateMatrix();
-    roofs.setMatrixAt(i, instance.matrix); roofs.setColorAt(i, new T.Color(i % 3 ? 0xb97960 : 0xc68c69));
-    instance.rotation.y = 0; instance.position.set(x, base + height * .55, z + 1.53); instance.scale.set(.75, .78, .08); instance.updateMatrix();
-    windows.setMatrixAt(i, instance.matrix);
+  // A compact Mediterranean architecture kit shared by both hills.
+  const village = headlands[0], lighthouseLand = headlands[1];
+  const buildingSites = Array.from({ length: 12 }, (_, i) => ({
+    land: village, x: -36 - i % 4 * 7.3, z: -42 - Math.floor(i / 4) * 6.3, variant: i
+  })).concat([
+    { land: lighthouseLand, x: 51, z: -47, variant: 12 }, { land: lighthouseLand, x: 58, z: -51, variant: 13 },
+    { land: lighthouseLand, x: 65, z: -55, variant: 14 }, { land: lighthouseLand, x: 55, z: -59, variant: 15 }
+  ]);
+  const buildingCount = buildingSites.length, instance = new T.Object3D();
+  const plaster = new T.MeshStandardMaterial({ color: 0xffffff, roughness: .92, metalness: 0, normalMap: headlandNormal, normalScale: new T.Vector2(.08, .08), envMapIntensity: .28 });
+  const terracotta = new T.MeshStandardMaterial({ color: 0xffffff, roughness: .88, metalness: 0, envMapIntensity: .3 });
+  const stoneTrim = new T.MeshStandardMaterial({ color: 0xffffff, roughness: .96, metalness: 0 });
+  const timber = new T.MeshStandardMaterial({ color: 0x765443, roughness: .9 });
+  const villageGlass = new T.MeshStandardMaterial({ color: 0x79aeb2, roughness: .28, metalness: .05, emissive: 0x18383b, emissiveIntensity: .12 });
+  const houses = new T.InstancedMesh(cube, plaster, buildingCount);
+  const foundations = new T.InstancedMesh(cube, stoneTrim, buildingCount);
+  const roofs = new T.InstancedMesh(roofGeometry, terracotta, buildingCount);
+  const cornices = new T.InstancedMesh(cube, stoneTrim, buildingCount * 2);
+  const windowFrames = new T.InstancedMesh(cube, timber, buildingCount * 2);
+  const windows = new T.InstancedMesh(cube, villageGlass, buildingCount * 2);
+  const doors = new T.InstancedMesh(cube, timber, buildingCount);
+  const chimneys = new T.InstancedMesh(cube, terracotta, buildingCount);
+  scene.add(houses, foundations, roofs, cornices, windowFrames, windows, doors, chimneys);
+  houses.name = 'PBR hillside plaster houses'; foundations.name = 'Stone house foundations'; roofs.name = 'Terracotta tiled roofs';
+  cornices.name = 'House cornice bands'; windowFrames.name = 'Timber window frames'; windows.name = 'Village glass panes'; doors.name = 'Village doors'; chimneys.name = 'Village chimneys';
+  const updateInstance = (mesh, index) => { instance.updateMatrix(); mesh.setMatrixAt(index, instance.matrix); };
+  for (let i = 0; i < buildingCount; i++) {
+    const site = buildingSites[i], width = 3.1 + site.variant % 3 * .28, depth = 2.75 + site.variant % 2 * .3;
+    const height = 2.55 + site.variant % 3 * .48, base = coastHeight(site.land, site.x, site.z), yaw = (site.variant % 3 - 1) * .035;
+    instance.rotation.set(0, yaw, 0); instance.position.set(site.x, base + height / 2 + .28, site.z); instance.scale.set(width, height, depth); updateInstance(houses, i);
+    houses.setColorAt(i, new T.Color([0xf2dfc3, 0xe8c6ad, 0xeadfca, 0xd6ded0][site.variant % 4]));
+    instance.position.set(site.x, base + .18, site.z); instance.scale.set(width + .34, .42, depth + .34); updateInstance(foundations, i);
+    foundations.setColorAt(i, new T.Color(site.variant % 2 ? 0x918675 : 0xa2957e));
+    instance.rotation.y = Math.PI / 4 + yaw; instance.position.set(site.x, base + height + 1.08, site.z); instance.scale.set(width * .76, 1.72, depth * .76); updateInstance(roofs, i);
+    roofs.setColorAt(i, new T.Color([0xb9674f, 0xc57b58, 0xa95748][site.variant % 3]));
+    for (let band = 0; band < 2; band++) {
+      instance.rotation.y = yaw; instance.position.set(site.x, base + (band ? height + .3 : .42), site.z + depth * .51); instance.scale.set(width + .22, .16, .12); updateInstance(cornices, i * 2 + band);
+      cornices.setColorAt(i * 2 + band, new T.Color(0xf2dfbd));
+      const wx = site.x + (band ? -.62 : .62), wy = base + height * .6;
+      instance.position.set(wx, wy, site.z + depth * .515); instance.scale.set(.82, .92, .14); updateInstance(windowFrames, i * 2 + band);
+      instance.position.z += .045; instance.scale.set(.6, .68, .08); updateInstance(windows, i * 2 + band);
+    }
+    instance.position.set(site.x + width * .27, base + 1.0, site.z + depth * .52); instance.scale.set(.72, 1.55, .14); updateInstance(doors, i);
+    instance.position.set(site.x - width * .25, base + height + 1.25, site.z - depth * .2); instance.scale.set(.38, 1.2, .38); updateInstance(chimneys, i);
+    chimneys.setColorAt(i, new T.Color(site.variant % 2 ? 0x9e5747 : 0xb76a4e));
   }
-  houses.computeBoundingSphere(); roofs.computeBoundingSphere(); windows.computeBoundingSphere();
+  for (const mesh of [houses, foundations, roofs, cornices, windowFrames, windows, doors, chimneys]) {
+    mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; mesh.computeBoundingSphere();
+  }
+  const terraceMaterial = new T.MeshStandardMaterial({ color: 0xa99a7f, roughness: .97 });
+  for (let i = 0; i < 3; i++) {
+    const x = -47 - i * 3.4, z = -38 - i * 6.2, wall = new T.Mesh(cube, terraceMaterial);
+    wall.name = 'Village retaining terrace'; wall.position.set(x, coastHeight(village, x, z) - .15, z); wall.scale.set(18 - i * 2.4, .8, .7); wall.rotation.y = -.06; wall.receiveShadow = true; scene.add(wall);
+  }
   const trunks = new T.InstancedMesh(cylinder, material(0x806b52), 9);
   const leaves = new T.InstancedMesh(ball, material(0xffffff), 18);
   trunks.name = 'Coastal trees'; leaves.name = 'Coastal canopies'; scene.add(trunks, leaves);
@@ -354,13 +390,29 @@ export function createEnvironment(scene, renderer) {
     shrubs.setMatrixAt(i, instance.matrix); shrubs.setColorAt(i, new T.Color(i % 3 ? 0x607957 : 0x7d875c));
   }
   shrubs.instanceMatrix.needsUpdate = true; if (shrubs.instanceColor) shrubs.instanceColor.needsUpdate = true; shrubs.computeBoundingSphere();
-  const lighthouseLand = headlands[1], lighthouse = new T.Group();
+  const lighthouse = new T.Group(); lighthouse.name = 'Detailed coastal lighthouse';
   lighthouse.position.set(43, coastHeight(lighthouseLand, 43, -51), -51); scene.add(lighthouse);
-  shape(cylinder, 0xffe8c4, [0, 3.3, 0], [1.4, 6.6, 1.4], lighthouse);
-  for (let y = 1.2; y < 6; y += 2.5) shape(cylinder, 0xce806f, [0, y, 0], [1.43, .58, 1.43], lighthouse);
-  shape(cylinder, 0x426b77, [0, 7, 0], [1.5, .25, 1.5], lighthouse);
-  shape(cylinder, 0xf9d693, [0, 7.8, 0], [.9, 1.4, .9], lighthouse);
-  shape(new T.ConeGeometry(1, 1, 12), 0xb96659, [0, 8.9, 0], [1.65, 1.2, 1.65], lighthouse);
+  const lighthousePlaster = new T.MeshStandardMaterial({ color: 0xf3dfbd, roughness: .88, normalMap: headlandNormal, normalScale: new T.Vector2(.08, .08) });
+  const lighthouseRed = new T.MeshStandardMaterial({ color: 0xb85e50, roughness: .82 });
+  const lighthouseMetal = new T.MeshStandardMaterial({ color: 0x334e55, roughness: .46, metalness: .35 });
+  const lanternGlass = new T.MeshStandardMaterial({ color: 0xffe2a0, emissive: 0xffb84f, emissiveIntensity: .8, transparent: true, opacity: .72, roughness: .16 });
+  const addLighthouse = (geometry, mat, y) => { const mesh = new T.Mesh(geometry, mat); mesh.position.y = y; mesh.receiveShadow = true; lighthouse.add(mesh); return mesh; };
+  addLighthouse(new T.CylinderGeometry(1.45, 1.75, .8, 20), stoneTrim, .4);
+  addLighthouse(new T.CylinderGeometry(.95, 1.42, 6.6, 24), lighthousePlaster, 4.05);
+  for (const y of [1.55, 4.05]) addLighthouse(new T.CylinderGeometry(1.3 - y * .045, 1.36 - y * .045, .62, 24), lighthouseRed, y);
+  const lighthouseDoor = new T.Mesh(cube, timber); lighthouseDoor.position.set(0, 1.25, 1.31); lighthouseDoor.scale.set(.72, 1.55, .12); lighthouse.add(lighthouseDoor);
+  for (const y of [3.0, 5.35]) {
+    const slit = new T.Mesh(cube, villageGlass); slit.position.set(0, y, 1.13 - y * .045); slit.scale.set(.38, .62, .1); lighthouse.add(slit);
+  }
+  addLighthouse(new T.CylinderGeometry(1.55, 1.55, .24, 24), lighthouseMetal, 7.45);
+  addLighthouse(new T.CylinderGeometry(.88, .88, 1.25, 16), lanternGlass, 8.1);
+  addLighthouse(new T.ConeGeometry(1.28, 1.25, 20), lighthouseRed, 9.35);
+  const railGeometry = new T.CylinderGeometry(.035, .035, .78, 6), railPosts = new T.InstancedMesh(railGeometry, lighthouseMetal, 12);
+  for (let i = 0; i < 12; i++) {
+    const angle = i / 12 * Math.PI * 2; instance.position.set(Math.cos(angle) * 1.34, 7.85, Math.sin(angle) * 1.34); instance.rotation.set(0, 0, 0); instance.scale.set(1, 1, 1); updateInstance(railPosts, i);
+  }
+  railPosts.instanceMatrix.needsUpdate = true; lighthouse.add(railPosts);
+  const railRing = new T.Mesh(new T.TorusGeometry(1.34, .045, 5, 28), lighthouseMetal); railRing.rotation.x = Math.PI / 2; railRing.position.y = 8.22; lighthouse.add(railRing);
 
   const hullOutline = new T.Shape();
   hullOutline.moveTo(-2.3, .02); hullOutline.lineTo(2.3, .02); hullOutline.lineTo(1.65, -.62); hullOutline.lineTo(-1.65, -.62); hullOutline.closePath();
@@ -417,6 +469,8 @@ export function createEnvironment(scene, renderer) {
     shorelineFoam: 'terrain-depth',
     headlandQuality: constrained ? 'pbr-radial-balanced' : 'pbr-radial-high',
     headlandScatter: constrained ? 72 : 124,
+    architectureQuality: 'mediterranean-pbr-instanced',
+    architectureBuildings: buildingCount,
     waterQuality: constrained ? 'balanced' : 'high',
     motionLayers: 'gerstner-water-boats-clouds-spray',
     motionSample: () => ({ waveTime: waterMaterials[0].uniforms.uTime.value, boatX: boats[0].position.x, cloudX: clouds[0].position.x }),
