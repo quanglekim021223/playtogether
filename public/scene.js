@@ -479,7 +479,7 @@ export function createScene(container) {
     const enemies = data.items.filter(i => i.kind === 'resident' && i.team !== data.team && i.hp > 0);
     const enemyX = enemies.length ? enemies.reduce((sum, item) => sum + item.p[0], 0) / enemies.length : 0;
     const enemyY = enemies.length ? enemies.reduce((sum, item) => sum + item.p[1], 0) / enemies.length : 2;
-    tacticalTarget.set(activeShooter ? (activeShooter.p[0] + enemyX) / 2 : 0, activeShooter ? Math.max(2.5, (activeShooter.p[1] + enemyY) / 2 + 1.1) : 2, 0);
+    tacticalTarget.set(activeShooter ? activeShooter.p[0] * .75 + enemyX * .25 : 0, activeShooter ? Math.max(2.5, activeShooter.p[1] * .65 + enemyY * .35 + 1.1) : 2, 0);
     container.dataset.shooter = String(data.shooterId); container.dataset.weapon = activeShooter?.weapon || '';
     container.dataset.wind = currentWind.toFixed(1);
     const environmentItems = Array.isArray(data.environment) ? data.environment : [];
@@ -787,6 +787,10 @@ export function createScene(container) {
   }
   let width, height, composer = null, ssaoPass = null, bloomPass = null, vignettePass = null;
   function setupPostProcessing() {
+    if (renderer.userData.environmentConstrained) {
+      composer = null; container.dataset.postprocessing = 'balanced'; container.dataset.bloom = 'false';
+      return;
+    }
     try {
       composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
@@ -805,7 +809,7 @@ export function createScene(container) {
     }
   }
   function updateRenderQuality() {
-    const constrained = reducedMotion.matches || width < 900 || height < 500 || (navigator.deviceMemory && navigator.deviceMemory <= 4);
+    const constrained = renderer.userData.environmentConstrained || reducedMotion.matches || width < 900 || height < 500 || (navigator.deviceMemory && navigator.deviceMemory <= 4);
     if (ssaoPass) ssaoPass.enabled = !constrained;
     if (bloomPass) bloomPass.strength = constrained ? .22 : .34;
     container.dataset.postQuality = constrained ? 'balanced' : 'high';
@@ -819,10 +823,10 @@ export function createScene(container) {
   reducedMotion.addEventListener?.('change', updateRenderQuality);
   let lastTime = performance.now();
   function render(now) {
-    requestAnimationFrame(render); const dt = Math.min(0.05, (now - lastTime) / 1000); lastTime = now;
+    requestAnimationFrame(render); const dt = Math.min(.05, (now - lastTime) / 1000); lastTime = now;
     if (replay && now >= replay.playAt) {
       if (replay.stage === 'shooter') { replay.stage = 'projectile'; container.dataset.replayStage = 'projectile'; replay.lastAt = now; }
-      const replaySpeed = now < replay.impactSlowUntil ? .24 : replay.baseSpeed;
+      const replaySpeed = replay.stage === 'impact' || now < replay.impactSlowUntil ? .24 : replay.baseSpeed;
       container.dataset.replaySpeed = replaySpeed.toFixed(2);
       replay.sourceTime += Math.max(0, now - replay.lastAt) / 1000 * replaySpeed; replay.lastAt = now;
       while (replay.index + 1 < replay.frames.length && replay.frames[replay.index + 1].time <= replay.sourceTime) update(replay.frames[++replay.index], true);
@@ -833,7 +837,7 @@ export function createScene(container) {
     }
     const impactPaused = now < impactPauseUntil;
     if (!impactPaused && container.dataset.impactPause === 'active') container.dataset.impactPause = 'idle';
-    const presentationScale = impactPaused ? .25 : replay ? (now < replay.impactSlowUntil ? .24 : replay.baseSpeed) : 1;
+    const presentationScale = impactPaused ? .25 : replay ? (replay.stage === 'impact' || now < replay.impactSlowUntil ? .24 : replay.baseSpeed) : 1;
     const visualDt = dt * presentationScale;
     const portrait = width / height < 1.15;
     const distance = Math.max(43, 79.5 / (width / height));

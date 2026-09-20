@@ -36,12 +36,15 @@ export function createEnvironment(scene, renderer) {
   }));
   sky.name = '3D sky dome'; sky.renderOrder = -1000; scene.add(sky);
 
-  const constrained = Boolean(navigator.deviceMemory && navigator.deviceMemory <= 4);
+  const gl = renderer.getContext(), debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+  const gpuName = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : '';
+  const constrained = Boolean(navigator.webdriver || (navigator.deviceMemory && navigator.deviceMemory <= 4) || /swiftshader|software/i.test(gpuName));
+  renderer.userData ||= {}; renderer.userData.environmentConstrained = constrained;
   const waterMaterial = new T.ShaderMaterial({
     fog: true,
     uniforms: T.UniformsUtils.merge([T.UniformsLib.fog, {
       uTime: { value: 0 },
-      uShallow: { value: new T.Color('#34abb6') }, uDeep: { value: new T.Color('#145a80') },
+      uShallow: { value: new T.Color('#238d9d') }, uDeep: { value: new T.Color('#104c73') },
       uSky: { value: new T.Color('#a7d3dc') }, uFoam: { value: new T.Color('#e8f5ef') },
       uSunDirection: { value: new T.Vector3(-.45, .72, .52).normalize() }
     }]),
@@ -71,19 +74,19 @@ export function createEnvironment(scene, renderer) {
       #include <fog_pars_fragment>
       void main() {
         float t = uTime;
-        float ripple = sin(vWorld.x * 2.8 + vWorld.z * 1.6 + t * 2.2) * sin(vWorld.z * 3.4 - vWorld.x * .7 - t * 1.9);
-        vec3 normal = normalize(vNormal + vec3(ripple * .035, 0.0, cos(vWorld.x * 2.2 - t) * .035));
+        float ripple = sin(vWorld.x * .88 + vWorld.z * .43 + t * 1.4) * sin(vWorld.z * 1.24 - vWorld.x * .31 - t * 1.1);
+        vec3 normal = normalize(vNormal + vec3(ripple * .055, 0.0, cos(vWorld.x * .92 - t) * .045));
         vec3 viewDirection = normalize(cameraPosition - vWorld);
         float fresnel = pow(1.0 - max(dot(viewDirection, normal), 0.0), 3.0);
         float depth = smoothstep(7.0, 85.0, abs(vWorld.z));
         vec3 color = mix(uShallow, uDeep, depth * .82);
-        color += vec3(.04, .08, .08) * (.5 + ripple * .5);
+        color += vec3(.025, .07, .075) * (.5 + ripple * .5);
         color = mix(color, uSky, fresnel * .25);
         float sunGlint = pow(max(dot(reflect(-uSunDirection, normal), viewDirection), 0.0), 70.0);
         color += vec3(1.0, .79, .51) * sunGlint * .42;
         float foam = smoothstep(.49, .62, vCrest + ripple * .045) * .18;
-        float shore = max(abs(vWorld.x) - 25.5, abs(vWorld.z) - 7.6);
-        foam += (1.0 - smoothstep(.2, 2.2, abs(shore))) * smoothstep(.2, .9, ripple) * .27;
+        float shore = max(abs(vWorld.x) - 27.1, abs(vWorld.z) - 9.5);
+        foam += (1.0 - smoothstep(.15, 2.0, abs(shore))) * smoothstep(-.25, .75, ripple) * .38;
         color = mix(color, uFoam, clamp(foam, 0.0, .48));
         gl_FragColor = vec4(color, 1.0);
         #include <tonemapping_fragment>
@@ -92,58 +95,141 @@ export function createEnvironment(scene, renderer) {
       }
     `
   });
-  const water = new T.Mesh(new T.PlaneGeometry(560, 560, constrained ? 88 : 144, constrained ? 88 : 144), waterMaterial);
+  const water = new T.Mesh(new T.PlaneGeometry(560, 560, constrained ? 48 : 72, constrained ? 48 : 72), waterMaterial);
   water.name = '3D ocean'; water.rotation.x = -Math.PI / 2; water.position.set(0, -4.55, -35); scene.add(water);
 
   const palette = new Map();
   function material(color) {
-    if (!palette.has(color)) palette.set(color, new T.MeshStandardMaterial({ color, roughness: .9 }));
+    if (!palette.has(color)) palette.set(color, new T.MeshLambertMaterial({ color }));
     return palette.get(color);
   }
   function shape(geometry, color, position, scale, parent = scene) {
     const object = new T.Mesh(geometry, material(color)); object.position.set(...position); object.scale.set(...scale);
-    object.castShadow = true; object.receiveShadow = true; parent.add(object); return object;
+    object.castShadow = false; object.receiveShadow = false; parent.add(object); return object;
   }
   const rock = new T.IcosahedronGeometry(1, 1), ball = new T.SphereGeometry(1, 12, 8);
   const cube = new T.BoxGeometry(1, 1, 1), cylinder = new T.CylinderGeometry(1, 1, 1, 12);
   const roofGeometry = new T.ConeGeometry(1, 1, 4);
-  for (const side of [-1, 1]) {
-    // Layered 3D headlands frame the open bay without crossing the shot lane.
-    for (let i = 0; i < 4; i++) {
-      const x = side * (49 + i * 24), z = -48 - i * 22;
-      shape(rock, i % 2 ? 0xb4ac8f : 0x8f9985, [x, -2 + i * .3, z], [17 + i * 7, 8 + i * 3, 15 + i * 4]);
-      shape(rock, 0x789875, [x, 3 + i * 1.5, z - 2], [13 + i * 5, 3 + i, 11 + i * 3]);
-    }
-    for (let i = 0; i < 10; i++) {
-      const x = side * (39 + i * 4.4), z = -52 - i % 3 * 3;
-      const height = 2.0 + i % 3 * .55;
-      shape(cube, [0xf1d9b8, 0xe6bba2, 0xd5d9bb][i % 3], [x, 2 + height / 2, z], [2.7, height, 2.6]);
-      const roof = shape(roofGeometry, i % 2 ? 0xb8755c : 0x9b6e5d, [x, 2 + height + .7, z], [2.1, 1.45, 2.1]); roof.rotation.y = Math.PI / 4;
-      shape(cube, 0x69888b, [x, 2.9, z + 1.33], [.68, .75, .04]);
-    }
-    for (let i = 0; i < 7; i++) {
-      const x = side * (34 + i * 5), z = -38 - i % 3 * 3;
-      shape(cylinder, 0x7b6650, [x, 1.2, z], [.16, 3.4, .16]);
-      shape(ball, i % 2 ? 0x6a9d70 : 0x4c896d, [x, 3.1, z], [1.5, 1.0, 1.35]);
-    }
+  const headlands = [
+    { side: -1, x: -59, z: -51, rx: 43, rz: 27 },
+    { side: 1, x: 60, z: -54, rx: 39, rz: 24 }
+  ];
+  function coastHeight(land, x, z) {
+    const r = Math.min(1, Math.hypot((x - land.x) / land.rx, (z - land.z) / land.rz));
+    return -4.65 + 16 * Math.pow(1 - r, .7)
+      + (Math.sin(x * .27 + z * .11) + Math.sin(x * .53 - z * .38) * .45) * (1 - r) * 2.2;
   }
-  const lighthouse = new T.Group(); lighthouse.position.set(49, 1.0, -49); scene.add(lighthouse);
+  for (const land of headlands) {
+    // Concentric height rings form real sloped terrain rather than stacked giant rocks.
+    const segments = 28, radii = [0, .18, .36, .54, .7, .84, .94, 1];
+    const vertices = [], colors = [], indices = [];
+    for (const r of radii) for (let i = 0; i < segments; i++) {
+      const angle = i / segments * Math.PI * 2;
+      const edge = 1 + (Math.sin(angle * 5 + land.side) * .045 + Math.sin(angle * 9) * .025) * r;
+      const x = land.x + Math.cos(angle) * land.rx * r * edge;
+      const z = land.z + Math.sin(angle) * land.rz * r * edge;
+      const y = coastHeight(land, x, z);
+      vertices.push(x, y, z);
+      const color = new T.Color(y > 4 ? 0x829973 : y > 0 ? 0x99a084 : y > -2 ? 0xa6a08d : 0x82837a);
+      color.multiplyScalar(.92 + .08 * Math.sin(x * .45 + z * .31));
+      colors.push(color.r, color.g, color.b);
+    }
+    for (let ring = 0; ring < radii.length - 1; ring++) for (let i = 0; i < segments; i++) {
+      const a = ring * segments + i, b = ring * segments + (i + 1) % segments;
+      const c = (ring + 1) * segments + i, d = (ring + 1) * segments + (i + 1) % segments;
+      indices.push(a, b, c, b, d, c);
+    }
+    const terrain = new T.BufferGeometry(); terrain.setAttribute('position', new T.Float32BufferAttribute(vertices, 3));
+    terrain.setAttribute('color', new T.Float32BufferAttribute(colors, 3)); terrain.setIndex(indices); terrain.computeVertexNormals();
+    const coast = new T.Mesh(terrain, new T.MeshLambertMaterial({ vertexColors: true, side: T.DoubleSide }));
+    coast.name = land.side < 0 ? 'Village headland' : 'Lighthouse headland'; scene.add(coast);
+    const stones = new T.InstancedMesh(rock, material(0xffffff), 14), instance = new T.Object3D();
+    stones.name = 'Headland rock clusters'; scene.add(stones);
+    for (let i = 0; i < 14; i++) {
+      const angle = .13 * Math.PI + i / 13 * .74 * Math.PI;
+      const r = .76 + i % 4 * .055;
+      const x = land.x + Math.cos(angle) * land.rx * r, z = land.z + Math.sin(angle) * land.rz * r;
+      const size = 1.0 + i % 5 * .4;
+      instance.position.set(x, coastHeight(land, x, z) + size * .28, z);
+      instance.scale.set(size * 1.4, size * .8, size); instance.rotation.set(i * .13, i * 1.7, i * .3); instance.updateMatrix();
+      stones.setMatrixAt(i, instance.matrix); stones.setColorAt(i, new T.Color(i % 3 ? 0xa39d8c : 0x787e77));
+    }
+    stones.computeBoundingSphere();
+  }
+  // The left slope carries a small stepped village; roofs follow the terrain.
+  const village = headlands[0];
+  const houses = new T.InstancedMesh(cube, material(0xffffff), 12);
+  const roofs = new T.InstancedMesh(roofGeometry, material(0xffffff), 12);
+  const windows = new T.InstancedMesh(cube, material(0x63818a), 12);
+  const instance = new T.Object3D(); scene.add(houses, roofs, windows);
+  houses.name = 'Hillside houses'; roofs.name = 'Terracotta roofs'; windows.name = 'Village windows';
+  for (let i = 0; i < 12; i++) {
+    const x = -36 - i % 4 * 7.3, z = -42 - Math.floor(i / 4) * 6.3;
+    const base = coastHeight(village, x, z), height = 2.5 + i % 3 * .6;
+    instance.rotation.set(0, 0, 0); instance.position.set(x, base + height / 2, z); instance.scale.set(3.3, height, 3); instance.updateMatrix();
+    houses.setMatrixAt(i, instance.matrix); houses.setColorAt(i, new T.Color([0xf0dac0, 0xe7c1ad, 0xe3d9bd, 0xd8e0cf][i % 4]));
+    instance.rotation.y = Math.PI / 4; instance.position.set(x, base + height + .85, z); instance.scale.set(2.45, 1.7, 2.25); instance.updateMatrix();
+    roofs.setMatrixAt(i, instance.matrix); roofs.setColorAt(i, new T.Color(i % 3 ? 0xb97960 : 0xc68c69));
+    instance.rotation.y = 0; instance.position.set(x, base + height * .55, z + 1.53); instance.scale.set(.75, .78, .08); instance.updateMatrix();
+    windows.setMatrixAt(i, instance.matrix);
+  }
+  houses.computeBoundingSphere(); roofs.computeBoundingSphere(); windows.computeBoundingSphere();
+  const trunks = new T.InstancedMesh(cylinder, material(0x806b52), 9);
+  const leaves = new T.InstancedMesh(ball, material(0xffffff), 18);
+  trunks.name = 'Coastal trees'; leaves.name = 'Coastal canopies'; scene.add(trunks, leaves);
+  let treeIndex = 0;
+  for (const land of headlands) for (let i = 0; i < (land.side < 0 ? 6 : 3); i++) {
+    const angle = i * 2.399 + (land.side < 0 ? .5 : 1.3), r = .5 + i % 4 * .075;
+    const x = land.x + Math.cos(angle) * land.rx * r, z = land.z + Math.sin(angle) * land.rz * r;
+    const y = coastHeight(land, x, z), height = 2.2 + i % 3 * .45;
+    instance.rotation.set(0, 0, 0); instance.position.set(x, y + height / 2, z); instance.scale.set(.13, height, .13); instance.updateMatrix();
+    trunks.setMatrixAt(treeIndex, instance.matrix);
+    for (let leaf = 0; leaf < 2; leaf++) {
+      const a = leaf * Math.PI;
+      instance.rotation.y = -a; instance.position.set(x + Math.cos(a) * .72, y + height + .12, z + Math.sin(a) * .72);
+      instance.scale.set(1.15, .28, .48); instance.updateMatrix();
+      leaves.setMatrixAt(treeIndex * 2 + leaf, instance.matrix);
+      leaves.setColorAt(treeIndex * 2 + leaf, new T.Color(i % 2 ? 0x638d68 : 0x5a835e));
+    }
+    treeIndex++;
+  }
+  trunks.computeBoundingSphere(); leaves.computeBoundingSphere();
+  const lighthouseLand = headlands[1], lighthouse = new T.Group();
+  lighthouse.position.set(43, coastHeight(lighthouseLand, 43, -51), -51); scene.add(lighthouse);
   shape(cylinder, 0xffe8c4, [0, 3.3, 0], [1.4, 6.6, 1.4], lighthouse);
   for (let y = 1.2; y < 6; y += 2.5) shape(cylinder, 0xce806f, [0, y, 0], [1.43, .58, 1.43], lighthouse);
   shape(cylinder, 0x426b77, [0, 7, 0], [1.5, .25, 1.5], lighthouse);
   shape(cylinder, 0xf9d693, [0, 7.8, 0], [.9, 1.4, .9], lighthouse);
   shape(new T.ConeGeometry(1, 1, 12), 0xb96659, [0, 8.9, 0], [1.65, 1.2, 1.65], lighthouse);
 
-  const boatHull = new T.IcosahedronGeometry(1, 0), sailShape = new T.Shape();
-  sailShape.moveTo(0, 0); sailShape.lineTo(0, 3.3); sailShape.lineTo(1.9, .1); sailShape.closePath();
-  const sailGeometry = new T.ShapeGeometry(sailShape);
-  const sailMaterial = new T.MeshStandardMaterial({ color: 0xfff3d8, side: T.DoubleSide, roughness: 1 });
+  const hullOutline = new T.Shape();
+  hullOutline.moveTo(-2.3, .02); hullOutline.lineTo(2.3, .02); hullOutline.lineTo(1.65, -.62); hullOutline.lineTo(-1.65, -.62); hullOutline.closePath();
+  const hullGeometry = new T.ExtrudeGeometry(hullOutline, { depth: .8, bevelEnabled: true, bevelSegments: 1, bevelSize: .08, bevelThickness: .08 });
+  function sail(points, color, parent, z = .5) {
+    const outline = new T.Shape(); outline.moveTo(...points[0]);
+    for (const point of points.slice(1)) outline.lineTo(...point);
+    outline.closePath();
+    const mesh = new T.Mesh(new T.ShapeGeometry(outline), new T.MeshStandardMaterial({ color, side: T.DoubleSide, roughness: 1 }));
+    mesh.position.z = z; parent.add(mesh); return mesh;
+  }
   const boats = [];
   for (let i = 0; i < 2; i++) {
-    const boat = new T.Group(); boat.position.set(-18 + i * 30, -3.9, -30 - i * 18); boat.scale.setScalar(1 + i * .2); scene.add(boat);
-    shape(boatHull, i ? 0x547f8b : 0xb8785e, [0, 0, 0], [1.7, .38, .58], boat);
-    shape(cylinder, 0x886d58, [0, 1.6, 0], [.055, 3.3, .055], boat);
-    const sail = new T.Mesh(sailGeometry, sailMaterial); sail.position.y = .18; boat.add(sail); boats.push(boat);
+    const boat = new T.Group(); boat.name = 'Detailed sailboat'; boat.position.set(i ? 16 : -2, -3.9, i ? -36 : -58);
+    boat.scale.setScalar(i ? 1.6 : 1.05); scene.add(boat);
+    const hull = new T.Mesh(hullGeometry, material(i ? 0x56798a : 0xa46c55)); hull.position.z = -.4; hull.castShadow = true; boat.add(hull);
+    shape(cube, 0xe4c6a0, [0, .08, 0], [3.7, .1, .7], boat);
+    shape(cube, 0x6c5547, [0, -.08, .45], [4.25, .11, .08], boat);
+    shape(cylinder, 0x7b6150, [0, 1.9, 0], [.055, 3.8, .055], boat);
+    shape(cylinder, 0x8c6a54, [1.05, .42, .15], [.035, 2.1, .035], boat).rotation.z = Math.PI / 2;
+    sail([[.12, .4], [.12, 3.65], [2.08, .4]], 0xfff5dd, boat);
+    sail([[-.1, 3.35], [-.1, .62], [-1.47, .62]], 0xf2e6c9, boat);
+    for (const y of [.78, 1.6, 2.42]) {
+      const x0 = 2.08 - (y - .4) / 3.25 * 1.96, x1 = 2.08 - (y + .17 - .4) / 3.25 * 1.96;
+      sail([[.14, y], [x0, y], [x1, y + .17], [.14, y + .17]], i ? 0xbe745e : 0x7ca7a6, boat, .515);
+    }
+    const wake = new T.Mesh(new T.RingGeometry(1.5, 1.8, 32), new T.MeshBasicMaterial({ color: 0xf4f6e9, transparent: true, opacity: .3, side: T.DoubleSide, depthWrite: false }));
+    wake.rotation.x = -Math.PI / 2; wake.position.y = -.5; wake.scale.set(1.5, .7, 1); boat.add(wake);
+    boats.push(boat);
   }
   const clouds = [];
   for (let i = 0; i < 6; i++) {
@@ -154,8 +240,8 @@ export function createEnvironment(scene, renderer) {
 
   function setTheme(mapId = 'townhouse') {
     const colors = {
-      townhouse: ['#37b1b6', '#145a80'], tower: ['#34aab7', '#165f83'],
-      bridge: ['#40b5b5', '#18627e'], fortress: ['#3ba5ad', '#275d78']
+      townhouse: ['#238d9d', '#104c73'], tower: ['#248b9e', '#124d74'],
+      bridge: ['#27949d', '#175476'], fortress: ['#288b98', '#28516e']
     };
     const [shallow, deep] = colors[mapId] || colors.townhouse;
     waterMaterial.uniforms.uShallow.value.set(shallow);
@@ -173,9 +259,10 @@ export function createEnvironment(scene, renderer) {
     animate(now) {
       waterMaterial.uniforms.uTime.value = now / 1000;
       boats.forEach((boat, i) => {
-        boat.position.x = -18 + ((now * (.00055 + i * .00014) + i * 29) % 36);
+        boat.position.x = (i ? 16 : -2) + Math.sin(now * (.00032 + i * .00007) + i * 1.7) * 5;
         boat.position.y = -3.9 + Math.sin(now / 1100 + i) * .14;
         boat.rotation.z = Math.sin(now / 1800 + i) * .04;
+        boat.rotation.y = Math.sin(now / 2400 + i) * .07;
       });
       clouds.forEach((cloud, i) => { cloud.position.x = -105 + ((now * (.0016 + i * .00012) + i * 39) % 210); });
     }

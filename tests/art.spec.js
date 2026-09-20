@@ -125,9 +125,9 @@ test('environment meshes render and a fuel blast produces bounded effects and au
   await expect(page.locator('#scene')).toHaveAttribute('data-resident-assets', '2');
   await expect(page.locator('#scene')).toHaveAttribute('data-weapon-assets', '6');
   await expect(page.locator('#scene')).toHaveAttribute('data-decor-assets', '8');
-  await expect(page.locator('#scene')).toHaveAttribute('data-postprocessing', 'enabled');
-  await expect(page.locator('#scene')).toHaveAttribute('data-bloom', 'true');
-  await expect(page.locator('#scene')).toHaveAttribute('data-ambient-occlusion', 'true');
+  await expect(page.locator('#scene')).toHaveAttribute('data-postprocessing', 'balanced');
+  await expect(page.locator('#scene')).toHaveAttribute('data-bloom', 'false');
+  await expect(page.locator('#scene')).toHaveAttribute('data-ambient-occlusion', 'false');
   await expect(page.locator('#scene')).toHaveAttribute('data-lighting-theme', 'tower');
   await expect(page.locator('#scene')).toHaveAttribute('data-mesh-compression', 'meshopt');
   await expect(page.locator('#scene')).toHaveAttribute('data-texture-compression', 'ktx2-ready');
