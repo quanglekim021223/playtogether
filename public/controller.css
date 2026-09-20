@@ -21,18 +21,34 @@
 .gamepad .weapon:disabled{opacity:.5}
 .gamepad .weapon small{font-size:8px}
 .gamepad .ammo{font-size:24px;width:28px;text-align:center}
-.controller-touch{display:grid;grid-template-rows:26px minmax(0,1fr) 24px;min-width:0;min-height:0}
-.pull-heading{display:flex;align-items:center;justify-content:space-between;font-size:9px;letter-spacing:1.3px;font-weight:800}
-.pull-power{display:flex;align-items:baseline;gap:5px;color:var(--team-color)}
-.pull-power output{font:800 22px/1 "Trebuchet MS",sans-serif;font-variant-numeric:tabular-nums}
-.pull-power output+small+output{margin-left:8px}
-.pull-power small{font-size:8px;letter-spacing:0}
+.controller-touch{display:grid;grid-template-rows:48px minmax(0,1fr) 24px;min-width:0;min-height:0}
+.pull-heading{display:grid;grid-template-columns:minmax(90px,.65fr) minmax(150px,1fr) auto;align-items:center;gap:10px;font-size:9px;letter-spacing:1.1px;font-weight:800}
+#pull-status{line-height:1.15}
+.aim-context,.aim-metrics,.aim-weapon,.angle-meter,.power-meter>span:first-child{display:flex;align-items:center}
+.aim-context{justify-content:center;gap:8px;min-width:0}
+.aim-weapon{gap:5px;min-width:0;padding:5px 8px;border-radius:12px;background:#edf0e5;color:#405d63;white-space:nowrap}
+.aim-weapon b{font-size:16px;color:var(--team-color)}
+.aim-weapon strong{max-width:92px;overflow:hidden;text-overflow:ellipsis}
+.aim-metrics{justify-content:flex-end;gap:10px;color:#314b53}
+.angle-meter{--angle:50%;position:relative;gap:2px;padding-bottom:10px;min-width:66px;justify-content:flex-end}
+.angle-meter output{font:900 27px/1 "Trebuchet MS",sans-serif;font-variant-numeric:tabular-nums;color:var(--team-color);min-width:31px;text-align:right}
+.angle-meter small,.power-meter small{font-size:7px;letter-spacing:.8px}
+.angle-scale{position:absolute;left:0;right:0;bottom:3px;height:5px;border-radius:5px;background:repeating-linear-gradient(90deg,#aebdba 0 1px,transparent 1px 8px),#e0e6e2}
+.angle-scale i{position:absolute;left:var(--angle);top:-2px;width:3px;height:9px;border-radius:2px;background:var(--team-color);transform:translateX(-50%);transition:left .08s linear}
+.power-meter{--power:0%;display:grid;grid-template-columns:auto 118px;align-items:center;gap:7px;color:#3b8f79}
+.power-meter>span:first-child{gap:2px}
+.power-meter output{font:900 29px/1 "Trebuchet MS",sans-serif;font-variant-numeric:tabular-nums;min-width:34px;text-align:right}
+.power-track{height:13px;padding:2px;border-radius:9px;background:#d8dfda;box-shadow:inset 0 1px 2px #253b4830}
+.power-track i{display:block;width:var(--power);height:100%;min-width:0;border-radius:7px;background:currentColor;transition:width .08s linear,background .12s}
+.power-meter[data-level="medium"]{color:#cf9a24}.power-meter[data-level="high"]{color:#e36e31}.power-meter[data-level="max"]{color:#d93f35}
 #aim-pad{position:relative;background:#243b45;border:2px solid #425962;border-bottom:4px solid #152a32;border-radius:20px;min-height:100px;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;overflow:hidden;cursor:grab;color:#fff8e9}
 #aim-pad[aria-disabled="true"]{opacity:.5;cursor:default}
 #aim-pad.dragging{cursor:grabbing}
 #aim-pad.steering{border-color:#ef9a43;box-shadow:inset 0 0 28px #ef9a4338;cursor:ns-resize}
 #aim-pad.armed{border-color:var(--team-color)}
-#aim-pad.blocked{border-color:#ffb33c;box-shadow:inset 0 0 28px #ff9d0038}
+#aim-pad.blocked{border-color:#ff6657;background:#442f34;box-shadow:inset 0 0 34px #ff493f55}
+.controller-touch.blocked #pull-status{color:#d23f33;font-size:12px}
+.controller-touch.blocked .power-track{box-shadow:0 0 0 2px #ff6657,inset 0 1px 2px #253b4830}
 .pad-grid{position:absolute;inset:0;background-image:radial-gradient(#aabeb828 1px,transparent 1px);background-size:18px 18px;pointer-events:none}
 .pad-cue{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;font-size:12px;font-weight:700;gap:5px;pointer-events:none}
 .pad-cue>span:first-child{font:500 34px/1 system-ui;color:#edc68c;margin-bottom:3px}
@@ -68,11 +84,13 @@
   .gamepad-status h1{font-size:17px;margin-top:2px}
   .gamepad-body{padding-top:4px;grid-template-columns:155px minmax(0,1fr);gap:12px}
   .gamepad .weapon{min-height:36px;padding:4px 8px}
-  .controller-touch{grid-template-rows:24px minmax(0,1fr) 18px}
+  .controller-touch{grid-template-rows:42px minmax(0,1fr) 18px}
+  .pull-heading{gap:6px}.power-meter{grid-template-columns:auto 88px;gap:4px}.power-meter output{font-size:25px}.angle-meter output{font-size:23px}.aim-context{gap:4px}.aim-weapon{padding:4px 6px}.aim-weapon strong{max-width:72px}
 }
 @media(orientation:landscape) and (max-width:700px){
   .gamepad-status .timer{margin-left:auto}
   .gamepad-body{gap:10px;grid-template-columns:145px minmax(0,1fr)}
+  .pull-heading{grid-template-columns:76px minmax(115px,1fr) auto}.power-meter{grid-template-columns:auto 70px}.aim-context .wind-track{display:none!important}.aim-weapon strong{max-width:62px}
   .pull-footer{font-size:7px;gap:5px}
 }
 .shooter-card{display:flex;align-items:center;gap:11px;padding:10px;border:1px solid #d4dbd0;border-radius:14px;background:#edf0e5;min-height:0}

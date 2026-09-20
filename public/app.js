@@ -13,7 +13,7 @@ let state = null, scene = null, playerId = null, screenKey = '', qrCode = '', co
 let mapCatalog = [], previewRequest = 0, previewMap = null;
 let autoJoinFailed = false;
 let draft = { angle: 42, power: 30, weapon: 'pebble' };
-let gesture = null, steerGesture = null, aimTimer = null, shotPending = false, skillSequence = 0, lastSteerSentAt = 0;
+let gesture = null, steerGesture = null, aimTimer = null, shotPending = false, skillSequence = 0, lastSteerSentAt = 0, aimBlocked = false;
 const audio = createGameAudio();
 let muted = localStorage.getItem('bp-muted') === 'true'; audio.mute(muted);
 const teams = ['San Hô', 'Ngọc Lam'];
@@ -61,7 +61,7 @@ async function requestLandscapeLock() {
 }
 function controls() {
   return `<section class="controller-weapons"><div class="shooter-card"><span id="shooter-icon" class="shooter-icon"></span><div><strong id="shooter-weapon"></strong><span id="shooter-spot"></span><span id="shooter-buff" class="shooter-buff" hidden></span><small id="shooter-hint"></small></div></div><div id="move-options" class="move-options" hidden></div><button id="ready-aim" class="button primary compact ready-aim-button" hidden>Sẵn sàng ngắm</button><button id="skill-btn" class="button primary compact skill-button" hidden>⚡ Kích hoạt</button></section>
-  <section class="controller-touch"><div class="pull-heading"><span id="pull-status">CHẠM · KÉO · THẢ</span><span class="pull-power"><output id="pull-angle">—</output><small>°</small><output id="pull-power">0</output><small>% LỰC</small></span></div>
+  <section class="controller-touch"><div class="pull-heading"><span id="pull-status">CHẠM · KÉO · THẢ</span><span class="aim-context"><span class="aim-weapon"><b id="aim-weapon-icon"></b><strong id="aim-weapon-name"></strong></span><span class="wind" id="wind"></span></span><span class="aim-metrics"><span id="angle-meter" class="angle-meter"><small>GÓC</small><output id="pull-angle">—</output><small>°</small><span class="angle-scale" aria-hidden="true"><i></i></span></span><span id="power-meter" class="power-meter" data-level="low"><span><small>LỰC</small><output id="pull-power">0</output><small>%</small></span><span class="power-track" aria-hidden="true"><i></i></span></span></span></div>
     <div id="aim-pad" role="application" aria-label="Vùng kéo ná để ngắm và thả để bắn" aria-disabled="true">
       <div class="pad-grid" aria-hidden="true"></div><div id="pull-cord" aria-hidden="true"></div><div id="pull-cancel" aria-hidden="true"><span>HỦY</span></div><div id="pull-anchor" aria-hidden="true"></div><div id="pull-knob" aria-hidden="true">✦</div>
       <div class="pad-cue"><span id="pull-direction">←</span><span id="pull-hint">Kéo trái lấy lực · lên/xuống chỉnh góc</span><small>Nhìn mũi tên trên màn hình lớn</small></div>
@@ -90,6 +90,18 @@ function sendAim() {
   if (aimTimer) return;
   aimTimer = setTimeout(() => { aimTimer = null; if (canControl() && !shotPending) socket.volatile.emit('aim', { ...draft, turn: state.game.turn, shooterId: state.game.shooterId }); }, 33);
 }
+function updateAimFeedback(aim) {
+  const power = Number.isFinite(aim?.power) ? Math.max(0, Math.min(100, aim.power)) : 0;
+  const angle = Number.isFinite(aim?.angle) ? Math.max(-20, Math.min(80, aim.angle)) : null;
+  const powerOutput = document.querySelector('#pull-power'); if (powerOutput) powerOutput.textContent = Math.round(power);
+  const angleOutput = document.querySelector('#pull-angle'); if (angleOutput) angleOutput.textContent = angle === null ? '—' : Math.round(angle);
+  const powerMeter = document.querySelector('#power-meter');
+  if (powerMeter) {
+    powerMeter.style.setProperty('--power', `${power}%`);
+    powerMeter.dataset.level = power >= 75 ? 'max' : power >= 50 ? 'high' : power >= 25 ? 'medium' : 'low';
+  }
+  document.querySelector('#angle-meter')?.style.setProperty('--angle', `${angle === null ? 50 : angle + 20}%`);
+}
 function clearSteerGesture() {
   const pad = document.querySelector('#aim-pad'), previous = steerGesture; steerGesture = null;
   if (previous && pad?.hasPointerCapture(previous.id)) pad.releasePointerCapture(previous.id);
@@ -101,8 +113,7 @@ function clearGesture({ steer = true } = {}) {
   if (previous && pad?.hasPointerCapture(previous.id)) pad.releasePointerCapture(previous.id);
   pad?.classList.remove('dragging', 'armed', 'cancel-ready', 'canceling');
   for (const id of ['pull-anchor', 'pull-knob', 'pull-cord', 'pull-cancel']) document.getElementById(id)?.removeAttribute('style');
-  const power = document.querySelector('#pull-power'); if (power) power.textContent = '0';
-  const angle = document.querySelector('#pull-angle'); if (angle) angle.textContent = '—';
+  updateAimFeedback(null);
   if (steer) clearSteerGesture();
 }
 function cancelGesture() { clearGesture(); updateControls(); }
@@ -134,8 +145,7 @@ function moveGesture(event) {
   pad.classList.toggle('armed', Boolean(rawAim));
   pad.classList.toggle('cancel-ready', gesture.cancelReady);
   pad.classList.toggle('canceling', canceling);
-  document.querySelector('#pull-power').textContent = previewAim ? Math.round(previewAim.power) : '0';
-  document.querySelector('#pull-angle').textContent = previewAim ? Math.round(previewAim.angle) : '—';
+  updateAimFeedback(previewAim);
   document.querySelector('#pull-status').textContent = canceling ? 'THẢ ĐỂ HỦY CÚ BẮN' : rawAim ? 'THẢ TAY ĐỂ BẮN' : 'KÉO NGANG NGƯỢC ĐỐI THỦ';
   if (previewAim) { draft = { ...draft, ...previewAim }; sendAim(); }
 }
@@ -372,7 +382,7 @@ function renderLobby() {
 function renderGame() {
   screenKey = 'game'; scene?.setMode('game'); document.body.classList.toggle('controller-playing', controller);
   if (controller) {
-    app.innerHTML = `<main class="gamepad"><div class="gamepad-status"><span class="eyebrow" id="phone-team"></span><strong id="turn-heading"></strong><span id="weather-badge" class="weather-badge"></span><span class="wind" id="wind"></span><span class="timer" id="timer"></span></div><div class="gamepad-body">${controls()}</div></main>`;
+    app.innerHTML = `<main class="gamepad"><div class="gamepad-status"><span class="eyebrow" id="phone-team"></span><strong id="turn-heading"></strong><span id="weather-badge" class="weather-badge"></span><span class="timer" id="timer"></span></div><div class="gamepad-body">${controls()}</div></main>`;
   } else {
     app.innerHTML = `${header()}<div class="match-hud"><div class="score coral"><span>SAN HÔ</span><div id="health-0"></div></div><div class="round"><span id="round-label"></span><span id="weather-badge" class="weather-badge"></span><small class="wind" id="wind"></small><strong id="timer"></strong></div><div class="score teal"><span>NGỌC LAM</span><div id="health-1"></div></div></div><div class="turn-banner"><span class="turn-dot"></span><span id="turn-heading"></span><small id="turn-detail"></small><div id="aim-readout" class="aim-readout"></div></div><div class="bottom-game"><button id="back-lobby" class="button secondary compact">← Về sảnh</button><div class="spectator-note">Kéo trên điện thoại · Bắn từ nhân vật</div><button id="camera-toggle" class="button secondary compact" aria-pressed="false">Toàn cảnh</button><span class="room-badge"><span id="match-map"></span> · PHÒNG <b>${state.code}</b></span></div>`;
     document.querySelector('#back-lobby').onclick = () => emit('lobby');
@@ -387,6 +397,9 @@ function renderGame() {
 function updateAimReadout(game = state?.game) {
   if (!game) return;
   const blocked = Boolean(game.aimImpact?.blockedByOwn);
+  const activeBlocked = blocked && game.phase === 'aim';
+  if (controller && activeBlocked && !aimBlocked && state?.activeId === playerId) navigator.vibrate?.([12, 24, 12]);
+  aimBlocked = activeBlocked;
   const readout = document.querySelector('#aim-readout');
   if (readout) {
     readout.hidden = game.phase !== 'aim';
@@ -394,8 +407,9 @@ function updateAimReadout(game = state?.game) {
     readout.textContent = `${game.team === 0 ? '↗' : '↖'} ${Math.round(game.aim.angle)}° · LỰC ${Math.round(game.aim.power)}%${blocked ? ' · ⚠ NHÀ MÌNH ĐANG CHE' : ''}`;
   }
   const pad = document.querySelector('#aim-pad');
-  pad?.classList.toggle('blocked', blocked && game.phase === 'aim');
-  if (gesture && blocked) document.querySelector('#pull-status').textContent = '⚠ ĐƯỜNG BẮN BỊ CHE';
+  pad?.classList.toggle('blocked', activeBlocked);
+  document.querySelector('.controller-touch')?.classList.toggle('blocked', activeBlocked);
+  if (gesture && activeBlocked) document.querySelector('#pull-status').textContent = '⚠ BỊ CHẮN';
 }
 function updateGameUI() {
   const game = state.game;
@@ -428,6 +442,8 @@ function updateGameUI() {
     document.querySelector('#shooter-spot').textContent = shooter?.spot || '';
     document.querySelector('#shooter-weapon').textContent = weapon?.name || '';
     document.querySelector('#shooter-icon').textContent = weapon?.icon || '';
+    document.querySelector('#aim-weapon-name').textContent = weapon?.name || '';
+    document.querySelector('#aim-weapon-icon').textContent = weapon?.icon || '';
     document.querySelector('#shooter-hint').textContent = weapon?.hint || '';
     const buffEl = document.querySelector('#shooter-buff');
     if (buffEl) {

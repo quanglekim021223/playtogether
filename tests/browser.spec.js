@@ -46,6 +46,10 @@ test('phone-only practice: drag updates TV aim, release fires, bot returns turn'
     await expect(player.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'false');
     await expect(player.phone.locator('#shooter-name')).toHaveCount(0);
     await expect(player.phone.locator('#shooter-weapon')).toHaveText('Ná cao su');
+    await expect(player.phone.locator('#aim-weapon-name')).toHaveText('Ná cao su');
+    await expect(player.phone.locator('.controller-touch #wind .wind-track')).toBeVisible();
+    await expect(player.phone.locator('.power-track')).toBeVisible();
+    await expect(player.phone.locator('.angle-scale')).toBeVisible();
     await expect(page.locator('#scene')).toHaveAttribute('data-camera-mode', 'tactical');
     await expect.poll(() => page.locator('#scene').getAttribute('data-camera-x').then(Number)).toBeLessThan(-1);
     await page.screenshot({ path: 'artifacts/resident-aim.png', scale: 'css' });
@@ -54,6 +58,8 @@ test('phone-only practice: drag updates TV aim, release fires, bot returns turn'
     await expect(player.phone.locator('#aim-pad')).toHaveClass(/armed/);
     const power = await player.phone.locator('#pull-power').textContent();
     await expect(player.phone.locator('#pull-angle')).not.toHaveText('—');
+    await expect(player.phone.locator('#power-meter')).toHaveAttribute('data-level', /^(low|medium|high|max)$/);
+    await expect.poll(() => player.phone.locator('#power-meter').evaluate(element => element.style.getPropertyValue('--power'))).not.toBe('0%');
     await expect(page.locator('#aim-readout')).toContainText(`LỰC ${power}%`);
     await expect(page.locator('#scene')).toHaveAttribute('data-aim-impact', /^(block|resident|fuelBarrel|bouncePad|ground|out)$/);
     await expect(page.locator('#scene')).toHaveAttribute('data-trajectory-samples', '15');
