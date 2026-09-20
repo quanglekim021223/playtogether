@@ -1,6 +1,6 @@
 # Block Party
 
-Game party 3D trên web, hai đội bắn phá công trình theo lượt. Máy tính/TV là màn hình chung; điện thoại là tay cầm. Asset được dựng bằng geometry trong code.
+Game party 3D trên web, hai đội bắn phá công trình theo lượt. Máy tính/TV là màn hình chung; điện thoại là tay cầm. Cảnh biển, địa hình và các công trình được dựng bằng mesh 3D; hiệu ứng nước dùng shader theo thời gian.
 
 ### Tạo asset Blender không cần dựng tay
 
@@ -24,6 +24,14 @@ alias blender="/Applications/Blender.app/Contents/MacOS/Blender"
 ```
 
 Game tải bộ GLB một lần rồi clone asset cho các khối vật liệu và đạo cụ môi trường, trong khi collider và vật lý vẫn dùng dữ liệu server. Mái, cầu và dầm tiếp tục dùng geometry riêng để giữ hình dáng kiến trúc. Nếu một file không tải được, renderer tự giữ geometry tạo bằng code làm dự phòng.
+
+Địa hình ven biển nằm trong `public/assets/environment/arena_coast.glb`. Để tạo lại sau khi chỉnh script:
+
+```sh
+"/Applications/Blender.app/Contents/MacOS/Blender" --background --python tools/blender/generate_coastal_terrain.py -- --output public/assets/environment/arena_coast.glb
+```
+
+Mesh này chỉ thay phần nhìn; mặt phẳng vật lý và vị trí các công trình vẫn do server quản lý. Nếu GLB không tải được, game dùng đảo geometry cũ làm dự phòng.
 
 Script Blender tự tạo base-color, roughness và normal map nhỏ cho gỗ, gạch, đá, kim loại và vải. `npm run assets:optimize` chạy glTF Transform với Meshopt, giữ nguyên hierarchy và tên node phục vụ animation. Pipeline tự dùng KTX2 khi máy build có `toktx`; runtime luôn cấu hình MeshoptDecoder và KTX2Loader. Image-based lighting dùng `studio_small_09_1k.hdr` của Sergej Majboroda/Poly Haven (CC0), với `RoomEnvironment` làm dự phòng nếu HDRI không tải được.
 
@@ -81,7 +89,7 @@ Browser tests dùng Google Chrome đã cài trên máy và touch events qua CDP.
 
 Mỗi bên có sáu cư dân. Phải loại hết sáu người mới thắng; điện thoại luân phiên điều khiển cư dân đang đến lượt của đội. HUD hiển thị đủ cư dân và vừa màn hình hẹp; hình thu nhỏ tự căn theo kích thước nhà.
 
-Cảnh nền là vịnh biển với đảo, làng nhỏ, núi xa, hải đăng, thuyền buồm, mây trôi và gợn nước. Nhà thêm mái dốc, ống khói, gờ sàn và bồn hoa gắn theo từng khối. Chi tiết trang trí không có collider riêng; hình khối chịu lực vẫn theo dữ liệu map. Cảnh nền không tham gia va chạm và dừng chuyển động khi bật reduced motion.
+Cảnh vịnh biển dùng bầu trời shader, mặt nước 3D có sóng và phản sáng, địa hình GLB, các mũi đất, làng nhỏ, hải đăng, thuyền buồm và mây trong không gian 3D — không còn lấy ảnh tĩnh làm nền hiển thị. Nhà thêm mái dốc, ống khói, gờ sàn và bồn hoa gắn theo từng khối. Chi tiết trang trí không có collider riêng; hình khối chịu lực vẫn theo dữ liệu map. Cảnh nền không tham gia va chạm và dừng chuyển động khi bật reduced motion.
 
 ## Cư dân tự bắn và vũ khí riêng
 

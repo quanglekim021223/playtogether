@@ -183,6 +183,7 @@ test('resident shot triggers live material damage, fragments and cracks on TV', 
 });
 
 test('four maps: shared selection, correct 3D geometry, replay, random and slow preview', async ({ page, browser }) => {
+  test.setTimeout(60_000); // High-detail coastal screenshots take longer to encode in software-rendered CI.
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   const code = await createRoom(page); const player = await joinPhone(browser, code, 'Kiến trúc sư');
   let releasePreview;

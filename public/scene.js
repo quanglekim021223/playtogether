@@ -49,23 +49,27 @@ export function createScene(container) {
   const renderer = new T.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.35));
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFSoftShadowMap;
-  renderer.outputColorSpace = T.SRGBColorSpace; renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+  renderer.outputColorSpace = T.SRGBColorSpace; renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = .9;
   container.append(renderer.domElement);
   const scene = new T.Scene(); const environment = createEnvironment(scene, renderer);
   container.dataset.environmentLighting = 'loading';
+  container.dataset.environmentBackdrop = 'loading';
+  container.dataset.waterShader = environment.waterMode; container.dataset.waterQuality = environment.waterQuality;
+  container.dataset.environmentMotion = environment.motionLayers;
   environment.lightingReady.then(source => { container.dataset.environmentLighting = source; });
+  environment.backgroundReady.then(source => { container.dataset.environmentBackdrop = source; });
   const camera = new T.PerspectiveCamera(36, 1, 0.1, 400);
-  const hemisphere = new T.HemisphereLight(0xe7faff, 0x809085, 2.2); scene.add(hemisphere);
-  const sun = new T.DirectionalLight(0xffdfad, 3.3); sun.position.set(-15, 28, 18); sun.castShadow = true;
+  const hemisphere = new T.HemisphereLight(0xe7faff, 0x809085, .85); scene.add(hemisphere);
+  const sun = new T.DirectionalLight(0xffdfad, 3.35); sun.position.set(-15, 28, 18); sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 22, bottom: -22, near: 1, far: 80 });
   sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.025; scene.add(sun);
   const blastLight = new T.PointLight(0xff9b45, 0, 22, 2); blastLight.position.z = 4; blastLight.userData.decayRate = 95; scene.add(blastLight);
   const weatherLight = new T.PointLight(0xc9e3ff, 0, 70, 1.6); weatherLight.position.set(0, 18, 8); scene.add(weatherLight);
   const lightingThemes = {
-    townhouse: { sky: 0xe7faff, ground: 0x809085, sun: 0xffdfad, exposure: 1.05 },
-    tower: { sky: 0xdff6ff, ground: 0x718b87, sun: 0xffd39a, exposure: 1.08 },
-    bridge: { sky: 0xd7f2ff, ground: 0x718d91, sun: 0xffe7bd, exposure: 1.0 },
-    fortress: { sky: 0xffead7, ground: 0x80766f, sun: 0xffbd7a, exposure: 1.08 }
+    townhouse: { sky: 0xe7faff, ground: 0x809085, sun: 0xffdfad, exposure: .88 },
+    tower: { sky: 0xdff6ff, ground: 0x718b87, sun: 0xffd39a, exposure: .91 },
+    bridge: { sky: 0xd7f2ff, ground: 0x718d91, sun: 0xffe7bd, exposure: .86 },
+    fortress: { sky: 0xffead7, ground: 0x80766f, sun: 0xffbd7a, exposure: .9 }
   };
   function applyLightingTheme(mapId) {
     const theme = lightingThemes[mapId] || lightingThemes.townhouse;
@@ -82,18 +86,32 @@ export function createScene(container) {
   function mesh(geometry, color, parent = scene) { const m = new T.Mesh(geometry, material(color)); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; }
   function box(x, y, z, w, h, d, color, parent) { const m = mesh(boxGeometry, color, parent); m.position.set(x, y, z); m.scale.set(w, h, d); return m; }
   function sphere(x, y, z, r, color, parent) { const m = mesh(sphereGeometry, color, parent); m.position.set(x, y, z); m.scale.setScalar(r); return m; }
-  // A floating miniature neighborhood, with layered rock and an open central lawn.
-  box(0, -1.25, 0, 47, 2.2, 12, 0x9c9078);
-  box(0, -0.45, 0, 47.5, 0.7, 12.5, 0xb8ad8b);
-  box(0, -0.12, 0, 48, 0.25, 13, 0x94b883);
-  box(0, 0.005, 3.8, 46, 0.06, 1.15, 0xe0ccaa);
-  for (let x = -22; x <= 22; x += 1.6) box(x, 0.045, 3.8, 1.35, 0.055, 0.8, 0xeadbc0);
-  box(0, -2.7, -0.4, 43, 0.8, 10, 0x807b6c);
+  // Keep the simple island only as a fallback if the sculpted GLB cannot load.
+  const arenaFallback = new T.Group(); scene.add(arenaFallback);
+  box(0, -1.25, 0, 47, 2.2, 12, 0x766f63, arenaFallback);
+  box(0, -0.45, 0, 47.5, 0.7, 12.5, 0xc7b79a, arenaFallback);
+  box(0, -0.12, 0, 48, 0.25, 13, 0xe8d9b7, arenaFallback);
+  box(0, 0.01, 5.85, 46.5, 0.06, 1.15, 0xc7b79a, arenaFallback);
+  box(0, 0.005, 3.8, 46, 0.06, 1.15, 0xe0ccaa, arenaFallback);
+  for (let x = -22; x <= 22; x += 1.6) box(x, 0.045, 3.8, 1.35, 0.055, 0.8, 0xeadbc0, arenaFallback);
+  box(0, -2.7, -0.4, 43, 0.8, 10, 0x807b6c, arenaFallback);
   for (let i = 0; i < 24; i++) {
     const x = -22.5 + i * 1.9;
-    const rock = mesh(new T.DodecahedronGeometry(0.7 + (i % 3) * 0.16, 0), i % 2 ? 0xa1987e : 0x8b8572);
+    const rock = mesh(new T.DodecahedronGeometry(0.7 + (i % 3) * 0.16, 0), i % 2 ? 0xa1987e : 0x8b8572, arenaFallback);
     rock.position.set(x, -1.5 - (i % 3) * 0.18, 5.8); rock.rotation.z = i * 2;
   }
+  const beachGrass = new T.InstancedMesh(new T.ConeGeometry(.085, .62, 5), new T.MeshStandardMaterial({ color: 0x6f8f5e, roughness: .94 }), 72);
+  const beachPebbles = new T.InstancedMesh(new T.DodecahedronGeometry(.12, 0), new T.MeshStandardMaterial({ color: 0x9f927a, roughness: 1 }), 44);
+  const beachTransform = new T.Object3D();
+  for (let i = 0; i < 72; i++) {
+    const x = -22.5 + (i * 7.31 % 45), z = (i % 3 === 0 ? -5.55 : 5.05) + Math.sin(i * 2.17) * .42;
+    beachTransform.position.set(x, .32, z); beachTransform.rotation.y = i * 1.73; beachTransform.scale.set(.7 + i % 4 * .14, .7 + i % 5 * .11, .7 + i % 3 * .12); beachTransform.updateMatrix(); beachGrass.setMatrixAt(i, beachTransform.matrix);
+  }
+  for (let i = 0; i < 44; i++) {
+    beachTransform.position.set(-22 + (i * 9.73 % 44), .16, 4.55 + Math.sin(i * 1.41) * .55); beachTransform.rotation.set(i * .7, i * 1.9, i * .37);
+    const size = .55 + i % 4 * .18; beachTransform.scale.set(size, .45 + i % 3 * .12, size); beachTransform.updateMatrix(); beachPebbles.setMatrixAt(i, beachTransform.matrix);
+  }
+  beachGrass.castShadow = true; beachGrass.receiveShadow = true; beachPebbles.castShadow = true; beachPebbles.receiveShadow = true; scene.add(beachGrass, beachPebbles);
   const treeCrowns = [];
   function tree(x, z, scale = 1) {
     const group = new T.Group(); scene.add(group); group.position.set(x, 0, z); group.scale.setScalar(scale);
@@ -241,6 +259,15 @@ export function createScene(container) {
   const ktx2Loader = new KTX2Loader().setTranscoderPath('/vendor/three-addons/libs/basis/').detectSupport(renderer);
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).setKTX2Loader(ktx2Loader);
   container.dataset.meshCompression = 'meshopt'; container.dataset.textureCompression = 'ktx2-ready';
+  container.dataset.terrainMesh = 'loading';
+  loader.loadAsync('/assets/environment/arena_coast.glb').then(({ scene: terrain }) => {
+    terrain.traverse(child => {
+      if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
+    });
+    scene.add(terrain);
+    arenaFallback.visible = false;
+    container.dataset.terrainMesh = 'glb';
+  }).catch(() => { container.dataset.terrainMesh = 'fallback'; });
   Promise.allSettled(Object.entries(kitFiles).map(async ([key, [file, size]]) => {
     const loaded = await loader.loadAsync(`/assets/kit/${file}`); kit.set(key, { scene: loaded.scene, size });
   })).then(results => {
@@ -951,5 +978,5 @@ export function createScene(container) {
     if (composer) composer.render(dt); else renderer.render(scene, camera);
   }
   requestAnimationFrame(render);
-  return { update, updateAim, reset, aimPreview, skipReplay: finishReplay, replayLast, canReplay: () => Boolean(lastReplayFinal && !reducedMotion.matches), setOverview: value => { overview = value; }, setMode: value => { mode = value; } };
+  return { update, updateAim, reset, aimPreview, skipReplay: finishReplay, replayLast, environmentMotion: environment.motionSample, canReplay: () => Boolean(lastReplayFinal && !reducedMotion.matches), setOverview: value => { overview = value; }, setMode: value => { mode = value; } };
 }
