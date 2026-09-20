@@ -127,6 +127,7 @@ test('environment meshes render and a fuel blast produces bounded effects and au
   await expect(page.locator('#scene')).toHaveAttribute('data-decor-assets', '8');
   await expect(page.locator('#scene')).toHaveAttribute('data-postprocessing', 'balanced');
   await expect(page.locator('#scene')).toHaveAttribute('data-bloom', 'false');
+  await expect(page.locator('#scene')).toHaveAttribute('data-color-grading', 'balanced');
   await expect(page.locator('#scene')).toHaveAttribute('data-ambient-occlusion', 'false');
   await expect(page.locator('#scene')).toHaveAttribute('data-lighting-theme', 'tower');
   await expect(page.locator('#scene')).toHaveAttribute('data-mesh-compression', 'meshopt');
@@ -134,6 +135,12 @@ test('environment meshes render and a fuel blast produces bounded effects and au
   await expect(page.locator('#scene')).toHaveAttribute('data-environment-lighting', 'hdri');
   await expect(page.locator('#scene')).toHaveAttribute('data-environment-backdrop', 'world-3d');
   await expect(page.locator('#scene')).toHaveAttribute('data-terrain-mesh', 'glb');
+  await expect(page.locator('#scene')).toHaveAttribute('data-sand-shader', 'triplanar-pbr-vertex-color');
+  await expect(page.locator('#scene')).toHaveAttribute('data-rock-kit', 'pbr-atlas-lod0');
+  await expect(page.locator('#scene')).toHaveAttribute('data-terrain-blend', 'vertex-height-blend');
+  await expect(page.locator('#scene')).toHaveAttribute('data-contact-shadows', 'baked-decals');
+  await expect(page.locator('#scene')).toHaveAttribute('data-grass-lod', /^(dense|sparse)$/);
+  await expect(page.locator('#scene')).toHaveAttribute('data-grass-density', /^[3-9][0-9]{2}$/);
   await expect(page.locator('#scene')).toHaveAttribute('data-water-shader', 'gerstner-lod');
   await expect(page.locator('#scene')).toHaveAttribute('data-water-reflection', 'pmrem-hdr');
   await expect(page.locator('#scene')).toHaveAttribute('data-shoreline-foam', 'terrain-depth');

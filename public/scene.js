@@ -14,6 +14,19 @@ import { MATERIALS } from './materials.js';
 import { createEnvironment } from './environment.js';
 import { WEAPONS, launchVelocity, muzzlePosition } from './weapons.js';
 const COLORS = [0xee775f, 0x48aaa5];
+const CoastalGradeShader = {
+  uniforms: { tDiffuse: { value: null }, saturation: { value: 1.07 }, contrast: { value: 1.035 }, warmth: { value: .022 } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float saturation, contrast, warmth; varying vec2 vUv;
+    void main() {
+      vec4 source = texture2D(tDiffuse, vUv); float luma = dot(source.rgb, vec3(.2126, .7152, .0722));
+      vec3 color = mix(vec3(luma), source.rgb, saturation);
+      color = (color - .5) * contrast + .5 + vec3(warmth, warmth * .42, -warmth * .35);
+      gl_FragColor = vec4(max(color, 0.0), source.a);
+    }
+  `
+};
 const WEAPON_VFX = {
   pebble: { core: 0xffd36f, accent: 0xfff1b0, smoke: 0x8f826d, shake: .11 },
   heavy: { core: 0xff9a42, accent: 0xffdc73, smoke: 0x4e554f, shake: .32 },
@@ -101,18 +114,69 @@ export function createScene(container) {
     const rock = mesh(new T.DodecahedronGeometry(0.7 + (i % 3) * 0.16, 0), i % 2 ? 0xa1987e : 0x8b8572, arenaFallback);
     rock.position.set(x, -1.5 - (i % 3) * 0.18, 5.8); rock.rotation.z = i * 2;
   }
-  const beachGrass = new T.InstancedMesh(new T.ConeGeometry(.085, .62, 5), new T.MeshStandardMaterial({ color: 0x6f8f5e, roughness: .94 }), 72);
   const beachPebbles = new T.InstancedMesh(new T.DodecahedronGeometry(.12, 0), new T.MeshStandardMaterial({ color: 0x9f927a, roughness: 1 }), 44);
   const beachTransform = new T.Object3D();
-  for (let i = 0; i < 72; i++) {
-    const x = -22.5 + (i * 7.31 % 45), z = (i % 3 === 0 ? -5.55 : 5.05) + Math.sin(i * 2.17) * .42;
-    beachTransform.position.set(x, .32, z); beachTransform.rotation.y = i * 1.73; beachTransform.scale.set(.7 + i % 4 * .14, .7 + i % 5 * .11, .7 + i % 3 * .12); beachTransform.updateMatrix(); beachGrass.setMatrixAt(i, beachTransform.matrix);
-  }
   for (let i = 0; i < 44; i++) {
     beachTransform.position.set(-22 + (i * 9.73 % 44), .16, 4.55 + Math.sin(i * 1.41) * .55); beachTransform.rotation.set(i * .7, i * 1.9, i * .37);
     const size = .55 + i % 4 * .18; beachTransform.scale.set(size, .45 + i % 3 * .12, size); beachTransform.updateMatrix(); beachPebbles.setMatrixAt(i, beachTransform.matrix);
   }
-  beachGrass.castShadow = true; beachGrass.receiveShadow = true; beachPebbles.castShadow = true; beachPebbles.receiveShadow = true; scene.add(beachGrass, beachPebbles);
+  beachPebbles.castShadow = true; beachPebbles.receiveShadow = true; scene.add(beachPebbles);
+  // Seven crossed blade cards read as a tuft from every camera angle, while a
+  // density mask keeps vegetation clustered at the beach edges and out of play.
+  function grassGeometry() {
+    const positions = [], normals = [], uvs = [], indices = [];
+    for (let blade = 0; blade < 7; blade++) {
+      const angle = blade * 2.399, radius = blade ? .055 + blade % 3 * .035 : 0;
+      const ox = Math.cos(blade * 1.71) * radius, oz = Math.sin(blade * 1.71) * radius;
+      const halfWidth = .045 + blade % 3 * .012, height = .68 + blade % 4 * .09;
+      const dx = Math.cos(angle) * halfWidth, dz = Math.sin(angle) * halfWidth, base = positions.length / 3;
+      positions.push(ox - dx, 0, oz - dz, ox + dx, 0, oz + dz, ox + dx * .18, height, oz + dz * .18, ox - dx * .18, height, oz - dz * .18);
+      for (let i = 0; i < 4; i++) normals.push(Math.sin(angle), 0, Math.cos(angle));
+      uvs.push(0, 0, 1, 0, 1, 1, 0, 1); indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+    const geometry = new T.BufferGeometry(); geometry.setAttribute('position', new T.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new T.Float32BufferAttribute(normals, 3)); geometry.setAttribute('uv', new T.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices); geometry.computeBoundingSphere(); return geometry;
+  }
+  const grassUniforms = { uTime: { value: 0 }, uWind: { value: 0 } };
+  const grassMaterial = new T.MeshBasicMaterial({ color: 0x76965c, side: T.DoubleSide, toneMapped: true });
+  grassMaterial.onBeforeCompile = shader => {
+    shader.uniforms.uTime = grassUniforms.uTime; shader.uniforms.uWind = grassUniforms.uWind;
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\nuniform float uTime; uniform float uWind;`)
+      .replace('#include <begin_vertex>', `
+        vec3 transformed = vec3(position);
+        float bladeTip = smoothstep(0.08, 1.0, position.y);
+        float seed = instanceMatrix[3].x * .37 + instanceMatrix[3].z * .61;
+        float sway = sin(uTime * (1.45 + abs(uWind) * .16) + seed) * (.055 + abs(uWind) * .035);
+        transformed.x += (sway + uWind * .025) * bladeTip * bladeTip;
+        transformed.z += cos(uTime * 1.13 + seed * 1.7) * .035 * bladeTip;
+      `);
+  };
+  grassMaterial.customProgramCacheKey = () => 'coastal-grass-wind-v1';
+  function random01(index, salt) { return Math.abs(Math.sin(index * 91.731 + salt * 17.123) * 43758.5453) % 1; }
+  function grassDensity(x, z) {
+    const beachBand = Math.max(0, Math.min(1, (Math.abs(z) - 3.45) / 2.25));
+    const clusters = .46 + .54 * Math.sin(x * .71 + z * 1.37) * Math.sin(x * .19 - z * 2.11);
+    const centerPath = Math.min(1, Math.abs(x) / 4.2), structureGap = Math.abs(z) < 3.5 ? .08 : 1;
+    return beachBand * (.28 + clusters * .72) * (.3 + centerPath * .7) * structureGap;
+  }
+  const grassSpots = [];
+  for (let i = 0; i < 2600 && grassSpots.length < 460; i++) {
+    const x = -23 + random01(i, 1) * 46, z = -5.9 + random01(i, 2) * 11.8;
+    if (random01(i, 3) < grassDensity(x, z)) grassSpots.push({ x, z, scale: .46 + random01(i, 4) * .72, angle: random01(i, 5) * Math.PI });
+  }
+  function grassInstances(spots, name) {
+    const mesh = new T.InstancedMesh(grassGeometry(), grassMaterial, spots.length); mesh.name = name;
+    spots.forEach((spot, i) => {
+      beachTransform.position.set(spot.x, .06, spot.z); beachTransform.rotation.set(0, spot.angle, 0);
+      beachTransform.scale.set(.8 + random01(i, 6) * .45, spot.scale, .8 + random01(i, 7) * .3); beachTransform.updateMatrix();
+      mesh.setMatrixAt(i, beachTransform.matrix);
+    });
+    mesh.receiveShadow = true; mesh.computeBoundingSphere(); scene.add(mesh); return mesh;
+  }
+  const grassNear = grassInstances(grassSpots, 'Dense coastal grass');
+  const grassFar = grassInstances(grassSpots.filter((_, i) => i % 2 === 0), 'Coastal grass LOD');
+  grassNear.visible = false; container.dataset.grassDensity = String(grassSpots.length);
   const treeCrowns = [];
   function tree(x, z, scale = 1) {
     const group = new T.Group(); scene.add(group); group.position.set(x, 0, z); group.scale.setScalar(scale);
@@ -151,13 +215,6 @@ export function createScene(container) {
     for (let x = 2.5; x < 9; x += .65) box(side * x, .45, -5, .12, .9, .15, 0xeee1be);
     box(side * 5.5, .4, -5, 6.3, .13, .12, 0xd1c5a3);
   }
-  const grass = new T.InstancedMesh(new T.ConeGeometry(.09, .42, 3), material(0x628e66), 160);
-  const transform = new T.Object3D();
-  for (let i = 0; i < 160; i++) {
-    transform.position.set(-23 + (i * 1.731 % 46), .16, i % 2 ? 5.7 : -5.4);
-    transform.rotation.set(0, i * .8, Math.sin(i) * .2); transform.scale.setScalar(.5 + (i % 5) * .14); transform.updateMatrix(); grass.setMatrixAt(i, transform.matrix);
-  }
-  scene.add(grass);
   const birds = [];
   for (let i = 0; i < 3; i++) {
     const bird = new T.Group(); bird.position.set(-12 + i * 10, 14 + i, -23 - i * 4); scene.add(bird);
@@ -260,14 +317,67 @@ export function createScene(container) {
   const ktx2Loader = new KTX2Loader().setTranscoderPath('/vendor/three-addons/libs/basis/').detectSupport(renderer);
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).setKTX2Loader(ktx2Loader);
   container.dataset.meshCompression = 'meshopt'; container.dataset.textureCompression = 'ktx2-ready';
-  container.dataset.terrainMesh = 'loading';
-  loader.loadAsync('/assets/environment/arena_coast.glb').then(({ scene: terrain }) => {
+  container.dataset.terrainMesh = 'loading'; container.dataset.sandShader = 'loading'; container.dataset.grassLod = 'loading';
+  container.dataset.rockKit = 'loading'; container.dataset.terrainBlend = 'loading'; container.dataset.contactShadows = 'loading';
+  function coastalSandMaterial(source) {
+    const sand = source?.clone?.() || new T.MeshStandardMaterial();
+    sand.vertexColors = true; sand.roughness = .94; sand.metalness = 0;
+    if (sand.normalScale) sand.normalScale.set(.62, .62);
+    sand.name = source?.name || 'Triplanar coastal sand';
+    sand.onBeforeCompile = shader => {
+      shader.vertexShader = shader.vertexShader.replace('#include <common>', `
+        #include <common>
+        varying vec3 vSandWorldPosition;
+        varying vec3 vSandWorldNormal;
+      `).replace('#include <begin_vertex>', `
+        #include <begin_vertex>
+        vSandWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        vSandWorldNormal = normalize(mat3(modelMatrix) * objectNormal);
+      `);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `
+        #include <common>
+        varying vec3 vSandWorldPosition;
+        varying vec3 vSandWorldNormal;
+        float sandHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float sandNoise(vec2 p) {
+          vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(sandHash(i), sandHash(i + vec2(1.0, 0.0)), f.x), mix(sandHash(i + vec2(0.0, 1.0)), sandHash(i + 1.0), f.x), f.y);
+        }
+      `).replace('#include <color_fragment>', `
+        #include <color_fragment>
+        vec3 sandBlend = pow(abs(normalize(vSandWorldNormal)), vec3(4.0));
+        sandBlend /= max(dot(sandBlend, vec3(1.0)), .001);
+        float sandDetail = sandNoise(vSandWorldPosition.yz * 3.8) * sandBlend.x
+          + sandNoise(vSandWorldPosition.xz * 3.8) * sandBlend.y
+          + sandNoise(vSandWorldPosition.xy * 3.8) * sandBlend.z;
+        float sandGrain = sandNoise(vSandWorldPosition.xz * 17.0 + sandDetail * 4.0);
+        diffuseColor.rgb *= .86 + sandDetail * .2 + sandGrain * .055;
+      `).replace('#include <roughnessmap_fragment>', `
+        #include <roughnessmap_fragment>
+        roughnessFactor = clamp(roughnessFactor + (sandGrain - .5) * .11, .78, 1.0);
+      `);
+    };
+    sand.customProgramCacheKey = () => 'coastal-sand-triplanar-v1'; return sand;
+  }
+  loader.loadAsync('/assets/environment/arena_coast.glb?v=pbr-rocks-2').then(({ scene: terrain }) => {
+    let hasRockKit = false, hasBlend = false, hasContact = false;
     terrain.traverse(child => {
-      if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
+      if (child.isMesh) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        const label = `${child.name} ${materials.map(material => material?.name || '').join(' ')}`;
+        child.castShadow = true; child.receiveShadow = true;
+        if (/Arena coast|Sculpted coast|Coastal sand PBR/i.test(label)) child.material = coastalSandMaterial(child.material);
+        if (/PBR rock kit|Rock atlas PBR/i.test(label)) hasRockKit = true;
+        if (/Height-blended sand|height blend/i.test(label)) { hasBlend = true; child.receiveShadow = true; }
+        if (/Contact shadow|Soft rock contact shadow/i.test(label)) { hasContact = true; child.castShadow = false; child.receiveShadow = false; child.renderOrder = 2; }
+      }
     });
     scene.add(terrain);
     arenaFallback.visible = false;
-    container.dataset.terrainMesh = 'glb';
+    container.dataset.terrainMesh = 'glb'; container.dataset.sandShader = 'triplanar-pbr-vertex-color';
+    container.dataset.rockKit = hasRockKit ? 'pbr-atlas-lod0' : 'legacy';
+    container.dataset.terrainBlend = hasBlend ? 'vertex-height-blend' : 'none';
+    container.dataset.contactShadows = hasContact ? 'baked-decals' : 'none';
   }).catch(() => { container.dataset.terrainMesh = 'fallback'; });
   Promise.allSettled(Object.entries(kitFiles).map(async ([key, [file, size]]) => {
     const loaded = await loader.loadAsync(`/assets/kit/${file}`); kit.set(key, { scene: loaded.scene, size });
@@ -786,10 +896,11 @@ export function createScene(container) {
     mapDecor.clear(); currentMap = null; container.dataset.mapDecor = '0'; container.dataset.structureDecor = '0';
     container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.impactMarks = '0'; container.dataset.attachedDecals = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; container.dataset.airdrop = 'none'; container.dataset.weatherParticles = 'none'; container.dataset.replay = 'idle'; container.dataset.impactPause = 'idle'; delete container.dataset.replayStage; delete container.dataset.weather; delete container.dataset.trajectoryDots; delete container.dataset.lastAirdropEvent; delete container.dataset.lastMaterial; delete container.dataset.collapseDust; delete container.dataset.lastEnvironmentEvent; delete container.dataset.lastWeaponVfx; delete container.dataset.shakeStrength;
   }
-  let width, height, composer = null, ssaoPass = null, bloomPass = null, vignettePass = null;
+  let width, height, composer = null, ssaoPass = null, bloomPass = null, gradePass = null, vignettePass = null;
   function setupPostProcessing() {
     if (renderer.userData.environmentConstrained) {
       composer = null; container.dataset.postprocessing = 'balanced'; container.dataset.bloom = 'false';
+      container.dataset.colorGrading = 'balanced';
       return;
     }
     try {
@@ -800,12 +911,14 @@ export function createScene(container) {
       composer.addPass(ssaoPass);
       bloomPass = new UnrealBloomPass(new T.Vector2(width, height), .34, .48, .88);
       composer.addPass(bloomPass);
+      gradePass = new ShaderPass(CoastalGradeShader); composer.addPass(gradePass);
       vignettePass = new ShaderPass(VignetteShader);
       vignettePass.uniforms.offset.value = 1.08; vignettePass.uniforms.darkness.value = .62;
       composer.addPass(vignettePass); composer.addPass(new OutputPass());
-      container.dataset.postprocessing = 'enabled'; container.dataset.bloom = 'true';
+      container.dataset.postprocessing = 'enabled'; container.dataset.bloom = 'true'; container.dataset.colorGrading = 'coastal-film';
     } catch (error) {
       composer = null; container.dataset.postprocessing = 'fallback'; container.dataset.bloom = 'false';
+      container.dataset.colorGrading = 'fallback';
       console.warn('Post-processing disabled:', error);
     }
   }
@@ -860,6 +973,11 @@ export function createScene(container) {
     const blend = reducedMotion.matches ? 1 : 1 - Math.exp(-visualDt * 5);
     viewTarget.lerp(target, blend); viewDistance += (desiredDistance - viewDistance) * blend;
     camera.position.set(viewTarget.x + (mode === 'lobby' && !portrait ? 6.6 : 0), viewTarget.y + Math.max(10, viewDistance * .32), viewDistance);
+    const denseGrass = !renderer.userData.environmentConstrained && width >= 760 && viewDistance < 62;
+    grassNear.visible = denseGrass; grassFar.visible = !denseGrass;
+    container.dataset.grassLod = denseGrass ? 'dense' : 'sparse';
+    grassUniforms.uWind.value = reducedMotion.matches ? 0 : currentWind;
+    if (!reducedMotion.matches) grassUniforms.uTime.value = now / 1000;
     if (airdropMesh?.visible) {
       const dropBlend = reducedMotion.matches ? 1 : 1 - Math.exp(-dt * 12);
       airdropMesh.position.y += (airdropMesh.userData.targetY - airdropMesh.position.y) * dropBlend;
