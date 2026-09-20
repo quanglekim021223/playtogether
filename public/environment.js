@@ -206,7 +206,14 @@ export function createEnvironment(scene, renderer) {
     const object = new T.Mesh(geometry, material(color)); object.position.set(...position); object.scale.set(...scale);
     object.castShadow = false; object.receiveShadow = false; parent.add(object); return object;
   }
-  const rock = new T.IcosahedronGeometry(1, 1), ball = new T.SphereGeometry(1, 12, 8);
+  const rock = new T.IcosahedronGeometry(1, constrained ? 1 : 2), ball = new T.SphereGeometry(1, 12, 8);
+  const rockPositions = rock.attributes.position;
+  for (let i = 0; i < rockPositions.count; i++) {
+    const x = rockPositions.getX(i), y = rockPositions.getY(i), z = rockPositions.getZ(i);
+    const variation = 1 + Math.sin(x * 7.1 + z * 4.3) * .1 + Math.sin(y * 9.7 - x * 3.4) * .055;
+    rockPositions.setXYZ(i, x * variation * 1.08, y * variation * .82, z * variation);
+  }
+  rock.computeVertexNormals();
   const cube = new T.BoxGeometry(1, 1, 1), cylinder = new T.CylinderGeometry(1, 1, 1, 12);
   const roofGeometry = new T.ConeGeometry(1, 1, 4);
   const headlands = [
@@ -214,45 +221,86 @@ export function createEnvironment(scene, renderer) {
     { side: 1, x: 60, z: -54, rx: 39, rz: 24 }
   ];
   function coastHeight(land, x, z) {
-    const r = Math.min(1, Math.hypot((x - land.x) / land.rx, (z - land.z) / land.rz));
-    return -4.65 + 16 * Math.pow(1 - r, .7)
-      + (Math.sin(x * .27 + z * .11) + Math.sin(x * .53 - z * .38) * .45) * (1 - r) * 2.2;
+    const dx = (x - land.x) / land.rx, dz = (z - land.z) / land.rz;
+    const r = Math.min(1, Math.hypot(dx, dz)), angle = Math.atan2(dz, dx);
+    const ridge = Math.sin(angle * 3 + land.side * .8) * .8 + Math.sin(angle * 7 - r * 5) * .34;
+    const erosion = Math.sin(x * .22 + z * .13) * .72 + Math.sin(x * .49 - z * .31) * .3;
+    const cliff = Math.sin(angle * 11 + r * 8) * Math.pow(r, 4) * .34;
+    return -4.65 + 16.4 * Math.pow(1 - r, .68) + (ridge + erosion) * (1 - r) * 1.25 + cliff;
   }
+  const headlandNormal = normalMap(19); headlandNormal.repeat.set(5, 3); headlandNormal.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const headlandMaterial = new T.MeshStandardMaterial({ vertexColors: true, side: T.DoubleSide, roughness: .94, metalness: 0, normalMap: headlandNormal, normalScale: new T.Vector2(.34, .34), envMapIntensity: .32 });
+  headlandMaterial.onBeforeCompile = shader => {
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', `
+      #include <common>
+      varying vec3 vHeadlandWorld;
+    `).replace('#include <begin_vertex>', `
+      #include <begin_vertex>
+      vHeadlandWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
+    `);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `
+      #include <common>
+      varying vec3 vHeadlandWorld;
+      float coastHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float coastNoise(vec2 p) {
+        vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(coastHash(i), coastHash(i + vec2(1., 0.)), f.x), mix(coastHash(i + vec2(0., 1.)), coastHash(i + 1.), f.x), f.y);
+      }
+    `).replace('#include <color_fragment>', `
+      #include <color_fragment>
+      float coastMacro = coastNoise(vHeadlandWorld.xz * .095);
+      float coastGrain = coastNoise(vHeadlandWorld.xz * .72 + coastMacro * 2.4);
+      diffuseColor.rgb *= .86 + coastMacro * .2 + coastGrain * .07;
+      float strata = smoothstep(.46, .54, sin(vHeadlandWorld.y * 2.15 + coastMacro * 2.0) * .5 + .5);
+      diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(.83, .79, .72), strata * .12);
+    `).replace('#include <roughnessmap_fragment>', `
+      #include <roughnessmap_fragment>
+      roughnessFactor = clamp(roughnessFactor + (coastGrain - .5) * .08, .82, 1.0);
+    `);
+  };
+  headlandMaterial.customProgramCacheKey = () => 'headland-pbr-v2';
+  const headlandRockMaterial = new T.MeshStandardMaterial({ color: 0xffffff, roughness: .91, metalness: 0, envMapIntensity: .38 });
   for (const land of headlands) {
-    // Concentric height rings form real sloped terrain rather than stacked giant rocks.
-    const segments = 28, radii = [0, .18, .36, .54, .7, .84, .94, 1];
-    const vertices = [], colors = [], indices = [];
-    for (const r of radii) for (let i = 0; i < segments; i++) {
+    // A radial LOD mesh gives the distant coast a clean silhouette without a heavy GLB.
+    const segments = constrained ? 44 : 72, ringCount = constrained ? 11 : 17;
+    const vertices = [land.x, coastHeight(land, land.x, land.z), land.z], colors = [], uvs = [.5, .5], indices = [];
+    const centerColor = new T.Color(0x718a63); colors.push(centerColor.r, centerColor.g, centerColor.b);
+    for (let ring = 1; ring <= ringCount; ring++) for (let i = 0; i < segments; i++) {
+      const r = ring / ringCount;
       const angle = i / segments * Math.PI * 2;
-      const edge = 1 + (Math.sin(angle * 5 + land.side) * .045 + Math.sin(angle * 9) * .025) * r;
+      const edge = 1 + (Math.sin(angle * 5 + land.side) * .04 + Math.sin(angle * 9) * .022 + Math.sin(angle * 17) * .009) * r;
       const x = land.x + Math.cos(angle) * land.rx * r * edge;
       const z = land.z + Math.sin(angle) * land.rz * r * edge;
       const y = coastHeight(land, x, z);
       vertices.push(x, y, z);
-      const color = new T.Color(y > 4 ? 0x829973 : y > 0 ? 0x99a084 : y > -2 ? 0xa6a08d : 0x82837a);
-      color.multiplyScalar(.92 + .08 * Math.sin(x * .45 + z * .31));
+      const color = new T.Color(y > 5.5 ? 0x718a63 : y > 1.2 ? 0x87916f : y > -1.5 ? 0x9b8d70 : 0x77756a);
+      color.multiplyScalar(.9 + .09 * Math.sin(x * .37 + z * .23) + .035 * Math.sin(x * 1.3 - z));
       colors.push(color.r, color.g, color.b);
+      uvs.push((x - land.x) / land.rx * 2.5 + .5, (z - land.z) / land.rz * 2.5 + .5);
     }
-    for (let ring = 0; ring < radii.length - 1; ring++) for (let i = 0; i < segments; i++) {
-      const a = ring * segments + i, b = ring * segments + (i + 1) % segments;
-      const c = (ring + 1) * segments + i, d = (ring + 1) * segments + (i + 1) % segments;
+    for (let i = 0; i < segments; i++) indices.push(0, 1 + i, 1 + (i + 1) % segments);
+    for (let ring = 1; ring < ringCount; ring++) for (let i = 0; i < segments; i++) {
+      const a = 1 + (ring - 1) * segments + i, b = 1 + (ring - 1) * segments + (i + 1) % segments;
+      const c = 1 + ring * segments + i, d = 1 + ring * segments + (i + 1) % segments;
       indices.push(a, b, c, b, d, c);
     }
     const terrain = new T.BufferGeometry(); terrain.setAttribute('position', new T.Float32BufferAttribute(vertices, 3));
-    terrain.setAttribute('color', new T.Float32BufferAttribute(colors, 3)); terrain.setIndex(indices); terrain.computeVertexNormals();
-    const coast = new T.Mesh(terrain, new T.MeshLambertMaterial({ vertexColors: true, side: T.DoubleSide }));
+    terrain.setAttribute('color', new T.Float32BufferAttribute(colors, 3)); terrain.setAttribute('uv', new T.Float32BufferAttribute(uvs, 2)); terrain.setIndex(indices); terrain.computeVertexNormals();
+    const coast = new T.Mesh(terrain, headlandMaterial);
     coast.name = land.side < 0 ? 'Village headland' : 'Lighthouse headland'; scene.add(coast);
-    const stones = new T.InstancedMesh(rock, material(0xffffff), 14), instance = new T.Object3D();
-    stones.name = 'Headland rock clusters'; scene.add(stones);
-    for (let i = 0; i < 14; i++) {
-      const angle = .13 * Math.PI + i / 13 * .74 * Math.PI;
-      const r = .76 + i % 4 * .055;
+    const stoneCount = constrained ? 22 : 38;
+    const stones = new T.InstancedMesh(rock, headlandRockMaterial, stoneCount), instance = new T.Object3D();
+    stones.name = 'Headland rock clusters'; stones.receiveShadow = true; scene.add(stones);
+    for (let i = 0; i < stoneCount; i++) {
+      const angle = .1 * Math.PI + i / Math.max(1, stoneCount - 1) * .8 * Math.PI;
+      const r = .68 + (i * 7 % 17) / 17 * .29;
       const x = land.x + Math.cos(angle) * land.rx * r, z = land.z + Math.sin(angle) * land.rz * r;
-      const size = 1.0 + i % 5 * .4;
-      instance.position.set(x, coastHeight(land, x, z) + size * .28, z);
-      instance.scale.set(size * 1.4, size * .8, size); instance.rotation.set(i * .13, i * 1.7, i * .3); instance.updateMatrix();
-      stones.setMatrixAt(i, instance.matrix); stones.setColorAt(i, new T.Color(i % 3 ? 0xa39d8c : 0x787e77));
+      const size = .55 + (i * 11 % 9) * .17;
+      instance.position.set(x, coastHeight(land, x, z) + size * .22, z);
+      instance.scale.set(size * (1.1 + i % 3 * .18), size * (.62 + i % 4 * .07), size); instance.rotation.set(i * .17, i * 1.37, i * .23); instance.updateMatrix();
+      stones.setMatrixAt(i, instance.matrix); stones.setColorAt(i, new T.Color([0x8e897b, 0xa3947c, 0x6f7772, 0xb09a7b][i % 4]));
     }
+    stones.instanceMatrix.needsUpdate = true; if (stones.instanceColor) stones.instanceColor.needsUpdate = true;
     stones.computeBoundingSphere();
   }
   // The left slope carries a small stepped village; roofs follow the terrain.
@@ -293,6 +341,19 @@ export function createEnvironment(scene, renderer) {
     treeIndex++;
   }
   trunks.computeBoundingSphere(); leaves.computeBoundingSphere();
+  const shrubCount = constrained ? 28 : 48;
+  const shrubGeometry = new T.ConeGeometry(.42, 1.15, 5);
+  shrubGeometry.translate(0, .55, 0);
+  const shrubs = new T.InstancedMesh(shrubGeometry, new T.MeshStandardMaterial({ color: 0xffffff, roughness: .96 }), shrubCount);
+  shrubs.name = 'Headland scrub scatter'; scene.add(shrubs);
+  for (let i = 0; i < shrubCount; i++) {
+    const land = headlands[i % 2], angle = i * 2.399 + (land.side < 0 ? .4 : 1.1), r = .42 + (i * 5 % 13) / 13 * .39;
+    const x = land.x + Math.cos(angle) * land.rx * r, z = land.z + Math.sin(angle) * land.rz * r;
+    const size = .42 + (i * 7 % 6) * .09;
+    instance.position.set(x, coastHeight(land, x, z), z); instance.rotation.set(0, angle + i * .31, (i % 3 - 1) * .08); instance.scale.set(size * .72, size, size * .72); instance.updateMatrix();
+    shrubs.setMatrixAt(i, instance.matrix); shrubs.setColorAt(i, new T.Color(i % 3 ? 0x607957 : 0x7d875c));
+  }
+  shrubs.instanceMatrix.needsUpdate = true; if (shrubs.instanceColor) shrubs.instanceColor.needsUpdate = true; shrubs.computeBoundingSphere();
   const lighthouseLand = headlands[1], lighthouse = new T.Group();
   lighthouse.position.set(43, coastHeight(lighthouseLand, 43, -51), -51); scene.add(lighthouse);
   shape(cylinder, 0xffe8c4, [0, 3.3, 0], [1.4, 6.6, 1.4], lighthouse);
@@ -354,6 +415,8 @@ export function createEnvironment(scene, renderer) {
     waterMode: 'gerstner-lod',
     waterReflection: 'pmrem-hdr',
     shorelineFoam: 'terrain-depth',
+    headlandQuality: constrained ? 'pbr-radial-balanced' : 'pbr-radial-high',
+    headlandScatter: constrained ? 72 : 124,
     waterQuality: constrained ? 'balanced' : 'high',
     motionLayers: 'gerstner-water-boats-clouds-spray',
     motionSample: () => ({ waveTime: waterMaterials[0].uniforms.uTime.value, boatX: boats[0].position.x, cloudX: clouds[0].position.x }),

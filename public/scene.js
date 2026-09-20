@@ -69,6 +69,7 @@ export function createScene(container) {
   container.dataset.environmentBackdrop = 'loading';
   container.dataset.waterShader = environment.waterMode; container.dataset.waterQuality = environment.waterQuality;
   container.dataset.waterReflection = environment.waterReflection; container.dataset.shorelineFoam = environment.shorelineFoam;
+  container.dataset.headlandQuality = environment.headlandQuality; container.dataset.headlandScatter = String(environment.headlandScatter);
   container.dataset.environmentMotion = environment.motionLayers;
   environment.lightingReady.then(source => { container.dataset.environmentLighting = source; });
   environment.backgroundReady.then(source => { container.dataset.environmentBackdrop = source; });
