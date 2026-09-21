@@ -186,7 +186,12 @@ export function createApp({ port = 3000 } = {}) {
         const bot = room.mode === 'practice' ? room.game.team === 1 : !activePlayer(room);
         if (bot) {
           if (room.game.phase === 'move' && room.game.deadline - room.game.time < PHASE_DURATIONS.move - .8) {
-            const objectiveMove = room.game.objective && room.game.getAvailableMoves().find(move => move.id === room.game.objective.nodeId);
+            const moves = room.game.getAvailableMoves();
+            let objectiveMove = room.game.objective?.status === 'center' ? moves.find(move => move.core) : null;
+            if (room.game.objective?.carrierId === room.game.shooter?.id) {
+              const goal = room.game.nodePosition(room.game.objective.goalNodeId, 1 - room.game.team);
+              objectiveMove = moves.sort((a, b) => Math.hypot(a.x - goal.x, a.y - goal.y) - Math.hypot(b.x - goal.x, b.y - goal.y))[0];
+            }
             if (objectiveMove) room.game.moveShooter(objectiveMove.id);
             room.game.readyAim();
           } else if (room.game.phase === 'aim' && room.game.deadline - room.game.time < PHASE_DURATIONS.aim - 2) {

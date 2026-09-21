@@ -1,14 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CONTROL_GUARD, Match, RULESETS } from '../game.js';
+import { Match, RELAY_RULES, RULESETS } from '../game.js';
 
-function placeResidentAtObjective(game, team = game.team) {
-  const resident = game.items.find(item => item.kind === 'resident' && item.team === team && item.hp > 0);
-  const center = game.nodePosition(game.objective.nodeId, 0);
-  resident.nodeId = game.objective.nodeId;
-  resident.body.position.copy(center);
-  resident.body.velocity.set(0, 0, 0);
-  return resident;
+function moveOnce(game, nodeId) {
+  game.phase = 'move';
+  game.movedTurn = null;
+  return game.moveShooter(nodeId);
+}
+
+function pickupCore(game) {
+  const result = moveOnce(game, game.objective.nodeId);
+  assert.equal(result.ok, true);
+  assert.equal(result.pickedCore, true);
+  return game.shooter;
+}
+
+function deliverCore(game) {
+  const carrier = game.shooter;
+  const frontNodeId = `${game.map.id}-node-6`;
+  assert.equal(moveOnce(game, frontNodeId).ok, true);
+  const result = moveOnce(game, game.objective.goalNodeId);
+  assert.equal(result.ok, true);
+  assert.equal(result.scoredCore, true);
+  return carrier;
 }
 
 test('classic remains the default ruleset', () => {
@@ -20,97 +34,101 @@ test('classic remains the default ruleset', () => {
   assert.equal(snapshot.availableMoves.some(move => move.id === 'tower-drop-center'), false);
 });
 
-test('control exposes the center as a rush for every shooter while it is free', () => {
+test('relay exposes a free center core to every active resident', () => {
   const game = new Match('tower', { ruleset: 'control' });
   const snapshot = game.snapshot();
   assert.equal(snapshot.objective.nodeId, 'tower-drop-center');
-  assert.equal(snapshot.objective.progress, 0);
-  assert.equal(snapshot.objective.target, 2);
+  assert.equal(snapshot.objective.goalNodeId, 'tower-node-0');
+  assert.deepEqual(snapshot.objective.scores, [0, 0]);
+  assert.equal(snapshot.objective.target, RELAY_RULES.scoreTarget);
   const roster = game.items.filter(item => item.kind === 'resident' && item.team === 0);
   for (let index = 0; index < roster.length; index++) {
     game.shooterCursor[0] = index;
     game.syncShooter();
-    assert.ok(game.getAvailableMoves().some(move => move.id === snapshot.objective.nodeId), `shooter ${index} cannot rush center`);
+    assert.ok(game.getAvailableMoves().some(move => move.id === snapshot.objective.nodeId && move.core), `shooter ${index} cannot rush core`);
   }
 });
 
-test('holding the center for two own completed turns wins the match', () => {
+test('a carrier is locked as shooter and traverses the opponent side', () => {
   const game = new Match('tower', { ruleset: 'control' });
-  placeResidentAtObjective(game, 0);
+  const carrier = pickupCore(game);
+  assert.equal(game.objective.carrierId, carrier.id);
+  assert.equal(game.objective.carrierTeam, 0);
+  assert.equal(game.shooter.id, carrier.id);
+  game.firedShooterId = carrier.id;
+  game.nextTurn();
+  game.firedShooterId = game.shooter.id;
+  game.nextTurn();
+  assert.equal(game.team, 0);
+  assert.equal(game.shooter.id, carrier.id);
+  const enemySideMove = game.getAvailableMoves().find(move => move.id === 'tower-node-6');
+  assert.ok(enemySideMove);
+  assert.ok(enemySideMove.x > 0, 'team 0 carrier should cross onto team 1 side');
+});
 
-  game.team = 0;
-  assert.equal(game.resolveControlAtTurnEnd(), false);
-  assert.deepEqual({ owner: game.objective.owner, progress: game.objective.progress }, { owner: 0, progress: 0 });
+test('every map has a playable center-to-enemy-base relay route', () => {
+  for (const mapId of ['townhouse', 'tower', 'bridge', 'fortress']) {
+    const game = new Match(mapId, { ruleset: 'control' });
+    pickupCore(game);
+    deliverCore(game);
+    assert.deepEqual(game.objective.scores, [1, 0], `${mapId} cannot deliver a core`);
+  }
+});
 
-  game.team = 1;
-  assert.equal(game.resolveControlAtTurnEnd(), false);
-  assert.deepEqual({ owner: game.objective.owner, progress: game.objective.progress }, { owner: 0, progress: 0 });
+test('movement is limited to one action per turn', () => {
+  const game = new Match('tower', { ruleset: 'control' });
+  assert.equal(game.moveShooter(game.objective.nodeId).ok, true);
+  assert.deepEqual(game.getAvailableMoves(), []);
+  assert.match(game.moveShooter('tower-node-6').error, /một lần/);
+});
 
-  game.team = 0;
-  assert.equal(game.resolveControlAtTurnEnd(), false);
-  assert.equal(game.objective.progress, 1);
-  game.team = 1;
-  assert.equal(game.resolveControlAtTurnEnd(), false);
-  assert.equal(game.objective.progress, 1);
-  game.team = 0;
-  assert.equal(game.resolveControlAtTurnEnd(), true);
-  assert.equal(game.objective.progress, 2);
+test('delivering two cores wins relay; elimination alone never wins it', () => {
+  const game = new Match('tower', { ruleset: 'control' });
+  pickupCore(game);
+  deliverCore(game);
+  assert.deepEqual(game.objective.scores, [1, 0]);
+  assert.equal(game.winner, null);
+
+  pickupCore(game);
+  deliverCore(game);
+  assert.deepEqual(game.objective.scores, [2, 0]);
   assert.equal(game.winner, 0);
-  assert.equal(game.winReason, 'control');
+  assert.equal(game.winReason, 'relay');
   assert.equal(game.phase, 'over');
+
+  const fresh = new Match('tower', { ruleset: 'control' });
+  for (const resident of fresh.items.filter(item => item.kind === 'resident' && item.team === 1)) resident.hp = 0;
+  assert.equal(fresh.finishIfEliminated(), false);
+  assert.equal(fresh.winner, null);
 });
 
-test('a resident knocked out of the zone no longer blocks later center moves', () => {
+test('knocking out the carrier resets the core and the resident respawns later', () => {
   const game = new Match('tower', { ruleset: 'control' });
-  const holder = placeResidentAtObjective(game, 0);
-  holder.body.position.x += 2;
-  game.shooterCursor[0] = 1;
-  game.syncShooter();
-  assert.ok(game.getAvailableMoves().some(move => move.id === game.objective.nodeId));
+  const carrier = pickupCore(game);
+  carrier.hp = 0;
+  game.step();
+  assert.equal(game.objective.status, 'center');
+  assert.equal(game.objective.carrierId, null);
+  assert.equal(carrier.eliminated, true);
+  assert.equal(carrier.respawnAtTurn, 1 + RELAY_RULES.respawnDelay);
+
+  game.turn = carrier.respawnAtTurn;
+  game.prepareRelayTeam(carrier.team);
+  assert.equal(carrier.eliminated, false);
+  assert.equal(carrier.hp, carrier.maxHp);
+  assert.ok(game.world.bodies.includes(carrier.body));
 });
 
-test('leaving or blocking the center clears capture progress', () => {
-  const game = new Match('fortress', { ruleset: 'control' });
-  const resident = placeResidentAtObjective(game, 0);
-  game.team = 0;
-  game.resolveControlAtTurnEnd();
-  resident.body.position.x += 2;
-  game.team = 1;
-  game.resolveControlAtTurnEnd();
-  assert.deepEqual({ owner: game.objective.owner, progress: game.objective.progress }, { owner: null, progress: 0 });
-
-  resident.body.position.copy(game.nodePosition(game.objective.nodeId, 0));
-  game.team = 0;
-  game.resolveControlAtTurnEnd();
-  const rock = game.environmentItems.find(item => item.kind === 'rockFall');
-  rock.released = true;
-  game.resolveControlAtTurnEnd();
-  assert.deepEqual({ owner: game.objective.owner, progress: game.objective.progress }, { owner: null, progress: 0 });
-});
-
-test('the active center defender gets combat damage and blast knockback protection', () => {
+test('time limit picks the higher score and tied games enter sudden-death overtime', () => {
   const game = new Match('tower', { ruleset: 'control' });
-  const defender = placeResidentAtObjective(game, 0);
-  game.team = 0;
-  game.resolveControlAtTurnEnd();
+  game.turn = game.objective.maxTurns;
+  assert.equal(game.finishRelayByTurnLimit(), false);
+  assert.equal(game.objective.overtime, true);
 
-  const unguarded = game.items.find(item => item.kind === 'resident' && item.team === 1);
-  defender.body.wakeUp();
-  unguarded.body.wakeUp();
-  game.damage(defender, 100, 'blast');
-  game.damage(unguarded, 100, 'blast');
-
-  assert.equal(game.objective.guard, 45);
-  assert.ok(Math.abs(defender.hp - 100 * CONTROL_GUARD.damageReduction) < .001);
-  assert.equal(unguarded.hp, 0);
-
-  defender.hp = 100;
-  unguarded.hp = 100;
-  const center = game.nodePosition(game.objective.nodeId, 0);
-  defender.body.position.copy(center);
-  unguarded.body.position.copy(center);
-  defender.body.velocity.set(0, 0, 0);
-  unguarded.body.velocity.set(0, 0, 0);
-  game.applyRadialBlast(center.clone(), { radius: 3, damage: 1, impulse: 40 });
-  assert.ok(defender.body.velocity.length() < unguarded.body.velocity.length() * .4);
+  const leader = new Match('tower', { ruleset: 'control' });
+  leader.objective.scores = [1, 0];
+  leader.turn = leader.objective.maxTurns;
+  assert.equal(leader.finishRelayByTurnLimit(), true);
+  assert.equal(leader.winner, 0);
+  assert.equal(leader.winReason, 'relay-time');
 });

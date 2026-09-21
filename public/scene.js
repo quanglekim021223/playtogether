@@ -235,7 +235,8 @@ export function createScene(container) {
   controlZone.name = 'ControlZone'; controlZone.rotation.x = -Math.PI / 2; controlZone.renderOrder = 5; controlZone.visible = false; scene.add(controlZone);
   const controlBeaconMaterial = new T.MeshBasicMaterial({ color: 0xe3b84f, transparent: true, opacity: .82, depthTest: false, depthWrite: false });
   const controlBeacon = new T.Mesh(new T.TorusGeometry(.38, .055, 8, 36), controlBeaconMaterial);
-  controlBeacon.name = 'ControlBeacon'; controlBeacon.renderOrder = 10; controlBeacon.visible = false; scene.add(controlBeacon);
+  controlBeacon.name = 'EnergyCore'; controlBeacon.renderOrder = 10; controlBeacon.visible = false;
+  const coreOrb = new T.Mesh(new T.IcosahedronGeometry(.22, 1), controlBeaconMaterial); coreOrb.name = 'EnergyCoreOrb'; controlBeacon.add(coreOrb); scene.add(controlBeacon);
   const viewTarget = new T.Vector3(0, 2, 0); let viewDistance = 50, impactFocus = null;
   function kitKey(item) {
     if (['fuelBarrel', 'bouncePad'].includes(item.kind)) return item.kind;
@@ -623,18 +624,23 @@ export function createScene(container) {
     if (currentMap !== data.mapId) { reset(); currentMap = data.mapId; applyLightingTheme(currentMap); rebuildMapDecor(); }
     activeShooter = data.items.find(i => i.id === data.shooterId) || null; gamePhase = data.phase; currentWind = data.wind || 0;
     const objective = data.objective;
-    controlZone.visible = mode === 'game' && Boolean(objective);
-    controlBeacon.visible = controlZone.visible;
+    controlZone.visible = mode === 'game' && objective?.status === 'center';
+    controlBeacon.visible = mode === 'game' && Boolean(objective);
     if (objective) {
       controlZone.position.set(objective.x, .055, 0);
-      controlBeacon.position.set(objective.x, 1.18, 1.58);
-      const controlColor = objective.owner === 0 ? COLORS[0] : objective.owner === 1 ? COLORS[1] : 0xe3b84f;
+      controlBeacon.userData.baseY = objective.y + .78;
+      controlBeacon.position.set(objective.x, controlBeacon.userData.baseY, 1.58);
+      const controlColor = objective.carrierTeam === 0 ? COLORS[0] : objective.carrierTeam === 1 ? COLORS[1] : 0xe3b84f;
       controlMaterial.color.setHex(controlColor); controlBeaconMaterial.color.setHex(controlColor);
       container.dataset.ruleset = data.ruleset || 'control';
-      container.dataset.controlOwner = objective.owner == null ? 'none' : String(objective.owner);
-      container.dataset.controlProgress = `${objective.progress}/${objective.target}`;
+      container.dataset.coreStatus = objective.status;
+      container.dataset.coreCarrier = objective.carrierId == null ? 'none' : String(objective.carrierId);
+      container.dataset.controlOwner = objective.carrierTeam == null ? 'none' : String(objective.carrierTeam);
+      container.dataset.controlProgress = `${objective.scores[0]}-${objective.scores[1]}/${objective.target}`;
     } else {
       container.dataset.ruleset = data.ruleset || 'classic';
+      container.dataset.coreStatus = 'none';
+      container.dataset.coreCarrier = 'none';
       container.dataset.controlOwner = 'none';
       container.dataset.controlProgress = 'none';
     }
@@ -981,7 +987,7 @@ export function createScene(container) {
     for (const mark of impactMarks) { mark.mesh.removeFromParent(); mark.mesh.material.dispose(); } impactMarks = []; impactFocus = null;
     impactPauseUntil = 0; replayTurn = null; replayFrames = []; replayEventCursor = 0; replay = null; lastReplayFinal = null; shake = 0;
     mapDecor.clear(); currentMap = null; container.dataset.mapDecor = '0'; container.dataset.structureDecor = '0';
-    container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.impactMarks = '0'; container.dataset.attachedDecals = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; container.dataset.airdrop = 'none'; container.dataset.weatherParticles = 'none'; container.dataset.replay = 'idle'; container.dataset.impactPause = 'idle'; container.dataset.controlOwner = 'none'; container.dataset.controlProgress = 'none'; delete container.dataset.replayStage; delete container.dataset.weather; delete container.dataset.trajectoryDots; delete container.dataset.lastAirdropEvent; delete container.dataset.lastMaterial; delete container.dataset.collapseDust; delete container.dataset.lastEnvironmentEvent; delete container.dataset.lastWeaponVfx; delete container.dataset.shakeStrength;
+    container.dataset.cracked = '0'; container.dataset.fragments = '0'; container.dataset.impactMarks = '0'; container.dataset.attachedDecals = '0'; container.dataset.fuelBarrels = '0'; container.dataset.bouncePads = '0'; container.dataset.airdrop = 'none'; container.dataset.weatherParticles = 'none'; container.dataset.replay = 'idle'; container.dataset.impactPause = 'idle'; container.dataset.coreStatus = 'none'; container.dataset.coreCarrier = 'none'; container.dataset.controlOwner = 'none'; container.dataset.controlProgress = 'none'; delete container.dataset.replayStage; delete container.dataset.weather; delete container.dataset.trajectoryDots; delete container.dataset.lastAirdropEvent; delete container.dataset.lastMaterial; delete container.dataset.collapseDust; delete container.dataset.lastEnvironmentEvent; delete container.dataset.lastWeaponVfx; delete container.dataset.shakeStrength;
   }
   let width, height, composer = null, ssaoPass = null, bloomPass = null, gradePass = null, vignettePass = null;
   function setupPostProcessing() {
@@ -1105,12 +1111,13 @@ export function createScene(container) {
     container.dataset.cameraMode = focusingImpact || replayImpact ? 'replay-impact' : replayShooter ? 'replay-shooter' : replayProjectile ? 'replay-projectile' : closeMove ? 'shooter' : tacticalAim ? 'tactical' : 'overview'; container.dataset.cameraX = viewTarget.x.toFixed(2);
     selection.visible = mode === 'game' && ['move', 'aim'].includes(gamePhase) && Boolean(activeShooter);
     if (selection.visible) selection.position.set(activeShooter.p[0], activeShooter.p[1] + .12, 1.55);
-    if (controlZone.visible) {
+    if (controlBeacon.visible) {
       const pulse = reducedMotion.matches ? 1 : 1 + Math.sin(now / 330) * .055;
-      controlZone.scale.setScalar(pulse);
+      if (controlZone.visible) controlZone.scale.setScalar(pulse);
       controlBeacon.scale.setScalar(pulse);
-      controlBeacon.position.y = 1.18 + (reducedMotion.matches ? 0 : Math.sin(now / 330) * .08);
-      controlMaterial.opacity = reducedMotion.matches ? .46 : .42 + Math.sin(now / 330) * .1;
+      controlBeacon.position.y = (controlBeacon.userData.baseY || 1.18) + (reducedMotion.matches ? 0 : Math.sin(now / 330) * .08);
+      if (!reducedMotion.matches) controlBeacon.rotation.y += visualDt * 2.3;
+      if (controlZone.visible) controlMaterial.opacity = reducedMotion.matches ? .46 : .42 + Math.sin(now / 330) * .1;
     }
     if (shake > 0 && !reducedMotion.matches) {
       camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake;
@@ -1214,7 +1221,7 @@ export function createScene(container) {
     setMode: value => {
       mode = value;
       const showControl = mode === 'game' && container.dataset.ruleset === 'control';
-      controlZone.visible = showControl; controlBeacon.visible = showControl;
+      controlZone.visible = showControl && container.dataset.coreStatus === 'center'; controlBeacon.visible = showControl;
     }
   };
 }

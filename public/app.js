@@ -232,29 +232,29 @@ function updateControls() {
   if (moveOptions) {
     const moves = isMove && Array.isArray(state?.game?.availableMoves) ? state.game.availableMoves : [];
     const objective = isMove ? state.game.objective : null;
-    const objectiveAvailable = objective && moves.some(move => move.id === objective.nodeId);
-    const objectiveLocked = objective && !objectiveAvailable;
-    if (moves.length > 0 || objectiveLocked) {
+    const coreAvailable = objective?.status === 'center' && moves.some(move => move.core);
+    const showCoreNote = Boolean(objective && !coreAvailable);
+    if (moves.length > 0 || showCoreNote) {
       moveOptions.hidden = false;
       let html = moves.map(m => {
         const buffLabel = m.airdropBuff === 'heal' ? '+35 HP' : m.airdropBuff === 'power' ? 'x1.5 Dmg' : 'Khiên -50%';
         const airdropBadge = m.hasAirdrop ? ` 🎁 [${buffLabel}]` : '';
-        const objective = m.id === state.game.objective?.nodeId;
-        const moveClass = `${m.hasAirdrop ? ' airdrop-node' : ''}${objective ? ' control-node' : ''}`;
-        return `<button class="button secondary compact move-btn${moveClass}" data-node="${m.id}" style="margin-top:4px;font-size:10px;padding:6px 10px;width:100%">${objective ? '◎' : '🏃'} ${escape(m.label)}${airdropBadge}</button>`;
+        const moveClass = `${m.hasAirdrop ? ' airdrop-node' : ''}${m.core || m.deliversCore ? ' control-node' : ''}`;
+        const icon = m.core ? '⚡' : m.deliversCore ? '🏁' : '🏃';
+        return `<button class="button secondary compact move-btn${moveClass}" data-node="${m.id}" style="margin-top:4px;font-size:10px;padding:6px 10px;width:100%">${icon} ${escape(m.label)}${airdropBadge}</button>`;
       }).join('');
       let lockSignature = '';
-      if (objectiveLocked) {
+      if (showCoreNote) {
         const shooter = state.game.items.find(item => item.id === state.game.shooterId);
         const me = state.players.find(player => player.id === playerId);
-        const reason = shooter?.nodeId === objective.nodeId ? 'Bạn đang giữ điểm'
-          : objective.owner === me?.team ? 'Đồng đội đang giữ điểm'
-          : objective.owner !== null ? 'Đối thủ đang giữ · hãy bắn hạ'
-          : 'Khu vực đang bị chặn';
-        html += `<div class="control-node-note">◎ Sân trung tâm <small>${reason}</small></div>`;
-        lockSignature = `${objective.owner}:${shooter?.nodeId}`;
+        const reason = objective.carrierId === shooter?.id ? 'Bạn đang mang · tới căn cứ địch'
+          : objective.carrierTeam === me?.team ? 'Đồng đội đang mang lõi'
+          : objective.carrierTeam !== null ? 'Đối thủ đang mang · hãy bắn hạ'
+          : 'Lõi đang trở lại trung tâm';
+        html += `<div class="control-node-note">⚡ Lõi năng lượng <small>${reason}</small></div>`;
+        lockSignature = `${objective.status}:${objective.carrierId}:${objective.scores.join('-')}`;
       }
-      const sig = `${moves.map(m => `${m.id}:${m.hasAirdrop}:${m.id === state.game.objective?.nodeId}`).join(',')}|${lockSignature}`;
+      const sig = `${moves.map(m => `${m.id}:${m.hasAirdrop}:${m.core}:${m.deliversCore}`).join(',')}|${lockSignature}`;
       if (moveOptions.dataset.signature !== sig) {
         moveOptions.dataset.signature = sig;
         moveOptions.innerHTML = html;
@@ -334,7 +334,7 @@ function updateMapUI() {
   });
   const rulesetSummary = document.querySelector('#ruleset-summary');
   if (rulesetSummary) rulesetSummary.textContent = ruleset === 'control'
-    ? 'Chiếm trung tâm · Giữ khu vực qua 2 lượt của đội để thắng.'
+    ? 'Cướp lõi · Mang lõi trung tâm tới căn cứ địch. Ghi 2 điểm để thắng; nhân vật được hồi sinh.'
     : 'Phá hủy · Loại toàn bộ cư dân đối phương để thắng.';
   if (scene) loadPreview(state.mapId === 'random' ? 'tower' : state.mapId);
 }
@@ -396,7 +396,7 @@ function renderLobby() {
     app.innerHTML = `${header()}<main class="phone-shell"><span class="eyebrow">PHÒNG ${state.code}</span><h1>Tay cầm đã kết nối.</h1><p>Chọn phe. Trận đấu sẽ bắt đầu trên màn hình lớn.</p>${teamsMarkup()}<div class="team-switch"><button class="button coral-button" data-team="0">Phe San Hô</button><button class="button teal-button" data-team="1">Phe Ngọc Lam</button></div><p id="map-summary" class="phone-map"></p><p id="ruleset-summary" class="phone-map"></p></main>`;
     document.querySelectorAll('[data-team]').forEach(b => b.onclick = () => emit('team', { team: Number(b.dataset.team) }));
   } else {
-    app.innerHTML = `${header()}<main class="lobby-layout"><div class="lobby-copy"><span class="eyebrow">MỜI CẢ HỘI VÀO CHƠI</span><h1>Chọn nhà.<br><span>Rủ hàng xóm.</span></h1><p>Quét QR bằng điện thoại cùng Wi-Fi.<br>Chọn công trình cho cuộc đấu tiếp theo.</p><section class="map-selection" aria-label="Chọn bản đồ"><div id="map-picker"></div><p id="map-summary"></p><p id="map-tip"></p><div class="ruleset-selection"><strong>LUẬT CHƠI</strong><div id="ruleset-picker"><button data-ruleset="classic" aria-pressed="false">💥 Phá hủy</button><button data-ruleset="control" aria-pressed="false">◎ Chiếm trung tâm</button></div><p id="ruleset-summary"></p></div><div class="material-key" aria-label="Độ bền vật liệu"><span><i style="background:#8ee0e5"></i>Kính · dễ vỡ</span><span><i style="background:#b77943"></i>Gỗ · nhẹ</span><span><i style="background:#cd795c"></i>Gạch · vừa</span><span><i style="background:#83969c"></i>Đá · bền</span><span><i style="background:#d94b3f"></i>Thùng xăng · nổ</span><span><i style="background:#71d9c9"></i>Tấm nảy · đổi quỹ đạo</span></div></section></div><section class="lobby-panel"><div class="room-label"><span>PHÒNG CỦA BẠN</span><b id="player-count"></b></div><div class="join-block"><img id="qr" alt="Mã QR để tham gia phòng" width="148" height="148"><div><span class="small-label">QUÉT ĐỂ THAM GIA</span><strong class="room-code">${state.code}</strong><span class="qr-help">Hoặc mở link và nhập mã</span><a id="join-url" target="_blank" rel="noopener"></a></div></div>${teamsMarkup()}<button id="start" class="button primary">Bắt đầu trận <span>↗</span></button><button id="practice" class="button secondary">Một điện thoại + bot</button><p class="panel-note">Đấu nhóm: mỗi đội 1 người. Đấu bot: 1 người ở San Hô.</p></section></main><footer><span>NGẮM CHO CHUẨN. CƯỜI CHO ĐÃ.</span><span>ĐẢO HÀNG XÓM / 01</span></footer>`;
+    app.innerHTML = `${header()}<main class="lobby-layout"><div class="lobby-copy"><span class="eyebrow">MỜI CẢ HỘI VÀO CHƠI</span><h1>Chọn nhà.<br><span>Rủ hàng xóm.</span></h1><p>Quét QR bằng điện thoại cùng Wi-Fi.<br>Chọn công trình cho cuộc đấu tiếp theo.</p><section class="map-selection" aria-label="Chọn bản đồ"><div id="map-picker"></div><p id="map-summary"></p><p id="map-tip"></p><div class="ruleset-selection"><strong>LUẬT CHƠI</strong><div id="ruleset-picker"><button data-ruleset="classic" aria-pressed="false">💥 Phá hủy</button><button data-ruleset="control" aria-pressed="false">⚡ Cướp lõi</button></div><p id="ruleset-summary"></p></div><div class="material-key" aria-label="Độ bền vật liệu"><span><i style="background:#8ee0e5"></i>Kính · dễ vỡ</span><span><i style="background:#b77943"></i>Gỗ · nhẹ</span><span><i style="background:#cd795c"></i>Gạch · vừa</span><span><i style="background:#83969c"></i>Đá · bền</span><span><i style="background:#d94b3f"></i>Thùng xăng · nổ</span><span><i style="background:#71d9c9"></i>Tấm nảy · đổi quỹ đạo</span></div></section></div><section class="lobby-panel"><div class="room-label"><span>PHÒNG CỦA BẠN</span><b id="player-count"></b></div><div class="join-block"><img id="qr" alt="Mã QR để tham gia phòng" width="148" height="148"><div><span class="small-label">QUÉT ĐỂ THAM GIA</span><strong class="room-code">${state.code}</strong><span class="qr-help">Hoặc mở link và nhập mã</span><a id="join-url" target="_blank" rel="noopener"></a></div></div>${teamsMarkup()}<button id="start" class="button primary">Bắt đầu trận <span>↗</span></button><button id="practice" class="button secondary">Một điện thoại + bot</button><p class="panel-note">Đấu nhóm: mỗi đội 1 người. Đấu bot: 1 người ở San Hô.</p></section></main><footer><span>NGẮM CHO CHUẨN. CƯỜI CHO ĐÃ.</span><span>ĐẢO HÀNG XÓM / 01</span></footer>`;
     document.querySelector('#start').onclick = () => { unlockAudio(); emit('start', { mode: 'party' }); };
     document.querySelector('#practice').onclick = () => { unlockAudio(); emit('start', { mode: 'practice' }); };
     refreshQr();
@@ -454,22 +454,23 @@ function updateGameUI() {
   const isSettle = game.phase === 'settle';
   document.querySelector('#turn-heading').textContent = isFlight ? 'Đạn đang bay' : isSettle ? 'Đang ổn định' : isMove ? (mine ? 'Chọn vị trí' : `${activeLabel} di chuyển`) : mine ? 'Kéo để ngắm' : `${activeLabel} đang ngắm`;
   const detail = document.querySelector('#turn-detail');
-  if (detail) detail.textContent = isFlight || isSettle ? 'Chờ công trình ổn định…' : `${weapon?.name || ''} · ${shooter?.spot || ''}`;
+  const carryingCore = game.objective?.carrierId === shooter?.id;
+  if (detail) detail.textContent = isFlight || isSettle ? 'Chờ công trình ổn định…' : `${weapon?.name || ''} · ${shooter?.spot || ''}${carryingCore ? ' · ⚡ MANG LÕI · SÁT THƯƠNG -20%' : ''}`;
   document.querySelector('#timer').textContent = ['move', 'aim'].includes(game.phase) ? `${game.remaining}s` : '•••';
   document.querySelector('#round-label')?.replaceChildren(`LƯỢT ${game.turn}`);
   const control = document.querySelector('#control-status');
   if (control && game.objective) {
-    control.hidden = false; control.dataset.owner = game.objective.owner ?? 'none';
-    const owner = game.objective.owner === null
-      ? 'TRUNG TÂM TRỐNG'
-      : `${teams[game.objective.owner].toUpperCase()} ${game.objective.progress ? 'GIỮ ĐIỂM' : 'ĐANG CHIẾM'}`;
-    const guard = game.objective.owner === null ? '' : ` · 🛡 GIẢM ${game.objective.guard}% SÁT THƯƠNG`;
-    control.textContent = `◎ ${owner} · ${game.objective.progress}/${game.objective.target}${guard}`;
+    control.hidden = false; control.dataset.owner = game.objective.carrierTeam ?? 'none';
+    const coreState = game.objective.carrierTeam === null
+      ? 'LÕI Ở TRUNG TÂM'
+      : `${teams[game.objective.carrierTeam].toUpperCase()} ĐANG MANG LÕI`;
+    const overtime = game.objective.overtime ? ' · HIỆP PHỤ' : ` · CÒN ${Math.max(0, game.objective.maxTurns - game.turn + 1)} LƯỢT`;
+    control.textContent = `⚡ ${coreState} · ${game.objective.scores[0]}–${game.objective.scores[1]} / ${game.objective.target}${overtime}`;
   }
   for (let team = 0; team < 2; team++) {
     const residents = game.items.filter(i => i.kind === 'resident' && i.team === team);
     const el = document.querySelector(`#health-${team}`);
-    if (el) el.innerHTML = residents.map(i => `<span class="life ${i.hp <= 0 ? 'lost' : ''} ${i.id === game.shooterId ? 'active' : ''}" title="${WEAPONS[i.weapon]?.name} · ${Math.ceil(i.hp)} máu">${i.hp > 0 ? '●' : '×'}<i style="width:${Math.max(0, i.hp)}%"></i></span>`).join('');
+    if (el) el.innerHTML = residents.map(i => `<span class="life ${i.hp <= 0 ? 'lost' : ''} ${i.id === game.shooterId ? 'active' : ''}" title="${WEAPONS[i.weapon]?.name} · ${i.hp > 0 ? `${Math.ceil(i.hp)} máu` : game.objective ? `Hồi sinh ở lượt ${i.respawnAtTurn}` : 'Đã bị loại'}">${i.hp > 0 ? (game.objective?.carrierId === i.id ? '⚡' : '●') : '↻'}<i style="width:${Math.max(0, i.hp)}%"></i></span>`).join('');
   }
   if (controller) {
     document.querySelector('#shooter-spot').textContent = shooter?.spot || '';
@@ -502,8 +503,8 @@ function renderOver() {
   clearGesture(); document.body.classList.remove('controller-playing');
   screenKey = 'over'; const game = state.game;
   const actions = controller ? '<p>Chờ chủ phòng mở ván tiếp theo.</p>' : `<div class="result-actions">${scene?.canReplay?.() ? '<button id="watch-replay" class="button secondary">Xem lại cú bắn <span>▶</span></button>' : ''}<button id="again" class="button primary">Về sảnh · Chơi tiếp <span>↻</span></button></div>`;
-  const resultReason = game.winReason === 'control'
-    ? 'Đã chiếm đủ 2/2 lượt trung tâm.'
+  const resultReason = game.winReason === 'relay' || game.winReason === 'relay-time'
+    ? `Đã giao ${game.objective.scores[game.winner]} lõi năng lượng${game.winReason === 'relay-time' ? ' khi hết lượt' : ''}.`
     : game.winner === -1 ? 'Hai phe cùng hết cư dân chiến đấu.'
     : `Phe ${teams[1 - game.winner]} không còn cư dân chiến đấu sau ${game.turn} lượt.`;
   app.innerHTML = `${header()}<main class="results"><span class="eyebrow">HÀNG XÓM NHỚ NHAU LÂU</span><div class="trophy">✦</div><h1>${game.winner === -1 ? 'Hòa rồi!' : `${teams[game.winner]}<br>thắng rồi!`}</h1><p>${resultReason}</p>${actions}</main>`;

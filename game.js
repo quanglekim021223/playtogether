@@ -14,7 +14,7 @@ export const SKILL_LABELS = {
 };
 export const PHASE_DURATIONS = Object.freeze({ move: 12, aim: 30, flight: 7, settle: 2.6 });
 export const RULESETS = Object.freeze(['classic', 'control']);
-export const CONTROL_GUARD = Object.freeze({ damageReduction: .45, impulseReduction: .75 });
+export const RELAY_RULES = Object.freeze({ scoreTarget: 2, maxTurns: 24, respawnDelay: 4 });
 export function getWeatherConfig(type) {
   switch (type) {
     case 'rain':
@@ -41,8 +41,9 @@ export class Match {
     this.map = MAPS[mapId];
     this.options = options;
     this.ruleset = RULESETS.includes(options.ruleset) ? options.ruleset : 'classic';
+    const relayGoalNodeId = this.map.parts.find(part => part.kind === 'resident' && part.residentIndex === 0)?.nodeId;
     this.objective = this.ruleset === 'control'
-      ? { nodeId: this.map.dropNodes?.[0], owner: null, progress: 0, target: 2, guard: Math.round(CONTROL_GUARD.damageReduction * 100) }
+      ? { nodeId: this.map.dropNodes?.[0], goalNodeId: relayGoalNodeId, carrierId: null, carrierTeam: null, scores: [0, 0], target: RELAY_RULES.scoreTarget, maxTurns: RELAY_RULES.maxTurns, status: 'center', overtime: false }
       : null;
     this.winReason = null;
     this.rng = options.rng || Math.random;
@@ -53,7 +54,7 @@ export class Match {
     this.airdrop = null;
     this.airdropIdSeq = 0;
     this.nextAirdropTurn = 4;
-    this.shooterCursor = [0, 0]; this.aimShooterId = null;
+    this.shooterCursor = [0, 0]; this.aimShooterId = null; this.movedTurn = null;
     this.world = new C.World({ gravity: new C.Vec3(0, -9.82, 0) });
     this.world.solver.iterations = 15;
     this.world.allowSleep = true;
@@ -73,7 +74,7 @@ export class Match {
       const center = team === 0 ? -this.map.center : this.map.center;
       for (const p of this.map.parts) {
         this.add(p.kind, team, center + p.x * direction, p.y, p.size, p.mass, p.hp, p.material);
-        Object.assign(this.items.at(-1), { partId: p.id, weapon: p.weapon, spot: p.spot, nodeId: p.nodeId, terrace: p.terrace });
+        Object.assign(this.items.at(-1), { partId: p.id, weapon: p.weapon, spot: p.spot, nodeId: p.nodeId, spawnNodeId: p.nodeId, terrace: p.terrace });
       }
     }
     for (const object of this.map.arenaObjects || []) this.addArenaObject(object);
@@ -134,7 +135,8 @@ export class Match {
   spawnAirdrop(forcedBuff = null) {
     const dropNodeIds = this.map.dropNodes || (this.map.nodes ? this.map.nodes.filter(n => n.neutral || !n.supportId).map(n => n.id) : []);
     if (!dropNodeIds.length) return;
-    const availableNodeIds = dropNodeIds.filter(id => !this.items.some(i => i.kind === 'resident' && i.hp > 0 && i.nodeId === id));
+    const availableNodeIds = dropNodeIds.filter(id => id !== this.objective?.nodeId
+      && !this.items.some(i => i.kind === 'resident' && i.hp > 0 && i.nodeId === id));
     if (!availableNodeIds.length) return false;
     const chosenId = availableNodeIds[Math.floor(this.rng() * availableNodeIds.length)];
     const nodeDef = this.map.nodes.find(n => n.id === chosenId);
@@ -228,28 +230,39 @@ export class Match {
     support.body.quaternion.vmult(local, local);
     return support.body.position.vadd(local);
   }
+  isCoreCarrier(item) {
+    return Boolean(this.objective && item && this.objective.carrierId === item.id && item.hp > 0 && !item.eliminated);
+  }
+  movementSide(item) {
+    return this.isCoreCarrier(item) ? 1 - item.team : item.team;
+  }
   getAvailableMoves() {
     if (this.phase !== 'move' || !this.map.nodes) return [];
     const shooter = this.shooter;
     if (!shooter || shooter.hp <= 0) return [];
+    if (this.objective && this.movedTurn === this.turn) return [];
     const currentNode = this.map.nodes.find(n => n.id === shooter.nodeId);
     if (!currentNode) return [];
     const moves = [];
     const candidateIds = [...currentNode.neighbors];
-    // The control point is an arena action, not a normal building traversal:
-    // every active resident may rush it while it is free.
-    const holdingObjective = this.objective && currentNode.id === this.objective.nodeId
+    // A free energy core can be rushed from anywhere. Once picked up, the
+    // carrier traverses the mirrored graph on the opponent's building.
+    const coreFree = this.objective?.status === 'center' && this.objective.carrierId === null;
+    const atCore = coreFree && currentNode.id === this.objective.nodeId
       && shooter.body.position.distanceTo(this.nodePosition(this.objective.nodeId, 0)) < 1;
-    if (this.objective && !holdingObjective && !candidateIds.includes(this.objective.nodeId)) candidateIds.push(this.objective.nodeId);
+    if (coreFree && !atCore && !candidateIds.includes(this.objective.nodeId)) candidateIds.push(this.objective.nodeId);
+    const side = this.movementSide(shooter);
     for (const neighborId of candidateIds) {
       const neighborDef = this.map.nodes.find(n => n.id === neighborId);
       if (!neighborDef) continue;
-      if (!this.isNodeAvailable(neighborId, this.team)) continue;
-      const target = this.nodePosition(neighborDef, this.team);
-      const occupied = this.items.some(i => i.kind === 'resident' && i.hp > 0 && i.id !== shooter.id && i.nodeId === neighborId
-        && (neighborDef.neutral ? i.body.position.distanceTo(target) < 1 : i.team === this.team));
-      if (occupied) continue;
-      const move = { id: neighborDef.id, label: neighborDef.label, x: target.x, y: target.y };
+      if (!this.isNodeAvailable(neighborId, side)) continue;
+      const target = this.nodePosition(neighborDef, side);
+      const delivering = this.isCoreCarrier(shooter) && neighborDef.id === this.objective.goalNodeId;
+      const occupied = this.items.some(i => i.kind === 'resident' && i.hp > 0 && i.id !== shooter.id
+        && i.body.position.distanceTo(target) < 1);
+      if (occupied && !delivering) continue;
+      const takingCore = neighborDef.id === this.objective?.nodeId && coreFree;
+      const move = { id: neighborDef.id, label: delivering ? `Giao lõi · ${neighborDef.label}` : takingCore ? 'Cướp lõi ở trung tâm' : neighborDef.label, x: target.x, y: target.y, core: takingCore, deliversCore: delivering };
       if (this.airdrop && this.airdrop.landed && this.airdrop.nodeId === neighborDef.id) {
         move.hasAirdrop = true;
         move.airdropBuff = this.airdrop.buff;
@@ -260,6 +273,7 @@ export class Match {
   }
   moveShooter(targetNodeId) {
     if (this.phase !== 'move') return { ok: false, error: 'Chỉ được di chuyển trong pha move.' };
+    if (this.objective && this.movedTurn === this.turn) return { ok: false, error: 'Mỗi lượt chỉ được di chuyển một lần.' };
     const shooter = this.shooter;
     if (!shooter || shooter.hp <= 0) return { ok: false, error: 'Không tìm thấy xạ thủ hợp lệ.' };
     const moves = this.getAvailableMoves();
@@ -286,7 +300,7 @@ export class Match {
       this.event('collect_airdrop', { residentId: shooter.id, buff: collectedBuff, team: this.team });
     }
 
-    const target = this.nodePosition(nodeDef, this.team);
+    const target = this.nodePosition(nodeDef, this.movementSide(shooter));
 
     shooter.nodeId = targetNodeId;
     shooter.spot = nodeDef.label;
@@ -294,9 +308,20 @@ export class Match {
     shooter.body.velocity.set(0, 0, 0);
     shooter.body.angularVelocity.set(0, 0, 0);
     shooter.body.wakeUp();
+    this.movedTurn = this.turn;
 
     this.event('move', { shooterId: shooter.id, team: this.team, nodeId: targetNodeId, spot: nodeDef.label, buff: collectedBuff });
-    return { ok: true, nodeId: targetNodeId, spot: nodeDef.label, collectedBuff };
+    let pickedCore = false, scoredCore = false;
+    if (this.objective?.status === 'center' && targetNodeId === this.objective.nodeId) {
+      this.objective.carrierId = shooter.id;
+      this.objective.carrierTeam = shooter.team;
+      this.objective.status = 'carried';
+      pickedCore = true;
+      this.event('corePickup', { team: shooter.team, residentId: shooter.id, x: target.x, y: target.y });
+    } else if (this.isCoreCarrier(shooter) && targetNodeId === this.objective.goalNodeId) {
+      scoredCore = this.scoreCore(shooter);
+    }
+    return { ok: true, nodeId: targetNodeId, spot: nodeDef.label, collectedBuff, pickedCore, scoredCore };
   }
   add(kind, team, x, y, size, mass, hp, material = null) {
     if (kind !== 'resident' && !Object.hasOwn(MATERIALS, material)) throw new Error('Unknown material');
@@ -350,6 +375,10 @@ export class Match {
     proj.body.addEventListener('collide', event => this.pendingProjectileCollisions.push({ proj, hitBody: event.body, normal: event.contact.ni.clone(), velocity: proj.body.velocity.clone() }));
   }
   get shooter() {
+    if (this.objective?.carrierTeam === this.team) {
+      const carrier = this.items.find(item => item.id === this.objective.carrierId);
+      if (carrier?.hp > 0 && !carrier.eliminated) return carrier;
+    }
     const roster = this.items.filter(i => i.kind === 'resident' && i.team === this.team);
     for (let offset = 0; offset < roster.length; offset++) {
       const item = roster[(this.shooterCursor[this.team] + offset) % roster.length];
@@ -420,8 +449,9 @@ export class Match {
       if (hit.body !== shooter.body && hit.distance < nearest) { nearest = hit.distance; obstruction = hit.hitPointWorld.clone(); }
     });
     let damageMod = 1.0;
+    if (this.isCoreCarrier(shooter)) damageMod *= .8;
     if (shooter.buff?.type === 'power' && shooter.buff.charges > 0) {
-      damageMod = shooter.buff.damageMod || 1.5;
+      damageMod *= shooter.buff.damageMod || 1.5;
       shooter.buff.charges--;
       if (shooter.buff.charges <= 0) shooter.buff = null;
     }
@@ -516,12 +546,6 @@ export class Match {
     proj.hitItemId = hitItem?.id ?? null; proj.collided = true;
   }
   event(type, data = {}) { this.events.push({ ...data, id: ++this.eventSeq, time: this.time, type }); this.events = this.events.slice(-96); }
-  isControlGuarded(item) {
-    if (!this.objective || this.objective.owner === null || item?.kind !== 'resident'
-      || item.team !== this.objective.owner || item.hp <= 0 || item.eliminated) return false;
-    const center = this.nodePosition(this.objective.nodeId, 0);
-    return item.nodeId === this.objective.nodeId && item.body.position.distanceTo(center) < 1;
-  }
   damage(item, amount, cause = 'blast', impactPoint = null, impactStrength = 0) {
     if (item.destroyed || item.hp <= 0 || !Number.isFinite(amount) || amount <= 0) return;
     let effectiveAmount = amount;
@@ -533,15 +557,12 @@ export class Match {
       : 1;
     const reinforced = reinforcementScale < 1;
     effectiveAmount *= reinforcementScale;
-    const controlGuarded = ['blast', 'barrel', 'impact', 'pierce', 'bounce'].includes(cause) && this.isControlGuarded(item);
-    if (controlGuarded) effectiveAmount *= 1 - CONTROL_GUARD.damageReduction;
     if (item.kind === 'resident' && item.buff?.type === 'armor' && item.buff.charges > 0) {
       effectiveAmount *= 1 - (item.buff.reduction || 0.5);
       item.buff.charges--;
       if (item.buff.charges <= 0) item.buff = null;
       this.event('armor_absorb', { residentId: item.id, originalDamage: amount, damage: effectiveAmount });
     }
-    if (controlGuarded) this.event('controlGuard', { residentId: item.id, originalDamage: amount, damage: effectiveAmount });
     item.hp = Math.max(0, item.hp - effectiveAmount);
     if (item.kind === 'resident') return;
     const data = {
@@ -591,7 +612,6 @@ export class Match {
       if (towardBlast.lengthSquared() < .0001) towardBlast.set(0, 1, 0); else towardBlast.normalize();
       const halfExtent = item.size ? Math.max(.12, (Math.abs(towardBlast.x) * item.size[0] + Math.abs(towardBlast.y) * item.size[1]) * .5) : .25;
       const impactPoint = item.body.position.vadd(towardBlast.scale(halfExtent));
-      const controlGuarded = item.team !== -1 && this.isControlGuarded(item);
       if (item.team === -1) this.damageEnvironment(item, stats.damage * (0.45 + strength), cause);
       else this.damage(item, stats.damage * (0.45 + strength), cause, impactPoint, stats.impulse * strength);
       if (item.destroyed || item.body.mass <= 0) continue;
@@ -600,7 +620,7 @@ export class Match {
       const braced = item.kind !== 'resident' && (['beam', 'roof', 'bridge'].includes(item.kind)
         || this.map.nodes?.some(node => node.supportId === item.partId)
         || (item.kind === 'block' && item.size?.[1] >= 1.4));
-      const impulseScale = Math.min(braced ? .08 : 1, controlGuarded ? 1 - CONTROL_GUARD.impulseReduction : 1);
+      const impulseScale = braced ? .08 : 1;
       item.body.wakeUp(); item.body.applyImpulse(diff.scale(stats.impulse * strength * impulseScale), new C.Vec3(0, .15, 0));
     }
     if (this.airdrop?.landed && this.airdrop.body) {
@@ -761,37 +781,86 @@ export class Match {
     return { ok: false, error: 'Vũ khí không hỗ trợ kỹ năng.' };
   }
   nextTurn() {
-    if (this.finishIfEliminated()) return;
-    if (this.resolveControlAtTurnEnd()) return;
+    if (this.ruleset === 'classic' && this.finishIfEliminated()) return;
+    if (this.finishRelayByTurnLimit()) return;
     const roster = this.items.filter(i => i.kind === 'resident' && i.team === this.team);
     this.shooterCursor[this.team] = (roster.findIndex(i => i.id === this.firedShooterId) + 1) % roster.length;
-    this.team = 1 - this.team; this.turn++; this.wind = this.rollWind(); this.enterPhase('move', PHASE_DURATIONS.move); this.syncShooter();
+    this.team = 1 - this.team; this.turn++;
+    if (this.objective) this.prepareRelayTeam(this.team);
+    this.wind = this.rollWind(); this.enterPhase('move', PHASE_DURATIONS.move); this.syncShooter();
   }
-  resolveControlAtTurnEnd() {
-    if (!this.objective || this.phase === 'over') return false;
-    const node = this.map.nodes?.find(candidate => candidate.id === this.objective.nodeId);
-    if (!node || !this.isNodeAvailable(node.id, this.team)) {
-      if (this.objective.owner !== null || this.objective.progress) this.event('controlReset', { reason: 'blocked' });
-      this.objective.owner = null; this.objective.progress = 0; return false;
+  relaySpawnNode(item) {
+    const candidates = this.map.nodes.filter(node => !node.neutral && !node.supportId);
+    const preferred = candidates.find(node => node.id === this.objective?.goalNodeId);
+    const ordered = preferred ? [preferred, ...candidates.filter(node => node !== preferred)] : candidates;
+    return ordered.find(node => {
+      const target = this.nodePosition(node, item.team);
+      return this.isNodeAvailable(node.id, item.team) && !this.items.some(other => other !== item && other.kind === 'resident' && other.hp > 0 && other.body.position.distanceTo(target) < 1);
+    }) || ordered[0];
+  }
+  placeResidentAtBase(item) {
+    const node = this.relaySpawnNode(item);
+    if (!node) return false;
+    const position = this.nodePosition(node, item.team);
+    item.nodeId = node.id; item.spot = node.label;
+    item.body.position.copy(position);
+    item.body.velocity.set(0, 0, 0); item.body.angularVelocity.set(0, 0, 0);
+    item.body.quaternion.set(0, 0, 0, 1); item.body.force.set(0, 0, 0); item.body.torque.set(0, 0, 0);
+    item.body.wakeUp();
+    return true;
+  }
+  resetCore(reason = 'reset') {
+    if (!this.objective) return;
+    const previousCarrierId = this.objective.carrierId;
+    this.objective.carrierId = null; this.objective.carrierTeam = null; this.objective.status = 'center';
+    this.event('coreReset', { reason, previousCarrierId, nodeId: this.objective.nodeId });
+  }
+  scoreCore(carrier) {
+    if (!this.isCoreCarrier(carrier)) return false;
+    const team = carrier.team;
+    this.objective.scores[team]++;
+    this.event('coreScore', { team, residentId: carrier.id, scores: [...this.objective.scores], target: this.objective.target });
+    if (this.objective.overtime || this.objective.scores[team] >= this.objective.target) {
+      this.winner = team; this.winReason = 'relay'; this.phase = 'over';
+      this.event('relayWin', { team, scores: [...this.objective.scores] });
+      return true;
     }
-    const center = this.nodePosition(node, 0);
-    const occupants = this.items.filter(item => item.kind === 'resident' && item.hp > 0 && !item.eliminated
-      && item.nodeId === node.id && item.body.position.distanceTo(center) < 1);
-    const teams = [...new Set(occupants.map(item => item.team))];
-    if (teams.length !== 1) {
-      if (this.objective.owner !== null || this.objective.progress) this.event('controlReset', { reason: teams.length ? 'contested' : 'empty' });
-      this.objective.owner = null; this.objective.progress = 0; return false;
+    const roster = this.items.filter(item => item.kind === 'resident' && item.team === team);
+    this.shooterCursor[team] = Math.max(0, roster.findIndex(item => item.id === carrier.id));
+    this.resetCore('scored');
+    this.placeResidentAtBase(carrier);
+    return true;
+  }
+  eliminateRelayResident(item) {
+    if (this.objective?.carrierId === item.id) this.resetCore('carrier-out');
+    try { this.world.removeBody(item.body); } catch {}
+    item.eliminated = true; item.respawnAtTurn = this.turn + RELAY_RULES.respawnDelay;
+    this.event('residentOut', { residentId: item.id, team: item.team, respawnAtTurn: item.respawnAtTurn });
+  }
+  respawnResident(item, emergency = false) {
+    item.hp = item.maxHp; item.eliminated = false; item.respawnAtTurn = null; item.buff = null;
+    this.placeResidentAtBase(item);
+    if (!this.world.bodies.includes(item.body)) this.world.addBody(item.body);
+    this.event('residentRespawn', { residentId: item.id, team: item.team, emergency });
+  }
+  prepareRelayTeam(team) {
+    const roster = this.items.filter(item => item.kind === 'resident' && item.team === team);
+    for (const item of roster) if (item.eliminated && item.respawnAtTurn <= this.turn) this.respawnResident(item);
+    if (!roster.some(item => item.hp > 0 && !item.eliminated)) {
+      const first = roster.filter(item => item.eliminated).sort((a, b) => a.respawnAtTurn - b.respawnAtTurn)[0];
+      if (first) this.respawnResident(first, true);
     }
-    const owner = teams[0];
-    // The defending team keeps its point during the opponent's answer turn.
-    if (owner !== this.team) return false;
-    // Entering the zone claims it; only later completed turns count as time held.
-    if (this.objective.owner === owner) this.objective.progress++;
-    else { this.objective.owner = owner; this.objective.progress = 0; }
-    this.event('controlProgress', { team: owner, progress: this.objective.progress, target: this.objective.target, nodeId: node.id });
-    if (this.objective.progress < this.objective.target) return false;
-    this.winner = owner; this.winReason = 'control'; this.phase = 'over';
-    this.event('controlWin', { team: owner, nodeId: node.id });
+  }
+  finishRelayByTurnLimit() {
+    if (!this.objective || this.objective.overtime || this.turn < this.objective.maxTurns) return false;
+    const [coral, teal] = this.objective.scores;
+    if (coral === teal) {
+      this.objective.overtime = true;
+      this.event('relayOvertime', { scores: [...this.objective.scores] });
+      return false;
+    }
+    this.winner = coral > teal ? 0 : 1; this.winReason = 'relay-time'; this.phase = 'over';
+    this.event('relayWin', { team: this.winner, scores: [...this.objective.scores], timeLimit: true });
     return true;
   }
   step(dt = 1 / 60) {
@@ -872,9 +941,13 @@ export class Match {
     for (const item of this.items) {
       if (item.kind === 'resident') {
         if (Math.abs(item.body.position.x) > 29 || item.body.position.y < -1) item.hp = 0;
-        if (item.hp <= 0 && !item.eliminated) { this.world.removeBody(item.body); item.eliminated = true; }
+        if (item.hp <= 0 && !item.eliminated) {
+          if (this.objective) this.eliminateRelayResident(item);
+          else { this.world.removeBody(item.body); item.eliminated = true; }
+        }
       }
     }
+    if (this.objective && !this.shooter) this.prepareRelayTeam(this.team);
     if (this.phase === 'move') {
       if (this.finishIfEliminated()) return;
       this.syncShooter();
@@ -902,6 +975,7 @@ export class Match {
     }
   }
   finishIfEliminated() {
+    if (this.objective) return false;
     const alive = [0, 1].map(team => this.items.some(i => i.kind === 'resident' && i.team === team && i.hp > 0));
     if (alive.every(Boolean)) return false;
     this.winner = alive[0] === alive[1] ? -1 : alive[0] ? 0 : 1; this.winReason = 'elimination'; this.phase = 'over'; return true;
@@ -959,6 +1033,17 @@ export class Match {
       maxHp: this.airdrop.maxHp,
     };
   }
+  getObjectiveSnapshot() {
+    if (!this.objective) return null;
+    const carrier = this.items.find(item => item.id === this.objective.carrierId && item.hp > 0 && !item.eliminated);
+    const center = this.nodePosition(this.objective.nodeId, 0);
+    return {
+      ...this.objective,
+      scores: [...this.objective.scores],
+      x: carrier?.body.position.x ?? center.x,
+      y: carrier?.body.position.y ?? center.y,
+    };
+  }
   snapshot() {
     const pose = body => ({ p: [body.position.x, body.position.y, body.position.z], q: [body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w] });
     const mainProj = this.projectile;
@@ -966,7 +1051,7 @@ export class Match {
       time: this.time, mapId: this.map.id, mapName: this.map.name, shooterId: ['flight', 'settle'].includes(this.phase) ? this.firedShooterId : this.shooter?.id ?? null,
       phase: this.phase, team: this.team, turn: this.turn, remaining: Math.max(0, Math.ceil(this.deadline - this.time)), aim: this.aim,
       aimImpact: this.phase === 'aim' ? this.traceAim() : null, winner: this.winner, winReason: this.winReason, ruleset: this.ruleset,
-      objective: this.objective ? { ...this.objective, x: this.nodePosition(this.objective.nodeId, 0).x, y: this.nodePosition(this.objective.nodeId, 0).y } : null,
+      objective: this.getObjectiveSnapshot(),
       availableMoves: this.getAvailableMoves(),
       wind: Math.round(this.wind * 10) / 10,
       weather: { ...this.weather },
@@ -979,7 +1064,7 @@ export class Match {
         available: !mainProj.collided,
       } : null,
       items: this.items.filter(i => !i.destroyed).map(i => ({
-        id: i.id, kind: i.kind, team: i.team, size: i.size, hp: i.hp, maxHp: i.maxHp, material: i.material, weapon: i.weapon, spot: i.spot, nodeId: i.nodeId, terrace: i.terrace,
+        id: i.id, kind: i.kind, team: i.team, size: i.size, hp: i.hp, maxHp: i.maxHp, material: i.material, weapon: i.weapon, spot: i.spot, nodeId: i.nodeId, terrace: i.terrace, respawnAtTurn: i.respawnAtTurn ?? null,
         buff: i.buff ? { type: i.buff.type, charges: i.buff.charges } : null,
         crack: crackStage(i.hp, i.maxHp), ...pose(i.body)
       })),
