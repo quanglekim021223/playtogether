@@ -39,6 +39,18 @@ test('damage events include an authoritative contact point, normal and strength'
   assert.equal(event.type, 'hit'); assert.deepEqual(event.impact, impact.toArray());
   assert.ok(event.normal[0] > .99); assert.equal(event.impactStrength, 13.5);
 });
+test('load-bearing structure resists one explosion but repeated hits still break it', () => {
+  const game = new Match('tower');
+  const support = game.items.find(item => item.team === 1 && item.partId === 'tower-beam-0');
+  const initialHp = support.hp;
+  const impact = support.body.position.clone(); impact.x += support.size[0] / 2;
+  game.damage(support, 100, 'blast', impact);
+  assert.equal(support.destroyed, undefined);
+  assert.ok(Math.abs(support.hp - (initialHp - 58)) < 1e-9);
+  assert.equal(game.events.at(-1).reinforced, true);
+  game.damage(support, 100, 'blast', impact);
+  assert.equal(support.destroyed, true);
+});
 test('a falling glass block shatters on collision, a resting block remains intact', () => {
   const game = new Match();
   game.add('block', 0, 0, 8, [1, 1, 1], 1, 100, 'glass');

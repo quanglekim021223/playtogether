@@ -89,13 +89,14 @@ test('a finishing shot keeps the full settle phase before declaring the winner',
   assert.equal(game.phase, 'over'); assert.equal(game.winner, 0);
 });
 
-test('heavy bomb breaks support blocks and the enemy roof physically collapses', () => {
+test('one heavy bomb damages reinforced structure without flattening the whole tower', () => {
   const game = new Match(); game.wind = 0; game.shooterCursor[0] = 1; game.syncShooter();
+  const enemyRoof = game.items.find(i => i.kind === 'roof' && i.team === 1); const originalY = enemyRoof.body.position.y;
   game.readyAim();
   assert.equal(game.fire({ angle: 35, power: 60, weapon: 'heavy' }), true);
   for (let i = 0; i < 600 && game.turn === 1; i++) game.step();
-  assert.ok(game.items.some(i => i.team === 1 && i.destroyed));
-  assert.ok(game.items.find(i => i.kind === 'roof' && i.team === 1).body.position.y < 5);
+  assert.ok(game.items.some(i => i.team === 1 && i.kind !== 'resident' && i.hp < i.maxHp));
+  assert.ok(enemyRoof.body.position.y > originalY - 1, 'reinforced roof should survive the first heavy blast');
   assert.ok(game.items.find(i => i.kind === 'roof' && i.team === 0).body.position.y > 7);
 });
 

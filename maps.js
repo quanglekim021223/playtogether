@@ -1,15 +1,17 @@
 const defaultMaterial = kind => (kind === 'resident' ? null : (['beam', 'bridge'].includes(kind) ? 'wood' : 'brick'));
 const withId = (p, id) => { if (id) p.id = id; return p; };
 const part = (kind, x, y, size, mass, hp, material = null) => ({ kind, x, y, size, mass, hp, material: material || defaultMaterial(kind) });
-const pillar = (x, y, height = 1.9, width = 0.65, hp = 75) => part('block', x, y, [width, height, 1.7], 3, hp);
-const beam = (x, y, width, kind = 'beam', id = undefined) => withId(part(kind, x, y, [width, 0.5, 2.05], 4, 110), id);
+// Load-bearing pieces are deliberately heavier than facade props: a single
+// blast may open a room, but should not erase an entire building at once.
+const pillar = (x, y, height = 1.9, width = 0.72, hp = 105) => part('block', x, y, [width, height, 1.7], 6, hp);
+const beam = (x, y, width, kind = 'beam', id = undefined) => withId(part(kind, x, y, [width, 0.5, 2.05], 8, 145), id);
 const resident = (x, y) => part('resident', x, y, [0.46], 0.8, 100);
 const tower = [];
 for (let floor = 0; floor < 4; floor++) {
   const base = floor * 2.45;
   tower.push(pillar(-2.15, base + 0.95), pillar(2.15, base + 0.95), beam(0, base + 2.16, 5.3));
 }
-tower.push(withId(part('roof', 0, 10.2, [5.8, 0.7, 2.4], 3, 110), 'tower-roof'));
+tower.push(withId(part('roof', 0, 10.2, [5.8, 0.7, 2.4], 7, 155), 'tower-roof'));
 // A two-storey side wing has its own load path and can collapse independently.
 for (let floor = 0; floor < 2; floor++) {
   const base = floor * 2.45;
@@ -72,7 +74,7 @@ const frontRoom = townhouse.find(p => p.kind === 'beam' && p.x === 3.9 && p.y < 
 frontRoom.x = 4.85; frontRoom.size[0] = 4.5; frontRoom.id = 'townhouse-beam-front'; townhouse.push(pillar(6.6, .95));
 const landing = bridge.find(p => p.kind === 'beam' && p.x === 3 && p.y < 3);
 landing.x = 3.7; landing.size[0] = 4.3; landing.id = 'bridge-beam-front-1'; bridge.push(pillar(5.3, .95));
-function lookout(parts, x, height, id) { parts.push(withId(part('block', x, height / 2, [1.35, height, 1.8], 4, 65, 'wood'), id)); }
+function lookout(parts, x, height, id) { parts.push(withId(part('block', x, height / 2, [1.35, height, 1.8], 5, 95, 'wood'), id)); }
 lookout(tower, -6.6, 1.4, 'tower-lookout'); lookout(townhouse, -6.6, 1, 'townhouse-lookout'); lookout(bridge, 6.6, 1.4, 'bridge-lookout'); lookout(fortress, 6.5, 1.4, 'fortress-lookout');
 const roster = ['pebble', 'heavy', 'bloom', 'rocket', 'drill', 'pulse'];
 function populate(parts, spots, mapPrefix) {

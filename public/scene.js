@@ -303,6 +303,7 @@ export function createScene(container) {
     if (obj.userData.structureDecor || !item?.size || item.kind === 'resident') return;
     const [w, h, d = 1] = item.size; const group = new T.Group(); group.name = 'StructureDecor'; let count = 0;
     const add = (key, p, scale = 1) => { const model = decorClone(key, group, p, scale); if (model) count++; return model; };
+    const trim = (x, y, z, width, height, depth, color) => { box(x, y, z, width, height, depth, color, group); count++; };
     const sequence = Number(item.id) || 0;
     if (item.kind === 'beam' && w > 2.5 && sequence % 2 === 0) {
       add('window', [0, -h / 2 - .62, d / 2 + .08], Math.min(.85, w / 4));
@@ -313,6 +314,27 @@ export function createScene(container) {
       add('railing', [0, h / 2, d / 2], Math.min(1.7, w / 2));
     } else if (item.kind === 'block' && w > 1.05 && item.material !== 'glass') {
       add(sequence % 2 ? 'door' : 'window', [0, -h / 2, d / 2 + .08], Math.min(.85, w / 1.3));
+    }
+    if (item.kind === 'block' && h >= 1.4 && item.material !== 'glass') {
+      const stone = currentMap === 'fortress';
+      trim(0, -h / 2 + .09, 0, w + .18, .18, d + .12, stone ? 0x8b9997 : 0xe6c69c);
+      trim(0, h / 2 - .08, 0, w + .14, .16, d + .08, stone ? 0xb3bbb4 : 0xf1d6ae);
+    }
+    if (['beam', 'roof'].includes(item.kind)) {
+      const fascia = currentMap === 'fortress' ? 0x9ca6a1 : 0xe7c18f;
+      trim(0, -h / 2 + .055, d / 2 + .075, w + .12, .11, .15, fascia);
+      for (const x of [-w * .34, w * .34]) {
+        const bracket = box(x, -h / 2 - .18, d / 2 + .03, .13, .46, .16, currentMap === 'fortress' ? 0x687776 : 0x8f623e, group);
+        bracket.rotation.z = x < 0 ? -.48 : .48; count++;
+      }
+    }
+    if (item.terrace) {
+      const railScale = Math.min(1.2, w / 3.8);
+      add('railing', [-w * .23, h / 2 + .05, d / 2 + .02], railScale);
+      add('railing', [w * .23, h / 2 + .05, d / 2 + .02], railScale);
+    }
+    if (currentMap === 'fortress' && item.kind === 'roof') {
+      for (let i = 0; i < 5; i++) trim(-w * .4 + i * w * .2, h / 2 + .24, d / 2 - .12, Math.min(.42, w * .12), .48, .42, 0x879592);
     }
     if (!count) return;
     obj.add(group); obj.userData.structureDecor = group; container.dataset.structureDecor = String(Number(container.dataset.structureDecor || 0) + count);

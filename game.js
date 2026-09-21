@@ -406,7 +406,7 @@ export class Match {
     }
     const projectileId = ++this.projectileIdSeq;
     const body = new C.Body({ mass: WEAPONS[weapon].mass, shape: new C.Sphere(.22), position: obstruction || new C.Vec3(...origin) });
-    body.velocity.set(velocity.x, velocity.y, 0); body.linearDamping = 0;
+    body.velocity.set(velocity.x, velocity.y, 0); body.linearDamping = 0; body.collisionResponse = false;
     const proj = {
       id: projectileId,
       body,
@@ -493,6 +493,14 @@ export class Match {
   damage(item, amount, cause = 'blast', impactPoint = null, impactStrength = 0) {
     if (item.destroyed || item.hp <= 0 || !Number.isFinite(amount) || amount <= 0) return;
     let effectiveAmount = amount;
+    const criticalSupport = item.kind !== 'resident' && (['beam', 'roof', 'bridge'].includes(item.kind)
+      || this.map.nodes?.some(node => node.supportId === item.partId)
+      || (item.kind === 'block' && item.size?.[1] >= 1.4));
+    const reinforcementScale = criticalSupport && Boolean(impactPoint)
+      ? (['blast', 'barrel'].includes(cause) ? .58 : cause === 'impact' ? .45 : 1)
+      : 1;
+    const reinforced = reinforcementScale < 1;
+    effectiveAmount *= reinforcementScale;
     if (item.kind === 'resident' && item.buff?.type === 'armor' && item.buff.charges > 0) {
       effectiveAmount = amount * (1 - (item.buff.reduction || 0.5));
       item.buff.charges--;
@@ -503,8 +511,7 @@ export class Match {
     if (item.kind === 'resident') return;
     const data = {
       itemId: item.id, material: item.material, p: item.body.position.toArray(), q: item.body.quaternion.toArray(), size: item.size, cause,
-      criticalSupport: this.map.nodes?.some(node => node.supportId === item.partId)
-        || (item.kind === 'block' && item.size?.[1] >= 1.4),
+      criticalSupport, reinforced,
     };
     if (impactPoint) {
       const normal = impactPoint.vsub(item.body.position);
@@ -539,7 +546,11 @@ export class Match {
       if (item.destroyed || item.body.mass <= 0) continue;
       if (diff.length() < .001) diff.set(0, 1, 0); else diff.normalize();
       diff.y = Math.max(.3, diff.y); diff.z = 0;
-      item.body.wakeUp(); item.body.applyImpulse(diff.scale(stats.impulse * strength), new C.Vec3(0, .15, 0));
+      const braced = item.kind !== 'resident' && (['beam', 'roof', 'bridge'].includes(item.kind)
+        || this.map.nodes?.some(node => node.supportId === item.partId)
+        || (item.kind === 'block' && item.size?.[1] >= 1.4));
+      const impulseScale = braced ? .08 : 1;
+      item.body.wakeUp(); item.body.applyImpulse(diff.scale(stats.impulse * strength * impulseScale), new C.Vec3(0, .15, 0));
     }
     if (this.airdrop?.landed && this.airdrop.body) {
       const diff = this.airdrop.body.position.vsub(position);
@@ -614,7 +625,7 @@ export class Match {
     if (weapon === 'pebble') {
       const pId = ++this.projectileIdSeq;
       const secondBody = new C.Body({ mass: 1.6, shape: new C.Sphere(.18), position: new C.Vec3(body.position.x, body.position.y + 0.25, 0) });
-      secondBody.velocity.set(body.velocity.x * 0.85, body.velocity.y * 0.85 + 1.2, 0);
+      secondBody.velocity.set(body.velocity.x * 0.85, body.velocity.y * 0.85 + 1.2, 0); secondBody.collisionResponse = false;
       secondBody.linearDamping = 0;
       const secondProj = {
         id: pId,
@@ -655,6 +666,7 @@ export class Match {
       for (const spread of spreads) {
         const cId = ++this.projectileIdSeq;
         const cBody = new C.Body({ mass: 0.9, shape: new C.Sphere(.15), position: new C.Vec3(pos.x + spread * 0.12, pos.y, 0) });
+        cBody.collisionResponse = false;
         cBody.velocity.set(baseVel.x * .72 + spread, -Math.max(2.5, Math.abs(baseVel.y) * .28), 0);
         cBody.linearDamping = 0;
         const cProj = {

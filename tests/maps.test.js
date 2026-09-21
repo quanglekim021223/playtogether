@@ -51,7 +51,7 @@ for (const mapId of Object.keys(MAPS)) {
     }
     for (const item of state.items) assert.ok(Math.abs(item.p[0]) + item.size[0] / 2 < 23, 'expanded homes must stay on the playable island');
   });
-  test(`${mapId}: real shots from either team destroy structure and harm residents`, () => {
+  test(`${mapId}: real shots from either team damage structure and harm residents`, () => {
     // Bridge needs a little more power to clear the new center-field interactives.
     const [angle, power] = mapId === 'bridge' ? [25, 30] : [25, 20];
     for (const team of [0, 1]) {
@@ -61,7 +61,7 @@ for (const mapId of Object.keys(MAPS)) {
       assert.equal(game.fire({ angle, power, weapon: game.shooter.weapon }), true);
       assert.deepEqual(game.projectile.body.position.toArray(), origin);
       for (let i = 0; i < 650 && game.turn === 1 && game.phase !== 'over'; i++) game.step();
-      assert.ok(game.items.some(i => i.team !== team && i.destroyed), 'opponent structure should break');
+      assert.ok(game.items.some(i => i.team !== team && i.kind !== 'resident' && (i.destroyed || i.hp < i.maxHp)), 'opponent structure should take damage');
       assert.ok(game.items.some(i => i.team !== team && i.kind === 'resident' && i.hp < 100), 'opponent residents should take damage');
       assert.ok(game.events.some(e => e.type === 'shot' && e.shooterId !== undefined));
     }
