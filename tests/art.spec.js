@@ -174,6 +174,7 @@ test('environment meshes render and a fuel blast produces bounded effects and au
   await expect(page.locator('#scene')).toHaveAttribute('data-architecture-buildings', '16');
   await expect(page.locator('#scene')).toHaveAttribute('data-water-quality', /^(balanced|high)$/);
   await expect(page.locator('#scene')).toHaveAttribute('data-environment-motion', 'gerstner-water-boats-clouds-spray');
+  await expect(page.locator('#scene')).toHaveAttribute('data-arena-scale', 'expanded');
   const firstMotion = await page.evaluate(() => window.environmentScene.environmentMotion());
   await page.waitForTimeout(180);
   const secondMotion = await page.evaluate(() => window.environmentScene.environmentMotion());

@@ -72,6 +72,7 @@ export function createScene(container) {
   container.dataset.headlandQuality = environment.headlandQuality; container.dataset.headlandScatter = String(environment.headlandScatter);
   container.dataset.architectureQuality = environment.architectureQuality; container.dataset.architectureBuildings = String(environment.architectureBuildings);
   container.dataset.environmentMotion = environment.motionLayers;
+  container.dataset.arenaScale = 'expanded';
   environment.lightingReady.then(source => { container.dataset.environmentLighting = source; });
   environment.backgroundReady.then(source => { container.dataset.environmentBackdrop = source; });
   const camera = new T.PerspectiveCamera(36, 1, 0.1, 400);
@@ -104,22 +105,22 @@ export function createScene(container) {
   function sphere(x, y, z, r, color, parent) { const m = mesh(sphereGeometry, color, parent); m.position.set(x, y, z); m.scale.setScalar(r); return m; }
   // Keep the simple island only as a fallback if the sculpted GLB cannot load.
   const arenaFallback = new T.Group(); scene.add(arenaFallback);
-  box(0, -1.25, 0, 47, 2.2, 12, 0x766f63, arenaFallback);
-  box(0, -0.45, 0, 47.5, 0.7, 12.5, 0xc7b79a, arenaFallback);
-  box(0, -0.12, 0, 48, 0.25, 13, 0xe8d9b7, arenaFallback);
-  box(0, 0.01, 5.85, 46.5, 0.06, 1.15, 0xc7b79a, arenaFallback);
-  box(0, 0.005, 3.8, 46, 0.06, 1.15, 0xe0ccaa, arenaFallback);
-  for (let x = -22; x <= 22; x += 1.6) box(x, 0.045, 3.8, 1.35, 0.055, 0.8, 0xeadbc0, arenaFallback);
-  box(0, -2.7, -0.4, 43, 0.8, 10, 0x807b6c, arenaFallback);
+  box(0, -1.25, 0, 57, 2.2, 12, 0x766f63, arenaFallback);
+  box(0, -0.45, 0, 57.5, 0.7, 12.5, 0xc7b79a, arenaFallback);
+  box(0, -0.12, 0, 58, 0.25, 13, 0xe8d9b7, arenaFallback);
+  box(0, 0.01, 5.85, 56.5, 0.06, 1.15, 0xc7b79a, arenaFallback);
+  box(0, 0.005, 3.8, 56, 0.06, 1.15, 0xe0ccaa, arenaFallback);
+  for (let x = -27; x <= 27; x += 1.6) box(x, 0.045, 3.8, 1.35, 0.055, 0.8, 0xeadbc0, arenaFallback);
+  box(0, -2.7, -0.4, 53, 0.8, 10, 0x807b6c, arenaFallback);
   for (let i = 0; i < 24; i++) {
-    const x = -22.5 + i * 1.9;
+    const x = -27.5 + i * 2.3;
     const rock = mesh(new T.DodecahedronGeometry(0.7 + (i % 3) * 0.16, 0), i % 2 ? 0xa1987e : 0x8b8572, arenaFallback);
     rock.position.set(x, -1.5 - (i % 3) * 0.18, 5.8); rock.rotation.z = i * 2;
   }
   const beachPebbles = new T.InstancedMesh(new T.DodecahedronGeometry(.12, 0), new T.MeshStandardMaterial({ color: 0x9f927a, roughness: 1 }), 44);
   const beachTransform = new T.Object3D();
   for (let i = 0; i < 44; i++) {
-    beachTransform.position.set(-22 + (i * 9.73 % 44), .16, 4.55 + Math.sin(i * 1.41) * .55); beachTransform.rotation.set(i * .7, i * 1.9, i * .37);
+    beachTransform.position.set(-27 + (i * 11.93 % 54), .16, 4.55 + Math.sin(i * 1.41) * .55); beachTransform.rotation.set(i * .7, i * 1.9, i * .37);
     const size = .55 + i % 4 * .18; beachTransform.scale.set(size, .45 + i % 3 * .12, size); beachTransform.updateMatrix(); beachPebbles.setMatrixAt(i, beachTransform.matrix);
   }
   beachPebbles.castShadow = true; beachPebbles.receiveShadow = true; scene.add(beachPebbles);
@@ -164,7 +165,7 @@ export function createScene(container) {
   }
   const grassSpots = [];
   for (let i = 0; i < 2600 && grassSpots.length < 460; i++) {
-    const x = -23 + random01(i, 1) * 46, z = -5.9 + random01(i, 2) * 11.8;
+    const x = -28 + random01(i, 1) * 56, z = -5.9 + random01(i, 2) * 11.8;
     if (random01(i, 3) < grassDensity(x, z)) grassSpots.push({ x, z, scale: .46 + random01(i, 4) * .72, angle: random01(i, 5) * Math.PI });
   }
   function grassInstances(spots, name) {
@@ -187,9 +188,9 @@ export function createScene(container) {
     sphere(0, .7, 0, 1.4, 0x588873, crown); sphere(-.7, .5, .3, .9, 0x89ab74, crown); sphere(.5, 1.3, 0, .9, 0xa9bf80, crown);
     for (let i = 0; i < 5; i++) sphere(Math.cos(i * 2) * .9, .75 + Math.sin(i * 1.8) * .65, .85, .12, 0xe9ac69, crown);
   }
-  [-21, -18, 18, 21].forEach((x, i) => tree(x, -3.8, 0.85 + (i % 2) * 0.3));
+  [-27, -24, 24, 27].forEach((x, i) => tree(x, -3.8, 0.85 + (i % 2) * 0.3));
   for (let i = 0; i < 18; i++) {
-    const x = -22 + i * 2.6;
+    const x = -27 + i * 3.18;
     for (let j = 0; j < 3; j++) sphere(x + j * 0.13, 0.14 + j * 0.06, 5.3, 0.09, [0xfff3c4, 0xf2a28c, 0xf0d477][i % 3]);
   }
   for (const x of [-7, 7]) {
@@ -198,12 +199,12 @@ export function createScene(container) {
   }
   const pennants = [];
   for (let team = 0; team < 2; team++) {
-    const x = team === 0 ? -18 : 18;
+    const x = team === 0 ? -24 : 24;
     box(x, 3.1, -1, 0.12, 6.2, 0.12, 0xf6e5c6);
     const flag = box(x + 0.7, 5.6, -1, 1.45, 0.85, 0.06, COLORS[team]); pennants.push(flag);
   }
   // Garden details stay outside the collision plane; all structural details follow their body.
-  for (const x of [-21.6, 21.6]) {
+  for (const x of [-27.2, 27.2]) {
     box(x, .4, 2.9, .1, .8, .1, 0x6c8584);
     box(x, .95, 2.9, .72, .5, .52, x < 0 ? COLORS[0] : COLORS[1]);
     box(x, .96, 3.17, .45, .055, .025, 0x263e47);
@@ -993,7 +994,7 @@ export function createScene(container) {
     const presentationScale = impactPaused ? .25 : replay ? (replay.stage === 'impact' || now < replay.impactSlowUntil ? .24 : replay.baseSpeed) : 1;
     const visualDt = dt * presentationScale;
     const portrait = width / height < 1.15;
-    const distance = Math.max(43, 79.5 / (width / height));
+    const distance = Math.max(48, 88.5 / (width / height));
     const closeMove = mode === 'game' && gamePhase === 'move' && activeShooter && !overview && !reducedMotion.matches;
     const tacticalAim = mode === 'game' && gamePhase === 'aim' && activeShooter && !overview && !reducedMotion.matches;
     const focusingImpact = impactFocus && now < impactFocus.until;
@@ -1008,7 +1009,7 @@ export function createScene(container) {
       : closeMove ? new T.Vector3(activeShooter.p[0] + (activeShooter.team === 0 ? 3 : -3), activeShooter.p[1] + 1.2, 0)
       : tacticalAim ? tacticalTarget
       : new T.Vector3(mode === 'lobby' && !portrait ? -4.6 : 0, mode === 'home' ? 10 : 2, 0);
-    const desiredDistance = focusingImpact || replayImpact ? Math.max(29, 48 / (width / height)) : replayShooter ? Math.max(20, 32 / (width / height)) : replayProjectile ? Math.max(25, 40 / (width / height)) : closeMove ? Math.max(22, 34 / (width / height)) : tacticalAim ? Math.max(41, 72 / (width / height)) : mode === 'home' ? Math.max(distance, 57) : distance;
+    const desiredDistance = focusingImpact || replayImpact ? Math.max(29, 48 / (width / height)) : replayShooter ? Math.max(20, 32 / (width / height)) : replayProjectile ? Math.max(25, 40 / (width / height)) : closeMove ? Math.max(23, 36 / (width / height)) : tacticalAim ? Math.max(44, 78 / (width / height)) : mode === 'home' ? Math.max(distance, 62) : distance;
     const blend = reducedMotion.matches ? 1 : 1 - Math.exp(-visualDt * 5);
     viewTarget.lerp(target, blend); viewDistance += (desiredDistance - viewDistance) * blend;
     camera.position.set(viewTarget.x + (mode === 'lobby' && !portrait ? 6.6 : 0), viewTarget.y + Math.max(10, viewDistance * .32), viewDistance);

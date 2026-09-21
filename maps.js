@@ -167,6 +167,29 @@ const fortressNodes = [
   { id: 'fortress-drop-center', label: 'Sân trung tâm', x: 0, y: 0.53, neutral: true, supportId: null, neighbors: ['fortress-node-6', 'fortress-node-7'] },
 ];
 
+// Use more of the coastal arena while preserving every authored support and
+// movement relationship. Residents keep their original body size, but their
+// feet follow the enlarged floors.
+function expandArchitecture(parts, nodes, xScale = 1.12, yScale = 1.06) {
+  for (const part of parts) {
+    part.x *= xScale;
+    if (part.kind === 'resident') part.y = (part.y - .46) * yScale + .46;
+    else {
+      part.y *= yScale;
+      part.size[0] *= xScale; part.size[1] *= yScale;
+      if (part.size[2]) part.size[2] *= 1.04;
+    }
+  }
+  for (const node of nodes) {
+    node.x *= xScale;
+    node.y = (node.y - .46) * yScale + .46;
+  }
+}
+expandArchitecture(townhouse, townhouseNodes);
+expandArchitecture(tower, towerNodes);
+expandArchitecture(bridge, bridgeNodes);
+expandArchitecture(fortress, fortressNodes);
+
 // Shared neutral objects sit in the open middle lane. They use world coordinates,
 // while buildings above are authored locally and mirrored per team.
 const arenaObjects = [
@@ -177,10 +200,10 @@ const arenaObjects = [
 ];
 
 export const MAPS = {
-  townhouse: { id: 'townhouse', name: 'Nhà phố', tag: 'BỐN GIAN · BA TẦNG', description: 'Khu nhà bốn gian với tầng áp mái và sáu cư dân. Chọn phòng và nhắm từng trụ.', tip: 'Thử phá trụ giữa hai gian nhà.', center: 15, parts: townhouse, nodes: townhouseNodes, dropNodes: ['townhouse-drop-center'], arenaObjects },
-  tower: { id: 'tower', name: 'Tháp cao', tag: 'ĐỔ DÂY CHUYỀN', description: 'Tháp bốn tầng và cánh phụ hai tầng, sáu cư dân. Phá chân trụ để kéo cả tháp xuống.', tip: 'Bắn từ ban công; phá trụ tạo phản ứng dây chuyền.', center: 13, parts: tower, nodes: towerNodes, dropNodes: ['tower-drop-center'], arenaObjects },
-  bridge: { id: 'bridge', name: 'Cầu trên không', tag: 'HAI THÁP · MỘT CẦU', description: 'Hai tháp ba tầng, sáu cư dân và cầu gỗ trên cao. Cư dân canh trên cầu, mái tháp và sân.', tip: 'Bắn cầu nối để hạ cư dân trên cao.', center: 15, parts: bridge, nodes: bridgeNodes, dropNodes: ['bridge-drop-center'], arenaObjects },
-  fortress: { id: 'fortress', name: 'Pháo đài', tag: 'TƯỜNG CHẮN PHÍA TRƯỚC', description: 'Thành ba tầng, sáu cư dân, tháp gác và tường đá. Bắn vòng qua hoặc phá tường.', tip: 'Nâng góc từ chòi gác để vượt tường chắn.', center: 15, parts: fortress, nodes: fortressNodes, dropNodes: ['fortress-drop-center'], arenaObjects },
+  townhouse: { id: 'townhouse', name: 'Nhà phố', tag: 'BỐN GIAN · BA TẦNG', description: 'Dãy nhà phố mở rộng với sân thượng, hiên và sáu cư dân. Chọn phòng và nhắm từng trụ.', tip: 'Thử phá trụ giữa hai gian nhà.', center: 16.2, parts: townhouse, nodes: townhouseNodes, dropNodes: ['townhouse-drop-center'], arenaObjects },
+  tower: { id: 'tower', name: 'Tháp cao', tag: 'THÁP BẬC · CÁNH PHỤ', description: 'Tháp bậc bốn tầng, cánh phụ hai tầng và sáu cư dân trên một chiến tuyến rộng.', tip: 'Bắn từ ban công; phá nhiều điểm chịu lực để tạo phản ứng dây chuyền.', center: 16.2, parts: tower, nodes: towerNodes, dropNodes: ['tower-drop-center'], arenaObjects },
+  bridge: { id: 'bridge', name: 'Cầu trên không', tag: 'HAI THÁP · CẦU DÀI', description: 'Hai tháp canh lớn nối bằng cầu gỗ trên cao, với nhiều tuyến bắn ở cả hai đầu.', tip: 'Bắn cầu nối để cô lập cư dân trên cao.', center: 16.2, parts: bridge, nodes: bridgeNodes, dropNodes: ['bridge-drop-center'], arenaObjects },
+  fortress: { id: 'fortress', name: 'Pháo đài', tag: 'THÀNH RỘNG · THÁP GÁC', description: 'Pháo đài đá mở rộng với vọng lâu, tường chắn và nhiều lớp kết cấu chịu lực.', tip: 'Nâng góc từ chòi gác để vượt tường chắn.', center: 16.2, parts: fortress, nodes: fortressNodes, dropNodes: ['fortress-drop-center'], arenaObjects },
 };
 export const DEFAULT_MAP = 'tower';
 export const MAP_CATALOG = Object.values(MAPS).map(({ parts, nodes, dropNodes: _dropNodes, arenaObjects: _arenaObjects, ...map }) => ({ ...map, thumbnail: parts.map(({ kind, x, y, size, material }) => ({ kind, x, y, size, material })) }));

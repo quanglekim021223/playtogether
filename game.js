@@ -383,7 +383,7 @@ export class Match {
       const to = new C.Vec3(origin[0] + velocity.x * t + windX, origin[1] + velocity.y * t - g * t * t, 0);
       const hit = cast(from, to);
       if (hit) return hit;
-      if (Math.abs(to.x) > 28 || to.y < -1) return { p: [to.x, Math.max(0, to.y), 0], itemId: null, kind: 'out', team: null, blockedByOwn: false };
+      if (Math.abs(to.x) > 34 || to.y < -1) return { p: [to.x, Math.max(0, to.y), 0], itemId: null, kind: 'out', team: null, blockedByOwn: false };
       from = to;
     }
     return { p: [from.x, Math.max(0, from.y), 0], itemId: null, kind: 'out', team: null, blockedByOwn: false };
@@ -761,7 +761,7 @@ export class Match {
     this.pendingImpacts.clear();
     for (const item of this.items) {
       if (item.kind === 'resident') {
-        if (Math.abs(item.body.position.x) > 23 || item.body.position.y < -1) item.hp = 0;
+        if (Math.abs(item.body.position.x) > 29 || item.body.position.y < -1) item.hp = 0;
         if (item.hp <= 0 && !item.eliminated) { this.world.removeBody(item.body); item.eliminated = true; }
       }
     }
@@ -777,7 +777,7 @@ export class Match {
     }
     if (this.phase === 'flight') {
       for (const p of Array.from(this.projectiles.values())) {
-        if (p.collided || this.time >= this.deadline || Math.abs(p.body.position.x) > 26 || p.body.position.y < -1) {
+        if (p.collided || this.time >= this.deadline || Math.abs(p.body.position.x) > 34 || p.body.position.y < -1) {
           this.explode(p.id);
         }
       }

@@ -31,7 +31,7 @@ for (const mapId of Object.keys(MAPS)) {
     assert.equal(state.items.filter(i => i.kind === 'resident').length, 12);
     for (const [index, item] of game.items.entries()) {
       const designed = MAPS[mapId].parts[index % MAPS[mapId].parts.length];
-      assert.ok(Math.abs(item.body.position.y - designed.y) < 0.35, `part ${index} fell during settling`);
+      assert.ok(Math.abs(item.body.position.y - designed.y) < 0.4, `part ${index} fell during settling`);
       assert.ok(item.body.position.distanceTo({ x: initial.items[index].p[0], y: initial.items[index].p[1], z: initial.items[index].p[2] }) < 0.12, `part ${index} moved while idle`);
       if (item.kind === 'resident') assert.equal(item.hp, 100);
     }
@@ -49,11 +49,11 @@ for (const mapId of Object.keys(MAPS)) {
         assert.ok(Math.hypot(dx, dy) > .42, `${actor.weapon} must not start inside a wall`);
       }
     }
-    for (const item of state.items) assert.ok(Math.abs(item.p[0]) + item.size[0] / 2 < 23, 'expanded homes must stay on the playable island');
+    for (const item of state.items) assert.ok(Math.abs(item.p[0]) + item.size[0] / 2 < 29, 'expanded homes must stay on the playable island');
   });
   test(`${mapId}: real shots from either team damage structure and harm residents`, () => {
     // Bridge needs a little more power to clear the new center-field interactives.
-    const [angle, power] = mapId === 'bridge' ? [25, 30] : [25, 20];
+    const [angle, power] = mapId === 'bridge' ? [25, 38] : [25, 32];
     for (const team of [0, 1]) {
       const game = new Match(mapId, { weather: 'clear' }); game.team = team; game.shooterCursor[team] = 1; game.wind = 0; game.syncShooter();
       const origin = muzzlePosition(game.shooter.body.position.toArray(), team, angle);
