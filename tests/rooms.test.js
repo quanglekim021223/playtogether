@@ -30,9 +30,14 @@ test('room authorization, capacity, turn ownership, reconnect, and QR', async t 
   assert.ok((await send(players[0].c, 'team', { team: 1 })).error);
   assert.ok((await send(players[0].c, 'start', { mode: 'party' })).error);
   assert.ok((await send(players[0].c, 'selectMap', { mapId: 'bridge' })).error);
+  assert.ok((await send(players[0].c, 'selectRuleset', { ruleset: 'control' })).error);
+  assert.ok((await send(host, 'selectRuleset', { ruleset: 'unknown' })).error);
   assert.ok((await send(host, 'selectMap', { mapId: 'bridge' })).ok);
+  assert.ok((await send(host, 'selectRuleset', { ruleset: 'control' })).ok);
   assert.ok((await send(host, 'start', { mode: 'party' })).ok);
   assert.equal(server.rooms.get(code).game.map.id, 'bridge');
+  assert.equal(server.rooms.get(code).game.ruleset, 'control');
+  assert.equal(server.rooms.get(code).game.snapshot().objective.nodeId, 'bridge-drop-center');
   assert.ok((await send(host, 'selectMap', { mapId: 'tower' })).error);
   assert.ok((await send(players[1].c, 'fire', shot())).error);
   assert.ok((await send(players[0].c, 'fire', shot())).error);

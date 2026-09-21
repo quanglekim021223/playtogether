@@ -13,6 +13,8 @@ export const SKILL_LABELS = {
   pulse: '◎ Sóng chấn',
 };
 export const PHASE_DURATIONS = Object.freeze({ move: 12, aim: 30, flight: 7, settle: 2.6 });
+export const RULESETS = Object.freeze(['classic', 'control']);
+export const CONTROL_GUARD = Object.freeze({ damageReduction: .45, impulseReduction: .75 });
 export function getWeatherConfig(type) {
   switch (type) {
     case 'rain':
@@ -38,6 +40,11 @@ export class Match {
     if (!Object.hasOwn(MAPS, mapId)) throw new Error('Unknown map');
     this.map = MAPS[mapId];
     this.options = options;
+    this.ruleset = RULESETS.includes(options.ruleset) ? options.ruleset : 'classic';
+    this.objective = this.ruleset === 'control'
+      ? { nodeId: this.map.dropNodes?.[0], owner: null, progress: 0, target: 2, guard: Math.round(CONTROL_GUARD.damageReduction * 100) }
+      : null;
+    this.winReason = null;
     this.rng = options.rng || Math.random;
     // Engine instances stay deterministic by default; live party rooms opt into a weighted roll.
     this.weather = options.weather
@@ -228,13 +235,20 @@ export class Match {
     const currentNode = this.map.nodes.find(n => n.id === shooter.nodeId);
     if (!currentNode) return [];
     const moves = [];
-    for (const neighborId of currentNode.neighbors) {
+    const candidateIds = [...currentNode.neighbors];
+    // The control point is an arena action, not a normal building traversal:
+    // every active resident may rush it while it is free.
+    const holdingObjective = this.objective && currentNode.id === this.objective.nodeId
+      && shooter.body.position.distanceTo(this.nodePosition(this.objective.nodeId, 0)) < 1;
+    if (this.objective && !holdingObjective && !candidateIds.includes(this.objective.nodeId)) candidateIds.push(this.objective.nodeId);
+    for (const neighborId of candidateIds) {
       const neighborDef = this.map.nodes.find(n => n.id === neighborId);
       if (!neighborDef) continue;
       if (!this.isNodeAvailable(neighborId, this.team)) continue;
-      const occupied = this.items.some(i => i.kind === 'resident' && i.hp > 0 && i.id !== shooter.id && i.nodeId === neighborId && (neighborDef.neutral || i.team === this.team));
-      if (occupied) continue;
       const target = this.nodePosition(neighborDef, this.team);
+      const occupied = this.items.some(i => i.kind === 'resident' && i.hp > 0 && i.id !== shooter.id && i.nodeId === neighborId
+        && (neighborDef.neutral ? i.body.position.distanceTo(target) < 1 : i.team === this.team));
+      if (occupied) continue;
       const move = { id: neighborDef.id, label: neighborDef.label, x: target.x, y: target.y };
       if (this.airdrop && this.airdrop.landed && this.airdrop.nodeId === neighborDef.id) {
         move.hasAirdrop = true;
@@ -502,6 +516,12 @@ export class Match {
     proj.hitItemId = hitItem?.id ?? null; proj.collided = true;
   }
   event(type, data = {}) { this.events.push({ ...data, id: ++this.eventSeq, time: this.time, type }); this.events = this.events.slice(-96); }
+  isControlGuarded(item) {
+    if (!this.objective || this.objective.owner === null || item?.kind !== 'resident'
+      || item.team !== this.objective.owner || item.hp <= 0 || item.eliminated) return false;
+    const center = this.nodePosition(this.objective.nodeId, 0);
+    return item.nodeId === this.objective.nodeId && item.body.position.distanceTo(center) < 1;
+  }
   damage(item, amount, cause = 'blast', impactPoint = null, impactStrength = 0) {
     if (item.destroyed || item.hp <= 0 || !Number.isFinite(amount) || amount <= 0) return;
     let effectiveAmount = amount;
@@ -513,12 +533,15 @@ export class Match {
       : 1;
     const reinforced = reinforcementScale < 1;
     effectiveAmount *= reinforcementScale;
+    const controlGuarded = ['blast', 'barrel', 'impact', 'pierce', 'bounce'].includes(cause) && this.isControlGuarded(item);
+    if (controlGuarded) effectiveAmount *= 1 - CONTROL_GUARD.damageReduction;
     if (item.kind === 'resident' && item.buff?.type === 'armor' && item.buff.charges > 0) {
-      effectiveAmount = amount * (1 - (item.buff.reduction || 0.5));
+      effectiveAmount *= 1 - (item.buff.reduction || 0.5);
       item.buff.charges--;
       if (item.buff.charges <= 0) item.buff = null;
       this.event('armor_absorb', { residentId: item.id, originalDamage: amount, damage: effectiveAmount });
     }
+    if (controlGuarded) this.event('controlGuard', { residentId: item.id, originalDamage: amount, damage: effectiveAmount });
     item.hp = Math.max(0, item.hp - effectiveAmount);
     if (item.kind === 'resident') return;
     const data = {
@@ -568,6 +591,7 @@ export class Match {
       if (towardBlast.lengthSquared() < .0001) towardBlast.set(0, 1, 0); else towardBlast.normalize();
       const halfExtent = item.size ? Math.max(.12, (Math.abs(towardBlast.x) * item.size[0] + Math.abs(towardBlast.y) * item.size[1]) * .5) : .25;
       const impactPoint = item.body.position.vadd(towardBlast.scale(halfExtent));
+      const controlGuarded = item.team !== -1 && this.isControlGuarded(item);
       if (item.team === -1) this.damageEnvironment(item, stats.damage * (0.45 + strength), cause);
       else this.damage(item, stats.damage * (0.45 + strength), cause, impactPoint, stats.impulse * strength);
       if (item.destroyed || item.body.mass <= 0) continue;
@@ -576,7 +600,7 @@ export class Match {
       const braced = item.kind !== 'resident' && (['beam', 'roof', 'bridge'].includes(item.kind)
         || this.map.nodes?.some(node => node.supportId === item.partId)
         || (item.kind === 'block' && item.size?.[1] >= 1.4));
-      const impulseScale = braced ? .08 : 1;
+      const impulseScale = Math.min(braced ? .08 : 1, controlGuarded ? 1 - CONTROL_GUARD.impulseReduction : 1);
       item.body.wakeUp(); item.body.applyImpulse(diff.scale(stats.impulse * strength * impulseScale), new C.Vec3(0, .15, 0));
     }
     if (this.airdrop?.landed && this.airdrop.body) {
@@ -738,9 +762,37 @@ export class Match {
   }
   nextTurn() {
     if (this.finishIfEliminated()) return;
+    if (this.resolveControlAtTurnEnd()) return;
     const roster = this.items.filter(i => i.kind === 'resident' && i.team === this.team);
     this.shooterCursor[this.team] = (roster.findIndex(i => i.id === this.firedShooterId) + 1) % roster.length;
     this.team = 1 - this.team; this.turn++; this.wind = this.rollWind(); this.enterPhase('move', PHASE_DURATIONS.move); this.syncShooter();
+  }
+  resolveControlAtTurnEnd() {
+    if (!this.objective || this.phase === 'over') return false;
+    const node = this.map.nodes?.find(candidate => candidate.id === this.objective.nodeId);
+    if (!node || !this.isNodeAvailable(node.id, this.team)) {
+      if (this.objective.owner !== null || this.objective.progress) this.event('controlReset', { reason: 'blocked' });
+      this.objective.owner = null; this.objective.progress = 0; return false;
+    }
+    const center = this.nodePosition(node, 0);
+    const occupants = this.items.filter(item => item.kind === 'resident' && item.hp > 0 && !item.eliminated
+      && item.nodeId === node.id && item.body.position.distanceTo(center) < 1);
+    const teams = [...new Set(occupants.map(item => item.team))];
+    if (teams.length !== 1) {
+      if (this.objective.owner !== null || this.objective.progress) this.event('controlReset', { reason: teams.length ? 'contested' : 'empty' });
+      this.objective.owner = null; this.objective.progress = 0; return false;
+    }
+    const owner = teams[0];
+    // The defending team keeps its point during the opponent's answer turn.
+    if (owner !== this.team) return false;
+    // Entering the zone claims it; only later completed turns count as time held.
+    if (this.objective.owner === owner) this.objective.progress++;
+    else { this.objective.owner = owner; this.objective.progress = 0; }
+    this.event('controlProgress', { team: owner, progress: this.objective.progress, target: this.objective.target, nodeId: node.id });
+    if (this.objective.progress < this.objective.target) return false;
+    this.winner = owner; this.winReason = 'control'; this.phase = 'over';
+    this.event('controlWin', { team: owner, nodeId: node.id });
+    return true;
   }
   step(dt = 1 / 60) {
     this.time += dt;
@@ -852,7 +904,7 @@ export class Match {
   finishIfEliminated() {
     const alive = [0, 1].map(team => this.items.some(i => i.kind === 'resident' && i.team === team && i.hp > 0));
     if (alive.every(Boolean)) return false;
-    this.winner = alive[0] === alive[1] ? -1 : alive[0] ? 0 : 1; this.phase = 'over'; return true;
+    this.winner = alive[0] === alive[1] ? -1 : alive[0] ? 0 : 1; this.winReason = 'elimination'; this.phase = 'over'; return true;
   }
   botAim() {
     const shooter = this.shooter;
@@ -913,7 +965,8 @@ export class Match {
     return {
       time: this.time, mapId: this.map.id, mapName: this.map.name, shooterId: ['flight', 'settle'].includes(this.phase) ? this.firedShooterId : this.shooter?.id ?? null,
       phase: this.phase, team: this.team, turn: this.turn, remaining: Math.max(0, Math.ceil(this.deadline - this.time)), aim: this.aim,
-      aimImpact: this.phase === 'aim' ? this.traceAim() : null, winner: this.winner,
+      aimImpact: this.phase === 'aim' ? this.traceAim() : null, winner: this.winner, winReason: this.winReason, ruleset: this.ruleset,
+      objective: this.objective ? { ...this.objective, x: this.nodePosition(this.objective.nodeId, 0).x, y: this.nodePosition(this.objective.nodeId, 0).y } : null,
       availableMoves: this.getAvailableMoves(),
       wind: Math.round(this.wind * 10) / 10,
       weather: { ...this.weather },

@@ -61,7 +61,7 @@ test('phone-only practice: drag updates TV aim, release fires, bot returns turn'
     await expect(player.phone.locator('#power-meter')).toHaveAttribute('data-level', /^(low|medium|high|max)$/);
     await expect.poll(() => player.phone.locator('#power-meter').evaluate(element => element.style.getPropertyValue('--power'))).not.toBe('0%');
     await expect(page.locator('#aim-readout')).toContainText(`LỰC ${power}%`);
-    await expect(page.locator('#scene')).toHaveAttribute('data-aim-impact', /^(block|resident|fuelBarrel|bouncePad|ground|out)$/);
+    await expect(page.locator('#scene')).toHaveAttribute('data-aim-impact', /^(block|resident|fuelBarrel|bouncePad|firePlank|glassTrap|rockFall|magnet|ground|out)$/);
     await expect(page.locator('#scene')).toHaveAttribute('data-trajectory-samples', '15');
     await release(player);
     await expect(player.phone.locator('#skill-btn')).toBeVisible({ timeout: 2000 });
@@ -188,12 +188,16 @@ test('four maps: shared selection, correct 3D geometry, replay, random and slow 
   const code = await createRoom(page); const player = await joinPhone(browser, code, 'Kiến trúc sư');
   let releasePreview;
   try {
+    await page.locator('#ruleset-picker [data-ruleset="control"]').click();
+    await expect(page.locator('#ruleset-picker [data-ruleset="control"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(player.phone.locator('#ruleset-summary')).toContainText('2 lượt');
     for (const [mapId, name] of [['townhouse', 'Nhà phố'], ['tower', 'Tháp cao'], ['bridge', 'Cầu trên không'], ['fortress', 'Pháo đài']]) {
       await page.locator(`#map-picker [data-map="${mapId}"]`).click();
       await expect(page.locator('#scene')).toHaveAttribute('data-map', mapId);
       await expect(page.locator('#scene')).toHaveAttribute('data-special-objects', '5');
       await expect(player.phone.locator('#map-summary')).toContainText(name);
       await page.locator('#practice').click();
+      await expect(player.phone.locator('.move-btn.control-node')).toContainText('Sân trung tâm');
       await player.phone.locator('#ready-aim').click();
       await expect(page.locator('#match-map')).toHaveText(name);
       await expect(player.phone.locator('#phone-team')).toContainText('SAN HÔ');
@@ -201,6 +205,10 @@ test('four maps: shared selection, correct 3D geometry, replay, random and slow 
       await expect(page.locator('#health-0 .life')).toHaveCount(6);
       await expect(page.locator('#health-1 .life')).toHaveCount(6);
       await expect(page.locator('#scene')).toHaveAttribute('data-map', mapId);
+      await expect(page.locator('#scene')).toHaveAttribute('data-ruleset', 'control');
+      await expect(page.locator('#scene')).toHaveAttribute('data-control-progress', '0/2');
+      await expect(page.locator('#control-status')).toContainText('TRUNG TÂM TRỐNG');
+      await expect(player.phone.locator('#control-status')).toContainText('0/2');
       await page.locator('#camera-toggle').click();
       await expect(page.locator('#scene')).toHaveAttribute('data-camera-mode', 'overview');
       await expect.poll(() => page.locator('#scene').getAttribute('data-camera-x').then(Number)).toBeCloseTo(0, 1);

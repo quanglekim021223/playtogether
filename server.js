@@ -5,7 +5,7 @@ import { randomBytes, randomInt } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
 import QRCode from 'qrcode';
-import { Match, PHASE_DURATIONS } from './game.js';
+import { Match, PHASE_DURATIONS, RULESETS } from './game.js';
 import { MAPS, MAP_CATALOG, DEFAULT_MAP } from './maps.js';
 
 export function createApp({ port = 3000 } = {}) {
@@ -39,7 +39,7 @@ export function createApp({ port = 3000 } = {}) {
     return players[Math.floor((room.game.turn - 1) / 2) % Math.max(1, players.length)] || null;
   }
   function state(room) {
-    return { code: room.code, mapId: room.mapId, mode: room.mode, hostOnline: Boolean(room.hostSocket), players: room.players.map(({ token, ...p }) => p), game: room.game?.snapshot() || null, activeId: activePlayer(room)?.id || null };
+    return { code: room.code, mapId: room.mapId, ruleset: room.ruleset, mode: room.mode, hostOnline: Boolean(room.hostSocket), players: room.players.map(({ token, ...p }) => p), game: room.game?.snapshot() || null, activeId: activePlayer(room)?.id || null };
   }
   function broadcast(room) { io.to(room.code).emit('state', state(room)); }
   const validToken = t => typeof t === 'string' && /^[a-zA-Z0-9-]{20,80}$/.test(t);
@@ -57,7 +57,7 @@ export function createApp({ port = 3000 } = {}) {
       if (room || !validToken(token)) return { error: 'Phiên không hợp lệ.' };
       if (rooms.size >= 100) return { error: 'Máy chủ đã đầy phòng.' };
       let code; do { code = randomBytes(3).toString('hex').toUpperCase(); } while (rooms.has(code));
-      room = { code, hostToken: token, hostSocket: socket.id, players: [], game: null, mapId: DEFAULT_MAP, mode: 'party', touched: Date.now() };
+      room = { code, hostToken: token, hostSocket: socket.id, players: [], game: null, mapId: DEFAULT_MAP, ruleset: 'classic', mode: 'party', touched: Date.now() };
       rooms.set(code, room); host = true; socket.join(code); broadcast(room); return { code };
     });
     handle('resumeHost', ({ code, token }) => {
@@ -95,6 +95,11 @@ export function createApp({ port = 3000 } = {}) {
       if (mapId !== 'random' && (typeof mapId !== 'string' || !Object.hasOwn(MAPS, mapId))) return { error: 'Bản đồ không hợp lệ.' };
       room.mapId = mapId; broadcast(room);
     });
+    handle('selectRuleset', ({ ruleset }) => {
+      if (!host || room.hostSocket !== socket.id || room.game) return { error: 'Chỉ chủ phòng được chọn luật chơi ở sảnh.' };
+      if (!RULESETS.includes(ruleset)) return { error: 'Luật chơi không hợp lệ.' };
+      room.ruleset = ruleset; broadcast(room);
+    });
     handle('start', ({ mode }) => {
       if (!host || room.hostSocket !== socket.id || room.game) return { error: 'Chỉ chủ phòng được bắt đầu ở sảnh.' };
       if (!['practice', 'party'].includes(mode)) return { error: 'Chế độ không hợp lệ.' };
@@ -102,7 +107,8 @@ export function createApp({ port = 3000 } = {}) {
       if (mode === 'practice' && !room.players.some(p => p.team === 0 && p.connected)) return { error: 'Kết nối một điện thoại vào đội San Hô để đấu bot.' };
       const mapIds = Object.keys(MAPS);
       const mapId = room.mapId === 'random' ? mapIds[randomInt(mapIds.length)] : room.mapId;
-      room.mode = mode; room.game = new Match(mapId, mode === 'practice' ? { weather: 'clear' } : { randomWeather: true }); broadcast(room);
+      const matchOptions = mode === 'practice' ? { weather: 'clear' } : { randomWeather: true };
+      room.mode = mode; room.game = new Match(mapId, { ...matchOptions, ruleset: room.ruleset }); broadcast(room);
     });
     const canMove = () => room?.game?.phase === 'move' && activePlayer(room)?.id === socket.id;
     const canAim = () => room?.game?.phase === 'aim' && activePlayer(room)?.id === socket.id;
@@ -180,6 +186,8 @@ export function createApp({ port = 3000 } = {}) {
         const bot = room.mode === 'practice' ? room.game.team === 1 : !activePlayer(room);
         if (bot) {
           if (room.game.phase === 'move' && room.game.deadline - room.game.time < PHASE_DURATIONS.move - .8) {
+            const objectiveMove = room.game.objective && room.game.getAvailableMoves().find(move => move.id === room.game.objective.nodeId);
+            if (objectiveMove) room.game.moveShooter(objectiveMove.id);
             room.game.readyAim();
           } else if (room.game.phase === 'aim' && room.game.deadline - room.game.time < PHASE_DURATIONS.aim - 2) {
             room.game.fire(room.game.botAim());
