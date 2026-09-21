@@ -191,6 +191,7 @@ test('four maps: shared selection, correct 3D geometry, replay, random and slow 
     for (const [mapId, name] of [['townhouse', 'Nhà phố'], ['tower', 'Tháp cao'], ['bridge', 'Cầu trên không'], ['fortress', 'Pháo đài']]) {
       await page.locator(`#map-picker [data-map="${mapId}"]`).click();
       await expect(page.locator('#scene')).toHaveAttribute('data-map', mapId);
+      await expect(page.locator('#scene')).toHaveAttribute('data-special-objects', '5');
       await expect(player.phone.locator('#map-summary')).toContainText(name);
       await page.locator('#practice').click();
       await player.phone.locator('#ready-aim').click();

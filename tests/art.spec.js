@@ -145,6 +145,8 @@ test('environment meshes render and a fuel blast produces bounded effects and au
   }, initial);
   await expect(page.locator('#scene')).toHaveAttribute('data-fuel-barrels', '2');
   await expect(page.locator('#scene')).toHaveAttribute('data-bounce-pads', '2');
+  await expect(page.locator('#scene')).toHaveAttribute('data-special-objects', '5');
+  await expect(page.locator('#scene')).toHaveAttribute('data-environment-kinds', /magnet/);
   await expect(page.locator('#scene')).toHaveAttribute('data-asset-kit', '22');
   await expect(page.locator('#scene')).toHaveAttribute('data-resident-assets', '2');
   await expect(page.locator('#scene')).toHaveAttribute('data-weapon-assets', '6');

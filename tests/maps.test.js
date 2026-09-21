@@ -52,8 +52,8 @@ for (const mapId of Object.keys(MAPS)) {
     for (const item of state.items) assert.ok(Math.abs(item.p[0]) + item.size[0] / 2 < 29, 'expanded homes must stay on the playable island');
   });
   test(`${mapId}: real shots from either team damage structure and harm residents`, () => {
-    // Bridge needs a little more power to clear the new center-field interactives.
-    const [angle, power] = mapId === 'bridge' ? [25, 38] : [25, 32];
+    // A medium arc clears the center-field interactives on every layout.
+    const [angle, power] = [40, 28];
     for (const team of [0, 1]) {
       const game = new Match(mapId, { weather: 'clear' }); game.team = team; game.shooterCursor[team] = 1; game.wind = 0; game.syncShooter();
       const origin = muzzlePosition(game.shooter.body.position.toArray(), team, angle);

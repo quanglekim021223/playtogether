@@ -55,7 +55,7 @@ export class Match {
     const ground = new C.Body({ mass: 0, shape: new C.Plane() });
     ground.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
     this.world.addBody(ground);
-    this.items = []; this.environmentItems = []; this.pendingImpacts = new Map(); this.pendingProjectileCollisions = [];
+    this.items = []; this.environmentItems = []; this.pendingImpacts = new Map(); this.pendingProjectileCollisions = []; this.pendingHazardHits = [];
     this.time = 0; this.team = 0; this.turn = 1;
     this.enterPhase('move', PHASE_DURATIONS.move);
     this.aim = { angle: 42, power: 30, weapon: 'pebble' };
@@ -193,6 +193,7 @@ export class Match {
     if (!this.map.nodes) return true;
     const nodeDef = this.map.nodes.find(n => n.id === nodeId);
     if (!nodeDef) return false;
+    if (this.environmentItems.some(item => item.kind === 'rockFall' && item.released && !item.destroyed && item.blockNodeId === nodeId)) return false;
     if (!nodeDef.supportId) return true;
     const supportItem = this.items.find(i => (nodeDef.neutral || i.team === team) && i.partId === nodeDef.supportId);
     if (!supportItem || supportItem.hp <= 0 || supportItem.destroyed) return false;
@@ -309,14 +310,20 @@ export class Match {
   addArenaObject(def) {
     const shape = new C.Box(new C.Vec3(def.size[0] / 2, def.size[1] / 2, def.size[2] / 2));
     const body = new C.Body({ mass: def.mass, shape, position: new C.Vec3(def.x, def.y, 0), linearDamping: .12, angularDamping: .2 });
-    body.linearFactor.set(1, 1, 0); body.angularFactor.set(0, 0, def.kind === 'fuelBarrel' ? 1 : 0);
+    body.linearFactor.set(1, 1, 0); body.angularFactor.set(0, 0, ['fuelBarrel', 'glassTrap', 'rockFall', 'firePlank'].includes(def.kind) ? 1 : 0);
     if (def.angle) body.quaternion.setFromEuler(0, 0, def.angle);
     body.sleepSpeedLimit = .12; body.sleepTimeLimit = .4;
-    const item = { id: `env-${def.id}`, environmentId: def.id, kind: def.kind, team: -1, size: def.size, body, hp: def.hp ?? null, maxHp: def.hp ?? null, destroyed: false, previousY: def.y };
-    if (def.kind === 'fuelBarrel') body.addEventListener('collide', event => {
+    const item = {
+      id: `env-${def.id}`, environmentId: def.id, kind: def.kind, team: -1, size: def.size, body,
+      hp: def.hp ?? null, maxHp: def.hp ?? null, destroyed: false, previousY: def.y,
+      fallMass: def.fallMass, radius: def.radius, blockNodeId: def.blockNodeId, released: false, burning: false,
+    };
+    if (['fuelBarrel', 'glassTrap', 'rockFall'].includes(def.kind)) body.addEventListener('collide', event => {
       if (!['flight', 'settle'].includes(this.phase) || item.destroyed) return;
       const impact = Math.abs(event.contact.getImpactVelocityAlongNormal());
-      if (impact > 5.2) {
+      const other = this.items.find(candidate => candidate.body === event.body);
+      if (item.released && other?.kind === 'resident' && impact > 3.2) this.pendingHazardHits.push({ hazard: item, resident: other, impact });
+      if ((def.kind === 'fuelBarrel' && impact > 5.2) || (def.kind === 'glassTrap' && item.released && impact > 4.5)) {
         const offset = event.contact.bi === body ? event.contact.ri : event.contact.rj;
         const point = body.position.vadd(offset);
         const previous = this.pendingImpacts.get(item);
@@ -466,6 +473,11 @@ export class Match {
       this.damageEnvironment(hitEnvironment, hitEnvironment.hp, 'projectile');
       return;
     }
+    if (hitEnvironment) {
+      proj.hitItemId = hitEnvironment.id; proj.collided = true;
+      this.damageEnvironment(hitEnvironment, WEAPONS[weapon].damage * (proj.damageMod || 1), 'projectile');
+      return;
+    }
     if (proj.pierces < proj.maxPierces && hitItem && hitItem.kind !== 'resident' && hitBody !== proj.lastPiercedBody) {
       proj.pierces++; proj.lastPiercedBody = hitBody;
       this.damage(hitItem, 55 * (proj.damageMod || 1), 'pierce', body.position.clone(), velocity.length());
@@ -526,10 +538,25 @@ export class Match {
     } else this.event('hit', { ...data, damage: effectiveAmount });
   }
   damageEnvironment(item, amount, cause = 'blast') {
-    if (!item || item.kind !== 'fuelBarrel' || item.destroyed || !Number.isFinite(amount) || amount <= 0) return;
+    if (!item || item.destroyed || item.kind === 'bouncePad' || !Number.isFinite(amount) || amount <= 0) return;
+    if (item.kind === 'firePlank' && !item.burning) {
+      item.burning = true; item.burnUntil = this.time + 5.5; item.nextBurnAt = this.time;
+      this.event('fireIgnite', { itemId: item.id, x: item.body.position.x, y: item.body.position.y });
+    }
+    if (['glassTrap', 'rockFall'].includes(item.kind) && !item.released) {
+      item.released = true; item.body.mass = item.fallMass || 4; item.body.type = C.Body.DYNAMIC; item.body.updateMassProperties(); item.body.wakeUp();
+      item.body.applyImpulse(new C.Vec3(0, -2.5, 0));
+      this.event(item.kind === 'glassTrap' ? 'glassDrop' : 'rockDrop', { itemId: item.id, x: item.body.position.x, y: item.body.position.y, blockNodeId: item.blockNodeId });
+      return;
+    }
     item.hp = Math.max(0, item.hp - amount);
-    if (item.hp <= 0) this.detonateBarrel(item, cause);
-    else this.event('barrelHit', { itemId: item.id, x: item.body.position.x, y: item.body.position.y, damage: amount, cause });
+    if (item.hp <= 0) {
+      if (item.kind === 'fuelBarrel') this.detonateBarrel(item, cause);
+      else {
+        item.destroyed = true; this.world.removeBody(item.body);
+        this.event('environmentBreak', { itemId: item.id, kind: item.kind, x: item.body.position.x, y: item.body.position.y, cause });
+      }
+    } else if (item.kind === 'fuelBarrel') this.event('barrelHit', { itemId: item.id, x: item.body.position.x, y: item.body.position.y, damage: amount, cause });
   }
   applyRadialBlast(position, stats, cause = 'blast') {
     for (const item of [...this.items, ...this.environmentItems]) {
@@ -541,7 +568,7 @@ export class Match {
       if (towardBlast.lengthSquared() < .0001) towardBlast.set(0, 1, 0); else towardBlast.normalize();
       const halfExtent = item.size ? Math.max(.12, (Math.abs(towardBlast.x) * item.size[0] + Math.abs(towardBlast.y) * item.size[1]) * .5) : .25;
       const impactPoint = item.body.position.vadd(towardBlast.scale(halfExtent));
-      if (item.kind === 'fuelBarrel') this.damageEnvironment(item, stats.damage * (0.45 + strength), cause);
+      if (item.team === -1) this.damageEnvironment(item, stats.damage * (0.45 + strength), cause);
       else this.damage(item, stats.damage * (0.45 + strength), cause, impactPoint, stats.impulse * strength);
       if (item.destroyed || item.body.mass <= 0) continue;
       if (diff.length() < .001) diff.set(0, 1, 0); else diff.normalize();
@@ -717,6 +744,22 @@ export class Match {
   }
   step(dt = 1 / 60) {
     this.time += dt;
+    for (const hazard of this.environmentItems) {
+      if (!hazard.burning || hazard.destroyed || this.time < hazard.nextBurnAt) continue;
+      hazard.nextBurnAt = this.time + .45;
+      const origin = hazard.body.position;
+      for (const item of this.items) {
+        if (item.destroyed || item.material !== 'wood' || item.body.position.distanceTo(origin) > 3.1) continue;
+        this.damage(item, 7, 'fire', origin.clone(), 0);
+      }
+      for (const nearby of this.environmentItems) {
+        if (nearby === hazard || nearby.destroyed || nearby.body.position.distanceTo(origin) > 2.8) continue;
+        if (nearby.kind === 'firePlank' || nearby.kind === 'fuelBarrel') this.damageEnvironment(nearby, 7, 'fire');
+      }
+      this.damageEnvironment(hazard, 5, 'fire');
+      this.event('fireTick', { itemId: hazard.id, x: origin.x, y: origin.y });
+      if (this.time >= hazard.burnUntil && !hazard.destroyed) this.damageEnvironment(hazard, hazard.hp, 'fire');
+    }
     if (this.airdrop && !this.airdrop.landed) {
       const elapsed = this.time - this.airdrop.spawnTime;
       if (elapsed >= this.airdrop.fallDuration) {
@@ -744,17 +787,32 @@ export class Match {
             p.body.force.x += this.wind * this.weather.windMod * 0.6 * p.body.mass;
           }
         }
+        if (p.weapon === 'rocket') for (const magnet of this.environmentItems) {
+          if (magnet.kind !== 'magnet' || magnet.destroyed) continue;
+          const pull = magnet.body.position.vsub(p.body.position), distance = pull.length(), radius = magnet.radius || 6;
+          if (distance > .2 && distance < radius) {
+            pull.normalize(); p.body.force.vadd(pull.scale(42 * (1 - distance / radius) * p.body.mass), p.body.force);
+          }
+        }
       }
       this.world.step(dt / 3);
     }
     for (const collision of this.pendingProjectileCollisions) this.handleProjectileCollision(collision);
     this.pendingProjectileCollisions.length = 0;
+    for (const hit of this.pendingHazardHits) {
+      if (hit.hazard.destroyed || hit.resident.hp <= 0 || this.time - (hit.hazard.lastHazardHit || -Infinity) < .35) continue;
+      hit.hazard.lastHazardHit = this.time;
+      const damage = Math.min(hit.hazard.kind === 'rockFall' ? 90 : 65, 10 + hit.impact * (hit.hazard.kind === 'rockFall' ? 6 : 4));
+      this.damage(hit.resident, damage, hit.hazard.kind === 'rockFall' ? 'rock' : 'glass');
+      this.event('hazardHit', { itemId: hit.hazard.id, kind: hit.hazard.kind, residentId: hit.resident.id, damage, x: hit.resident.body.position.x, y: hit.resident.body.position.y });
+    }
+    this.pendingHazardHits.length = 0;
     // Apply after stepping; collision callbacks must not remove bodies mid-solver.
     for (const [item, impactData] of this.pendingImpacts) {
       if (this.time - item.lastImpact < 0.18) continue;
       item.lastImpact = this.time;
       const { strength: impact, point } = impactData;
-      if (item.kind === 'fuelBarrel') { this.damageEnvironment(item, (impact - 3) * 10, 'impact'); continue; }
+      if (item.team === -1) { this.damageEnvironment(item, (impact - 3) * 10, 'impact'); continue; }
       const stats = MATERIALS[item.material];
       this.damage(item, item.kind === 'resident' ? (impact - 3) * 9 : (impact - stats.impactThreshold) * stats.impactDamage, 'impact', point, impact);
     }
@@ -872,7 +930,10 @@ export class Match {
         buff: i.buff ? { type: i.buff.type, charges: i.buff.charges } : null,
         crack: crackStage(i.hp, i.maxHp), ...pose(i.body)
       })),
-      environment: this.environmentItems.filter(i => !i.destroyed).map(i => ({ id: i.id, environmentId: i.environmentId, kind: i.kind, size: i.size, hp: i.hp, maxHp: i.maxHp, ...pose(i.body) })),
+      environment: this.environmentItems.filter(i => !i.destroyed).map(i => ({
+        id: i.id, environmentId: i.environmentId, kind: i.kind, size: i.size, hp: i.hp, maxHp: i.maxHp,
+        burning: i.burning, released: i.released, radius: i.radius, blockNodeId: i.blockNodeId, ...pose(i.body)
+      })),
       projectile: mainProj ? { id: mainProj.id, weapon: mainProj.weapon, damageMod: mainProj.damageMod || 1, v: mainProj.body.velocity.toArray(), ...pose(mainProj.body) } : null,
       projectiles: Array.from(this.projectiles.values()).map(p => ({ id: p.id, weapon: p.weapon, damageMod: p.damageMod || 1, v: p.body.velocity.toArray(), ...pose(p.body) })),
       events: this.events.slice(),

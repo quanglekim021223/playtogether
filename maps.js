@@ -182,7 +182,7 @@ function expandArchitecture(parts, nodes, xScale = 1.12, yScale = 1.06) {
   }
   for (const node of nodes) {
     node.x *= xScale;
-    node.y = (node.y - .46) * yScale + .46;
+    node.y = node.y <= .6 ? .53 : (node.y - .46) * yScale + .46;
   }
 }
 expandArchitecture(townhouse, townhouseNodes);
@@ -190,20 +190,43 @@ expandArchitecture(tower, towerNodes);
 expandArchitecture(bridge, bridgeNodes);
 expandArchitecture(fortress, fortressNodes);
 
-// Shared neutral objects sit in the open middle lane. They use world coordinates,
-// while buildings above are authored locally and mirrored per team.
-const arenaObjects = [
+// Neutral interactives sit in the open middle lane. Every map gets five objects,
+// but a different mix so the arena changes how players aim and move.
+const coreObjects = [
   { id: 'fuel-left', kind: 'fuelBarrel', x: -3.4, y: .58, size: [.88, 1.16, .88], mass: 1.4, hp: 42 },
   { id: 'fuel-right', kind: 'fuelBarrel', x: 3.4, y: .58, size: [.88, 1.16, .88], mass: 1.4, hp: 42 },
   { id: 'pad-left', kind: 'bouncePad', x: -1.65, y: .15, size: [1.25, .3, 1.65], mass: 0, angle: .2 },
   { id: 'pad-right', kind: 'bouncePad', x: 1.65, y: .15, size: [1.25, .3, 1.65], mass: 0, angle: -.2 },
 ];
+const arenaObjects = {
+  townhouse: [
+    ...coreObjects.slice(0, 3),
+    { id: 'burning-plank', kind: 'firePlank', x: 1.1, y: .22, size: [2.4, .44, 1.25], mass: 0, hp: 58 },
+    { id: 'glass-awning', kind: 'glassTrap', x: 0, y: 4.8, size: [2.2, .28, 1.2], mass: 0, fallMass: 3.4, hp: 48 },
+  ],
+  tower: [
+    ...coreObjects,
+    { id: 'rocket-magnet', kind: 'magnet', x: 0, y: 2.1, size: [1.05, 1.05, 1.05], mass: 0, hp: 68, radius: 6.5 },
+  ],
+  bridge: [
+    coreObjects[0], coreObjects[2],
+    { id: 'plank-left', kind: 'firePlank', x: .15, y: .22, size: [1.6, .44, 1.25], mass: 0, hp: 58 },
+    { id: 'plank-right', kind: 'firePlank', x: 2.1, y: .22, size: [1.6, .44, 1.25], mass: 0, hp: 58 },
+    { id: 'glass-bridge', kind: 'glassTrap', x: .35, y: 5.5, size: [2.5, .3, 1.2], mass: 0, fallMass: 3.8, hp: 50 },
+  ],
+  fortress: [
+    coreObjects[1], coreObjects[3],
+    { id: 'rock-left', kind: 'rockFall', x: -2.5, y: 6.8, size: [1.4, 1.25, 1.45], mass: 0, fallMass: 8, hp: 90, blockNodeId: 'fortress-drop-center' },
+    { id: 'rock-right', kind: 'rockFall', x: 2.5, y: 7.4, size: [1.6, 1.4, 1.55], mass: 0, fallMass: 9, hp: 100, blockNodeId: 'fortress-drop-center' },
+    { id: 'rocket-magnet', kind: 'magnet', x: 0, y: 2.2, size: [1.05, 1.05, 1.05], mass: 0, hp: 68, radius: 6.5 },
+  ],
+};
 
 export const MAPS = {
-  townhouse: { id: 'townhouse', name: 'Nhà phố', tag: 'BỐN GIAN · BA TẦNG', description: 'Dãy nhà phố mở rộng với sân thượng, hiên và sáu cư dân. Chọn phòng và nhắm từng trụ.', tip: 'Thử phá trụ giữa hai gian nhà.', center: 16.2, parts: townhouse, nodes: townhouseNodes, dropNodes: ['townhouse-drop-center'], arenaObjects },
-  tower: { id: 'tower', name: 'Tháp cao', tag: 'THÁP BẬC · CÁNH PHỤ', description: 'Tháp bậc bốn tầng, cánh phụ hai tầng và sáu cư dân trên một chiến tuyến rộng.', tip: 'Bắn từ ban công; phá nhiều điểm chịu lực để tạo phản ứng dây chuyền.', center: 16.2, parts: tower, nodes: towerNodes, dropNodes: ['tower-drop-center'], arenaObjects },
-  bridge: { id: 'bridge', name: 'Cầu trên không', tag: 'HAI THÁP · CẦU DÀI', description: 'Hai tháp canh lớn nối bằng cầu gỗ trên cao, với nhiều tuyến bắn ở cả hai đầu.', tip: 'Bắn cầu nối để cô lập cư dân trên cao.', center: 16.2, parts: bridge, nodes: bridgeNodes, dropNodes: ['bridge-drop-center'], arenaObjects },
-  fortress: { id: 'fortress', name: 'Pháo đài', tag: 'THÀNH RỘNG · THÁP GÁC', description: 'Pháo đài đá mở rộng với vọng lâu, tường chắn và nhiều lớp kết cấu chịu lực.', tip: 'Nâng góc từ chòi gác để vượt tường chắn.', center: 16.2, parts: fortress, nodes: fortressNodes, dropNodes: ['fortress-drop-center'], arenaObjects },
+  townhouse: { id: 'townhouse', name: 'Nhà phố', tag: 'BỐN GIAN · BA TẦNG', description: 'Dãy nhà phố mở rộng với sân thượng, hiên và sáu cư dân. Chọn phòng và nhắm từng trụ.', tip: 'Đốt ván để cháy lan hoặc bắn sập mái kính.', center: 16.2, parts: townhouse, nodes: townhouseNodes, dropNodes: ['townhouse-drop-center'], arenaObjects: arenaObjects.townhouse },
+  tower: { id: 'tower', name: 'Tháp cao', tag: 'THÁP BẬC · CÁNH PHỤ', description: 'Tháp bậc bốn tầng, cánh phụ hai tầng và sáu cư dân trên một chiến tuyến rộng.', tip: 'Nam châm giữa sân sẽ bẻ đường bay của tên lửa.', center: 16.2, parts: tower, nodes: towerNodes, dropNodes: ['tower-drop-center'], arenaObjects: arenaObjects.tower },
+  bridge: { id: 'bridge', name: 'Cầu trên không', tag: 'HAI THÁP · CẦU DÀI', description: 'Hai tháp canh lớn nối bằng cầu gỗ trên cao, với nhiều tuyến bắn ở cả hai đầu.', tip: 'Lửa lan qua ván; kính treo có thể rơi xuống sân.', center: 16.2, parts: bridge, nodes: bridgeNodes, dropNodes: ['bridge-drop-center'], arenaObjects: arenaObjects.bridge },
+  fortress: { id: 'fortress', name: 'Pháo đài', tag: 'THÀNH RỘNG · THÁP GÁC', description: 'Pháo đài đá mở rộng với vọng lâu, tường chắn và nhiều lớp kết cấu chịu lực.', tip: 'Bắn đá treo để khóa sân giữa, nhưng coi chừng nam châm.', center: 16.2, parts: fortress, nodes: fortressNodes, dropNodes: ['fortress-drop-center'], arenaObjects: arenaObjects.fortress },
 };
 export const DEFAULT_MAP = 'tower';
 export const MAP_CATALOG = Object.values(MAPS).map(({ parts, nodes, dropNodes: _dropNodes, arenaObjects: _arenaObjects, ...map }) => ({ ...map, thumbnail: parts.map(({ kind, x, y, size, material }) => ({ kind, x, y, size, material })) }));

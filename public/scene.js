@@ -236,6 +236,7 @@ export function createScene(container) {
     if (item.kind === 'resident') return `resident${item.team}`;
     return item.kind === 'block' ? item.material : null;
   }
+  const interactiveKinds = new Set(['fuelBarrel', 'bouncePad', 'firePlank', 'glassTrap', 'rockFall', 'magnet']);
   function residentClips(model) {
     const scalar = (name, duration, times, values) => new T.NumberKeyframeTrack(`${name}.rotation[z]`, times.map(t => t * duration), values);
     const bounce = (duration, height) => new T.VectorKeyframeTrack('CharacterRig.position', [0, duration * .5, duration], [0, 0, 0, 0, height, 0, 0, 0, 0]);
@@ -636,6 +637,8 @@ export function createScene(container) {
     const environmentItems = Array.isArray(data.environment) ? data.environment : [];
     container.dataset.fuelBarrels = environmentItems.filter(i => i.kind === 'fuelBarrel').length;
     container.dataset.bouncePads = environmentItems.filter(i => i.kind === 'bouncePad').length;
+    container.dataset.specialObjects = String(environmentItems.length);
+    container.dataset.environmentKinds = [...new Set(environmentItems.map(i => i.kind))].sort().join(',');
     const allItems = [...data.items, ...environmentItems];
     const ids = new Set(allItems.map(i => i.id));
     for (const [id, obj] of objects) if (!ids.has(id)) { scene.remove(obj); objects.delete(id); }
@@ -643,7 +646,7 @@ export function createScene(container) {
       let obj = objects.get(item.id);
       if (!obj) {
         obj = item.kind === 'resident' ? art.resident(item.team, item.id, item.weapon)
-          : ['fuelBarrel', 'bouncePad'].includes(item.kind) ? art.interactive(item) : art.block(item);
+          : interactiveKinds.has(item.kind) ? art.interactive(item) : art.block(item);
         applyKit(obj, item);
         if (item.kind === 'resident') { obj.userData.weaponKey = item.weapon; attachWeaponAsset(obj, item.weapon); }
         obj.userData.decorItem = item; decorateStructure(obj, item);
@@ -653,6 +656,9 @@ export function createScene(container) {
       if (obj.userData.cracks) obj.userData.cracks.forEach((c, i) => { c.visible = item.crack === i + 1; });
       if (obj.userData.hp !== undefined && item.hp < obj.userData.hp) obj.userData.hurtUntil = performance.now() / 1000 + .65;
       obj.userData.hp = item.hp; obj.userData.team = item.team;
+      const hazardEffect = obj.getObjectByName('hazardEffect');
+      if (hazardEffect) hazardEffect.visible = item.kind === 'magnet' || Boolean(item.burning);
+      if (item.released) for (const hanger of obj.children.filter(child => child.name === 'hanger')) hanger.visible = false;
       if (item.kind === 'resident' && obj.userData.weaponKey !== item.weapon) { obj.userData.weaponKey = item.weapon; attachWeaponAsset(obj, item.weapon); }
       obj.userData.activeResident = item.kind === 'resident' && item.id === data.shooterId;
       obj.userData.gamePhase = data.phase;
@@ -812,6 +818,25 @@ export function createScene(container) {
         container.dataset.lastEnvironmentEvent = 'barrelBlast';
         window.dispatchEvent(new CustomEvent('weapon-sound', { detail: { type: 'barrel' } }));
       }
+      if (event.type === 'fireIgnite' || event.type === 'fireTick') {
+        const count = event.type === 'fireIgnite' ? 14 : 3;
+        for (let i = 0; i < (reducedMotion.matches ? Math.min(3, count) : count); i++) {
+          const flame = sphere(event.x + (Math.random() - .5) * .8, event.y + .15, .7, .05 + Math.random() * .09, i % 3 ? 0xff8a3d : 0xffd66e);
+          addParticle(flame, (Math.random() - .5) * 1.4, 1.4 + Math.random() * 2.8, (Math.random() - .5), .35 + Math.random() * .25);
+        }
+        container.dataset.lastEnvironmentEvent = event.type;
+      }
+      if (event.type === 'glassDrop' || event.type === 'rockDrop' || event.type === 'hazardHit') {
+        const material = event.type === 'glassDrop' || event.kind === 'glassTrap' ? 'glass' : 'stone';
+        const count = event.type === 'hazardHit' ? 10 : 5;
+        for (let i = 0; i < (reducedMotion.matches ? Math.min(3, count) : count); i++) {
+          const chip = art.fragment(material, i); chip.position.set(event.x, event.y, .75);
+          addParticle(chip, (Math.random() - .5) * 5, 1 + Math.random() * 4, 0, .7, true);
+        }
+        if (event.type === 'hazardHit') triggerImpactPause(80);
+        container.dataset.lastEnvironmentEvent = event.type;
+      }
+      if (event.type === 'environmentBreak') container.dataset.lastEnvironmentEvent = `${event.kind}Break`;
     }
     if (!fromReplay && data.phase === 'over' && previousPhase !== 'over') {
       lastReplayFinal = copySnapshot(data);
@@ -1087,6 +1112,8 @@ export function createScene(container) {
         const recoil = obj.userData.recoil || 0; obj.userData.gun.position.x = (obj.userData.team === 0 ? -1 : 1) * recoil;
         obj.userData.recoil = Math.max(0, recoil - visualDt * .7);
       }
+      const field = obj.getObjectByName('hazardEffect');
+      if (field?.visible && obj.userData.environmentKind === 'magnet' && !reducedMotion.matches) field.rotation.z += visualDt * 1.4;
     }
     for (const mesh of projectileMeshes.values()) {
       if (!mesh.userData.serverP) continue;

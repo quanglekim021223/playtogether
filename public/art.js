@@ -124,7 +124,7 @@ export function createArt() {
       const cap = mesh(new T.CylinderGeometry(.1, .12, .1, 10), flat(0xf0c55e), group); cap.position.set(.18, h / 2 + .09, 0);
       const warning = box(group, 0, .02, d / 2 + .012, .42, .42, .025, 0xffd36e); warning.rotation.z = Math.PI / 4;
       const flame = orb(group, 0, .02, d / 2 + .035, .095, 0x5a3933); flame.scale.set(.65, 1.35, .24);
-    } else {
+    } else if (item.kind === 'bouncePad') {
       box(group, 0, 0, 0, w, h, d, 0x314b55);
       box(group, 0, h / 2 + .035, 0, w * .9, .07, d * .82, 0x71d9c9);
       for (const x of [-.55, 0, .55]) {
@@ -132,6 +132,25 @@ export function createArt() {
         const right = box(group, x + .1, h / 2 + .085, .02, .42, .055, .18, 0xe8fff2); right.rotation.y = .55;
       }
       for (const x of [-w * .42, w * .42]) box(group, x, -h * .18, 0, .1, h * .75, d * .92, 0xf0aa55);
+    } else if (item.kind === 'firePlank') {
+      box(group, 0, 0, 0, w, h, d, 0x8b5a32);
+      for (const y of [-h * .24, h * .24]) box(group, 0, y, d / 2 + .025, w * .92, .055, .04, 0x5d3925);
+      for (const x of [-w * .34, 0, w * .34]) orb(group, x, .02, d / 2 + .05, .055, 0x343736);
+      const ember = orb(group, 0, h / 2 + .18, 0, .13, 0xff7a32); ember.name = 'hazardEffect'; ember.visible = false;
+    } else if (item.kind === 'glassTrap') {
+      const pane = mesh(cube, surfaces.glass, group); pane.scale.set(w, h, d);
+      for (const x of [-w / 2, w / 2]) box(group, x, 0, 0, .08, h + .14, d + .08, 0x52737a);
+      for (const x of [-w * .36, w * .36]) { const rope = box(group, x, .85, 0, .04, 1.7, .04, 0xb99a6b); rope.name = 'hanger'; }
+    } else if (item.kind === 'rockFall') {
+      const body = mesh(rock, flat(0x66757a), group); body.scale.set(w * .55, h * .58, d * .55); body.rotation.set(.2, 0, .35);
+      box(group, 0, h * .72, 0, .1, h * .62, .1, 0x6a5138).name = 'hanger';
+    } else if (item.kind === 'magnet') {
+      const left = new T.Mesh(new T.TorusGeometry(w * .31, w * .13, 8, 24, Math.PI), flat(0xe65345));
+      left.rotation.z = Math.PI; group.add(left);
+      box(group, -w * .31, -.2, 0, w * .25, h * .42, d * .4, 0xe65345);
+      box(group, w * .31, -.2, 0, w * .25, h * .42, d * .4, 0x4ba9be);
+      const field = new T.Mesh(new T.TorusGeometry(w * .62, .025, 5, 32), new T.MeshBasicMaterial({ color: 0x82f0df, transparent: true, opacity: .5 }));
+      field.name = 'hazardEffect'; field.rotation.x = Math.PI / 2; group.add(field);
     }
     return group;
   }
