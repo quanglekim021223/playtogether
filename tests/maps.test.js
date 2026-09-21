@@ -7,7 +7,9 @@ import { MAPS } from '../maps.js';
 for (const mapId of Object.keys(MAPS)) {
   test(`${mapId}: movement graph has valid supports and bidirectional neighbors`, () => {
     const map = MAPS[mapId], partIds = new Set(map.parts.map(p => p.id)), nodeIds = new Set(map.nodes.map(n => n.id));
-    assert.equal(map.nodes.length, 12);
+    assert.equal(map.nodes.filter(node => !node.id.includes('-relay-')).length, 12);
+    assert.ok(map.relayRoute.length >= 2);
+    assert.ok(map.relayRoute.every(nodeId => nodeIds.has(nodeId)), 'relay route node is missing');
     for (const node of map.nodes) {
       if (node.supportId) assert.ok(partIds.has(node.supportId), `${node.id} support is missing`);
       for (const neighborId of node.neighbors) {

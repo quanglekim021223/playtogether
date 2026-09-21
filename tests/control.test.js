@@ -12,16 +12,17 @@ function pickupCore(game) {
   const result = moveOnce(game, game.objective.nodeId);
   assert.equal(result.ok, true);
   assert.equal(result.pickedCore, true);
-  return game.shooter;
+  return game.items.find(item => item.id === game.objective.carrierId);
 }
 
 function deliverCore(game) {
-  const carrier = game.shooter;
-  const frontNodeId = `${game.map.id}-node-6`;
-  assert.equal(moveOnce(game, frontNodeId).ok, true);
-  const result = moveOnce(game, game.objective.goalNodeId);
-  assert.equal(result.ok, true);
-  assert.equal(result.scoredCore, true);
+  const carrier = game.mover;
+  let result;
+  for (const nodeId of game.map.relayRoute) {
+    result = moveOnce(game, nodeId);
+    assert.equal(result.ok, true);
+  }
+  assert.equal(result?.scoredCore, true);
   return carrier;
 }
 
@@ -38,7 +39,7 @@ test('relay exposes a free center core to every active resident', () => {
   const game = new Match('tower', { ruleset: 'control' });
   const snapshot = game.snapshot();
   assert.equal(snapshot.objective.nodeId, 'tower-drop-center');
-  assert.equal(snapshot.objective.goalNodeId, 'tower-node-0');
+  assert.equal(snapshot.objective.goalNodeId, 'tower-node-1');
   assert.deepEqual(snapshot.objective.scores, [0, 0]);
   assert.equal(snapshot.objective.target, RELAY_RULES.scoreTarget);
   const roster = game.items.filter(item => item.kind === 'resident' && item.team === 0);
@@ -49,21 +50,30 @@ test('relay exposes a free center core to every active resident', () => {
   }
 });
 
-test('a carrier is locked as shooter and traverses the opponent side', () => {
+test('the carrier moves on an exposed route while a teammate remains the shooter', () => {
   const game = new Match('tower', { ruleset: 'control' });
   const carrier = pickupCore(game);
   assert.equal(game.objective.carrierId, carrier.id);
   assert.equal(game.objective.carrierTeam, 0);
-  assert.equal(game.shooter.id, carrier.id);
-  game.firedShooterId = carrier.id;
+  assert.equal(game.mover.id, carrier.id);
+  assert.notEqual(game.shooter.id, carrier.id);
+  const escort = game.shooter;
+  assert.equal(game.aim.weapon, escort.weapon);
+  game.readyAim();
+  assert.equal(game.fire({ ...game.aim, shooterId: escort.id, turn: game.turn }), true);
+  game.projectile = null;
+  game.phase = 'move';
+  game.firedShooterId = escort.id;
   game.nextTurn();
   game.firedShooterId = game.shooter.id;
   game.nextTurn();
   assert.equal(game.team, 0);
-  assert.equal(game.shooter.id, carrier.id);
-  const enemySideMove = game.getAvailableMoves().find(move => move.id === 'tower-node-6');
+  assert.equal(game.mover.id, carrier.id);
+  assert.notEqual(game.shooter.id, carrier.id);
+  const enemySideMove = game.getAvailableMoves().find(move => move.id === 'tower-relay-approach');
   assert.ok(enemySideMove);
   assert.ok(enemySideMove.x > 0, 'team 0 carrier should cross onto team 1 side');
+  assert.equal(enemySideMove.label, 'Tiến lõi · Lối trống trước tháp');
 });
 
 test('every map has a playable center-to-enemy-base relay route', () => {
@@ -102,15 +112,28 @@ test('delivering two cores wins relay; elimination alone never wins it', () => {
   assert.equal(fresh.winner, null);
 });
 
-test('knocking out the carrier resets the core and the resident respawns later', () => {
+test('knocking out the carrier drops a contestable core and the resident respawns later', () => {
   const game = new Match('tower', { ruleset: 'control' });
   const carrier = pickupCore(game);
+  moveOnce(game, game.map.relayRoute[0]);
   carrier.hp = 0;
   game.step();
-  assert.equal(game.objective.status, 'center');
+  assert.equal(game.objective.status, 'dropped');
   assert.equal(game.objective.carrierId, null);
+  assert.ok(Number.isFinite(game.objective.dropX));
+  assert.ok(Number.isFinite(game.objective.dropY));
+  assert.equal(game.getObjectiveSnapshot().x, game.objective.dropX);
+  assert.equal(game.getObjectiveSnapshot().y, game.objective.dropY);
   assert.equal(carrier.eliminated, true);
   assert.equal(carrier.respawnAtTurn, 1 + RELAY_RULES.respawnDelay);
+
+  game.team = 1;
+  game.phase = 'move'; game.movedTurn = null;
+  const droppedMove = game.getAvailableMoves().find(move => move.core);
+  assert.equal(droppedMove.label, 'Nhặt lõi đang rơi');
+  assert.equal(game.moveShooter(droppedMove.id).pickedCore, true);
+  assert.equal(game.objective.carrierTeam, 1);
+  assert.equal(game.objective.routeIndex, -1);
 
   game.turn = carrier.respawnAtTurn;
   game.prepareRelayTeam(carrier.team);

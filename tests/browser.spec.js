@@ -184,6 +184,36 @@ test('resident shot triggers live material damage, fragments and cracks on TV', 
   } finally { await player.context.close(); }
 });
 
+test('relay carrier can move while a teammate aims and fires', async ({ page, browser }) => {
+  const code = await createRoom(page);
+  const player = await joinPhone(browser, code, 'Yểm trợ');
+  try {
+    await page.locator('#ruleset-picker [data-ruleset="control"]').click();
+    await page.locator('#map-picker [data-map="tower"]').click();
+    await page.locator('#practice').click();
+
+    const firstWeapon = await player.phone.locator('#shooter-weapon').textContent();
+    await player.phone.locator('.move-btn.control-node').click();
+    await expect(player.phone.locator('.control-node-note')).toContainText('bắn yểm trợ');
+    await expect(player.phone.locator('#shooter-weapon')).not.toHaveText(firstWeapon);
+    await player.phone.locator('#ready-aim').click();
+    await expect(player.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'false');
+
+    await pullStart(player, -40, 35);
+    await expect(player.phone.locator('#aim-pad')).toHaveClass(/armed/);
+    await release(player);
+    await expect(player.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'true');
+
+    await expect(player.phone.locator('#ready-aim')).toBeVisible({ timeout: 35_000 });
+    await expect(player.phone.locator('.move-btn.control-node')).toContainText('Tiến lõi');
+    await player.phone.locator('.move-btn.control-node').click();
+    await player.phone.locator('#ready-aim').click();
+    await expect(player.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'false');
+    await pullStart(player, -40, 35);
+    await expect(player.phone.locator('#aim-pad')).toHaveClass(/armed/);
+  } finally { await player.context.close(); }
+});
+
 test('four maps: shared selection, correct 3D geometry, replay, random and slow preview', async ({ page, browser }) => {
   test.setTimeout(90_000); // Multiple high-detail coastal screenshots take longer in software-rendered CI.
   const errors = []; page.on('pageerror', e => errors.push(e.message));
@@ -192,7 +222,7 @@ test('four maps: shared selection, correct 3D geometry, replay, random and slow 
   try {
     await page.locator('#ruleset-picker [data-ruleset="control"]').click();
     await expect(page.locator('#ruleset-picker [data-ruleset="control"]')).toHaveAttribute('aria-pressed', 'true');
-    await expect(player.phone.locator('#ruleset-summary')).toContainText('Ghi 2 điểm');
+    await expect(player.phone.locator('#ruleset-summary')).toContainText('Giao 2 lõi');
     for (const [mapId, name] of [['townhouse', 'Nhà phố'], ['tower', 'Tháp cao'], ['bridge', 'Cầu trên không'], ['fortress', 'Pháo đài']]) {
       await page.locator(`#map-picker [data-map="${mapId}"]`).click();
       await expect(page.locator('#scene')).toHaveAttribute('data-map', mapId);

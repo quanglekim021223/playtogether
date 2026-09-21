@@ -187,11 +187,8 @@ export function createApp({ port = 3000 } = {}) {
         if (bot) {
           if (room.game.phase === 'move' && room.game.deadline - room.game.time < PHASE_DURATIONS.move - .8) {
             const moves = room.game.getAvailableMoves();
-            let objectiveMove = room.game.objective?.status === 'center' ? moves.find(move => move.core) : null;
-            if (room.game.objective?.carrierId === room.game.shooter?.id) {
-              const goal = room.game.nodePosition(room.game.objective.goalNodeId, 1 - room.game.team);
-              objectiveMove = moves.sort((a, b) => Math.hypot(a.x - goal.x, a.y - goal.y) - Math.hypot(b.x - goal.x, b.y - goal.y))[0];
-            }
+            let objectiveMove = ['center', 'dropped'].includes(room.game.objective?.status) ? moves.find(move => move.core) : null;
+            if (room.game.objective?.carrierTeam === room.game.team) objectiveMove = moves.find(move => Number.isInteger(move.relayRouteIndex));
             if (objectiveMove) room.game.moveShooter(objectiveMove.id);
             room.game.readyAim();
           } else if (room.game.phase === 'aim' && room.game.deadline - room.game.time < PHASE_DURATIONS.aim - 2) {

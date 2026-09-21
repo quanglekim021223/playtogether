@@ -120,6 +120,7 @@ const towerNodes = [
   { id: 'tower-node-9', label: 'Hành lang lầu 2', x: 0, y: 5.39, supportId: 'tower-beam-1', neighbors: ['tower-node-8', 'tower-node-5', 'tower-node-3', 'tower-node-2'] },
   { id: 'tower-node-10', label: 'Hiên cánh phụ', x: -4.35, y: 2.94, supportId: 'tower-wing-beam', neighbors: ['tower-node-7', 'tower-node-8', 'tower-node-3', 'tower-node-4'] },
   { id: 'tower-drop-center', label: 'Sân trung tâm', x: 0, y: 0.53, neutral: true, supportId: null, neighbors: ['tower-node-6', 'tower-node-7'] },
+  { id: 'tower-relay-approach', label: 'Lối trống trước tháp', x: 9.2, y: 0.53, supportId: null, neighbors: [] },
 ];
 
 const townhouseNodes = [
@@ -135,6 +136,8 @@ const townhouseNodes = [
   { id: 'townhouse-node-9', label: 'Hành lang sau lầu 1', x: -1.3, y: 2.94, supportId: 'townhouse-beam-mid-2', neighbors: ['townhouse-node-7', 'townhouse-node-8', 'townhouse-node-3', 'townhouse-node-2'] },
   { id: 'townhouse-node-10', label: 'Đỉnh mái trước', x: 1.3, y: 7.84, supportId: 'townhouse-roof-2', neighbors: ['townhouse-node-5', 'townhouse-node-2'] },
   { id: 'townhouse-drop-center', label: 'Sân trung tâm', x: 0, y: 0.53, neutral: true, supportId: null, neighbors: ['townhouse-node-6', 'townhouse-node-7'] },
+  { id: 'townhouse-relay-approach', label: 'Lối trống trước nhà', x: 9.2, y: 0.53, supportId: null, neighbors: [] },
+  { id: 'townhouse-relay-balcony', label: 'Mép hiên ngoài trời', x: 7, y: 2.94, supportId: 'townhouse-beam-front', neighbors: [] },
 ];
 
 const bridgeNodes = [
@@ -150,6 +153,7 @@ const bridgeNodes = [
   { id: 'bridge-node-9', label: 'Cửa cầu tháp sau', x: -3, y: 5.39, supportId: 'bridge-beam-back-2', neighbors: ['bridge-node-7', 'bridge-node-10', 'bridge-node-3'] },
   { id: 'bridge-node-10', label: 'Cầu nối sau', x: -0.65, y: 5.71, supportId: 'bridge-span', neighbors: ['bridge-node-5', 'bridge-node-9'] },
   { id: 'bridge-drop-center', label: 'Sân trung tâm', x: 0, y: 0.53, neutral: true, supportId: null, neighbors: ['bridge-node-6', 'bridge-node-7'] },
+  { id: 'bridge-relay-approach', label: 'Lối trống trước cầu', x: 9.2, y: 0.53, supportId: null, neighbors: [] },
 ];
 
 const fortressNodes = [
@@ -165,6 +169,7 @@ const fortressNodes = [
   { id: 'fortress-node-9', label: 'Gian giữa lầu 2', x: 0, y: 5.39, supportId: 'fortress-beam-mid', neighbors: ['fortress-node-8', 'fortress-node-1', 'fortress-node-3', 'fortress-node-10'] },
   { id: 'fortress-node-10', label: 'Vọng lâu chính diện', x: 0, y: 8.67, supportId: 'fortress-beam-top', neighbors: ['fortress-node-9', 'fortress-node-2', 'fortress-node-5'] },
   { id: 'fortress-drop-center', label: 'Sân trung tâm', x: 0, y: 0.53, neutral: true, supportId: null, neighbors: ['fortress-node-6', 'fortress-node-7'] },
+  { id: 'fortress-relay-approach', label: 'Lối trống trước thành', x: 9.2, y: 0.53, supportId: null, neighbors: [] },
 ];
 
 // Use more of the coastal arena while preserving every authored support and
@@ -223,10 +228,10 @@ const arenaObjects = {
 };
 
 export const MAPS = {
-  townhouse: { id: 'townhouse', name: 'Nhà phố', tag: 'BỐN GIAN · BA TẦNG', description: 'Dãy nhà phố mở rộng với sân thượng, hiên và sáu cư dân. Chọn phòng và nhắm từng trụ.', tip: 'Đốt ván để cháy lan hoặc bắn sập mái kính.', center: 16.2, parts: townhouse, nodes: townhouseNodes, dropNodes: ['townhouse-drop-center'], arenaObjects: arenaObjects.townhouse },
-  tower: { id: 'tower', name: 'Tháp cao', tag: 'THÁP BẬC · CÁNH PHỤ', description: 'Tháp bậc bốn tầng, cánh phụ hai tầng và sáu cư dân trên một chiến tuyến rộng.', tip: 'Nam châm giữa sân sẽ bẻ đường bay của tên lửa.', center: 16.2, parts: tower, nodes: towerNodes, dropNodes: ['tower-drop-center'], arenaObjects: arenaObjects.tower },
-  bridge: { id: 'bridge', name: 'Cầu trên không', tag: 'HAI THÁP · CẦU DÀI', description: 'Hai tháp canh lớn nối bằng cầu gỗ trên cao, với nhiều tuyến bắn ở cả hai đầu.', tip: 'Lửa lan qua ván; kính treo có thể rơi xuống sân.', center: 16.2, parts: bridge, nodes: bridgeNodes, dropNodes: ['bridge-drop-center'], arenaObjects: arenaObjects.bridge },
-  fortress: { id: 'fortress', name: 'Pháo đài', tag: 'THÀNH RỘNG · THÁP GÁC', description: 'Pháo đài đá mở rộng với vọng lâu, tường chắn và nhiều lớp kết cấu chịu lực.', tip: 'Bắn đá treo để khóa sân giữa, nhưng coi chừng nam châm.', center: 16.2, parts: fortress, nodes: fortressNodes, dropNodes: ['fortress-drop-center'], arenaObjects: arenaObjects.fortress },
+  townhouse: { id: 'townhouse', name: 'Nhà phố', tag: 'BỐN GIAN · BA TẦNG', description: 'Dãy nhà phố mở rộng với sân thượng, hiên và sáu cư dân. Chọn phòng và nhắm từng trụ.', tip: 'Đốt ván để cháy lan hoặc bắn sập mái kính.', center: 16.2, parts: townhouse, nodes: townhouseNodes, dropNodes: ['townhouse-drop-center'], relayRoute: ['townhouse-relay-approach', 'townhouse-relay-balcony', 'townhouse-node-5'], arenaObjects: arenaObjects.townhouse },
+  tower: { id: 'tower', name: 'Tháp cao', tag: 'THÁP BẬC · CÁNH PHỤ', description: 'Tháp bậc bốn tầng, cánh phụ hai tầng và sáu cư dân trên một chiến tuyến rộng.', tip: 'Nam châm giữa sân sẽ bẻ đường bay của tên lửa.', center: 16.2, parts: tower, nodes: towerNodes, dropNodes: ['tower-drop-center'], relayRoute: ['tower-relay-approach', 'tower-node-1'], arenaObjects: arenaObjects.tower },
+  bridge: { id: 'bridge', name: 'Cầu trên không', tag: 'HAI THÁP · CẦU DÀI', description: 'Hai tháp canh lớn nối bằng cầu gỗ trên cao, với nhiều tuyến bắn ở cả hai đầu.', tip: 'Lửa lan qua ván; kính treo có thể rơi xuống sân.', center: 16.2, parts: bridge, nodes: bridgeNodes, dropNodes: ['bridge-drop-center'], relayRoute: ['bridge-relay-approach', 'bridge-node-1'], arenaObjects: arenaObjects.bridge },
+  fortress: { id: 'fortress', name: 'Pháo đài', tag: 'THÀNH RỘNG · THÁP GÁC', description: 'Pháo đài đá mở rộng với vọng lâu, tường chắn và nhiều lớp kết cấu chịu lực.', tip: 'Bắn đá treo để khóa sân giữa, nhưng coi chừng nam châm.', center: 16.2, parts: fortress, nodes: fortressNodes, dropNodes: ['fortress-drop-center'], relayRoute: ['fortress-relay-approach', 'fortress-node-4'], arenaObjects: arenaObjects.fortress },
 };
 export const DEFAULT_MAP = 'tower';
 export const MAP_CATALOG = Object.values(MAPS).map(({ parts, nodes, dropNodes: _dropNodes, arenaObjects: _arenaObjects, ...map }) => ({ ...map, thumbnail: parts.map(({ kind, x, y, size, material }) => ({ kind, x, y, size, material })) }));

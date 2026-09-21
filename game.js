@@ -41,9 +41,9 @@ export class Match {
     this.map = MAPS[mapId];
     this.options = options;
     this.ruleset = RULESETS.includes(options.ruleset) ? options.ruleset : 'classic';
-    const relayGoalNodeId = this.map.parts.find(part => part.kind === 'resident' && part.residentIndex === 0)?.nodeId;
+    const relayGoalNodeId = this.map.relayRoute?.at(-1);
     this.objective = this.ruleset === 'control'
-      ? { nodeId: this.map.dropNodes?.[0], goalNodeId: relayGoalNodeId, carrierId: null, carrierTeam: null, scores: [0, 0], target: RELAY_RULES.scoreTarget, maxTurns: RELAY_RULES.maxTurns, status: 'center', overtime: false }
+      ? { nodeId: this.map.dropNodes?.[0], goalNodeId: relayGoalNodeId, carrierId: null, carrierTeam: null, routeIndex: -1, routeSide: null, dropX: null, dropY: null, droppedFromTeam: null, scores: [0, 0], target: RELAY_RULES.scoreTarget, maxTurns: RELAY_RULES.maxTurns, status: 'center', overtime: false }
       : null;
     this.winReason = null;
     this.rng = options.rng || Math.random;
@@ -233,36 +233,52 @@ export class Match {
   isCoreCarrier(item) {
     return Boolean(this.objective && item && this.objective.carrierId === item.id && item.hp > 0 && !item.eliminated);
   }
-  movementSide(item) {
-    return this.isCoreCarrier(item) ? 1 - item.team : item.team;
+  get mover() {
+    if (this.objective?.carrierTeam === this.team) {
+      const carrier = this.items.find(item => item.id === this.objective.carrierId);
+      if (this.isCoreCarrier(carrier)) return carrier;
+    }
+    return this.shooter;
   }
   getAvailableMoves() {
     if (this.phase !== 'move' || !this.map.nodes) return [];
-    const shooter = this.shooter;
-    if (!shooter || shooter.hp <= 0) return [];
+    const mover = this.mover;
+    if (!mover || mover.hp <= 0) return [];
     if (this.objective && this.movedTurn === this.turn) return [];
-    const currentNode = this.map.nodes.find(n => n.id === shooter.nodeId);
+    if (this.isCoreCarrier(mover)) {
+      const routeIndex = this.objective.routeIndex + 1;
+      const nodeId = this.map.relayRoute?.[routeIndex];
+      const nodeDef = this.map.nodes.find(node => node.id === nodeId);
+      if (!nodeDef || !this.isNodeAvailable(nodeId, this.objective.routeSide)) return [];
+      const target = this.nodePosition(nodeDef, this.objective.routeSide);
+      const delivering = routeIndex === this.map.relayRoute.length - 1;
+      return [{ id: nodeId, label: `${delivering ? 'Giao lõi' : 'Tiến lõi'} · ${nodeDef.label}`, x: target.x, y: target.y, relayRouteIndex: routeIndex, deliversCore: delivering }];
+    }
+    const currentNode = this.map.nodes.find(n => n.id === mover.nodeId);
     if (!currentNode) return [];
     const moves = [];
     const candidateIds = [...currentNode.neighbors];
-    // A free energy core can be rushed from anywhere. Once picked up, the
-    // carrier traverses the mirrored graph on the opponent's building.
-    const coreFree = this.objective?.status === 'center' && this.objective.carrierId === null;
-    const atCore = coreFree && currentNode.id === this.objective.nodeId
-      && shooter.body.position.distanceTo(this.nodePosition(this.objective.nodeId, 0)) < 1;
-    if (coreFree && !atCore && !candidateIds.includes(this.objective.nodeId)) candidateIds.push(this.objective.nodeId);
-    const side = this.movementSide(shooter);
+    const coreFree = this.objective && ['center', 'dropped'].includes(this.objective.status) && this.objective.carrierId === null;
+    const coreTarget = this.objective?.status === 'dropped'
+      ? new C.Vec3(this.objective.dropX, this.objective.dropY, 0)
+      : this.objective ? this.nodePosition(this.objective.nodeId, 0) : null;
+    if (coreFree) {
+      moves.push({
+        id: this.objective.status === 'dropped' ? `${this.map.id}-core-dropped` : this.objective.nodeId,
+        label: this.objective.status === 'dropped' ? 'Nhặt lõi đang rơi' : 'Cướp lõi ở trung tâm',
+        x: coreTarget.x, y: coreTarget.y, core: true,
+      });
+    }
+    const side = mover.team;
     for (const neighborId of candidateIds) {
       const neighborDef = this.map.nodes.find(n => n.id === neighborId);
       if (!neighborDef) continue;
       if (!this.isNodeAvailable(neighborId, side)) continue;
       const target = this.nodePosition(neighborDef, side);
-      const delivering = this.isCoreCarrier(shooter) && neighborDef.id === this.objective.goalNodeId;
-      const occupied = this.items.some(i => i.kind === 'resident' && i.hp > 0 && i.id !== shooter.id
+      const occupied = this.items.some(i => i.kind === 'resident' && i.hp > 0 && i.id !== mover.id
         && i.body.position.distanceTo(target) < 1);
-      if (occupied && !delivering) continue;
-      const takingCore = neighborDef.id === this.objective?.nodeId && coreFree;
-      const move = { id: neighborDef.id, label: delivering ? `Giao lõi · ${neighborDef.label}` : takingCore ? 'Cướp lõi ở trung tâm' : neighborDef.label, x: target.x, y: target.y, core: takingCore, deliversCore: delivering };
+      if (occupied) continue;
+      const move = { id: neighborDef.id, label: neighborDef.label, x: target.x, y: target.y };
       if (this.airdrop && this.airdrop.landed && this.airdrop.nodeId === neighborDef.id) {
         move.hasAirdrop = true;
         move.airdropBuff = this.airdrop.buff;
@@ -274,13 +290,13 @@ export class Match {
   moveShooter(targetNodeId) {
     if (this.phase !== 'move') return { ok: false, error: 'Chỉ được di chuyển trong pha move.' };
     if (this.objective && this.movedTurn === this.turn) return { ok: false, error: 'Mỗi lượt chỉ được di chuyển một lần.' };
-    const shooter = this.shooter;
-    if (!shooter || shooter.hp <= 0) return { ok: false, error: 'Không tìm thấy xạ thủ hợp lệ.' };
+    const mover = this.mover;
+    if (!mover || mover.hp <= 0) return { ok: false, error: 'Không tìm thấy nhân vật di chuyển hợp lệ.' };
     const moves = this.getAvailableMoves();
     const targetMove = moves.find(m => m.id === targetNodeId);
     if (!targetMove) return { ok: false, error: 'Không thể di chuyển tới vị trí này.' };
     const nodeDef = this.map.nodes.find(n => n.id === targetNodeId);
-    if (!nodeDef) return { ok: false, error: 'Node không tồn tại.' };
+    if (!nodeDef && !targetMove.core) return { ok: false, error: 'Node không tồn tại.' };
 
     let collectedBuff = null;
     if (this.airdrop && this.airdrop.landed && this.airdrop.nodeId === targetNodeId) {
@@ -290,38 +306,44 @@ export class Match {
 
       if (collectedBuff === 'heal') {
         const healAmount = 35;
-        shooter.hp = Math.min(shooter.maxHp, shooter.hp + healAmount);
-        this.event('heal', { residentId: shooter.id, amount: healAmount, hp: shooter.hp });
+        mover.hp = Math.min(mover.maxHp, mover.hp + healAmount);
+        this.event('heal', { residentId: mover.id, amount: healAmount, hp: mover.hp });
       } else if (collectedBuff === 'power') {
-        shooter.buff = { type: 'power', damageMod: 1.5, charges: 1 };
+        mover.buff = { type: 'power', damageMod: 1.5, charges: 1 };
       } else if (collectedBuff === 'armor') {
-        shooter.buff = { type: 'armor', reduction: 0.5, charges: 1 };
+        mover.buff = { type: 'armor', reduction: 0.5, charges: 1 };
       }
-      this.event('collect_airdrop', { residentId: shooter.id, buff: collectedBuff, team: this.team });
+      this.event('collect_airdrop', { residentId: mover.id, buff: collectedBuff, team: this.team });
     }
 
-    const target = this.nodePosition(nodeDef, this.movementSide(shooter));
+    const target = new C.Vec3(targetMove.x, targetMove.y, 0);
 
-    shooter.nodeId = targetNodeId;
-    shooter.spot = nodeDef.label;
-    shooter.body.position.copy(target);
-    shooter.body.velocity.set(0, 0, 0);
-    shooter.body.angularVelocity.set(0, 0, 0);
-    shooter.body.wakeUp();
+    mover.nodeId = nodeDef?.id || this.objective.nodeId;
+    mover.spot = nodeDef?.label || 'Điểm lõi rơi';
+    mover.body.position.copy(target);
+    mover.body.velocity.set(0, 0, 0);
+    mover.body.angularVelocity.set(0, 0, 0);
+    mover.body.wakeUp();
     this.movedTurn = this.turn;
 
-    this.event('move', { shooterId: shooter.id, team: this.team, nodeId: targetNodeId, spot: nodeDef.label, buff: collectedBuff });
+    this.event('move', { shooterId: mover.id, moverId: mover.id, team: this.team, nodeId: targetNodeId, spot: mover.spot, buff: collectedBuff });
     let pickedCore = false, scoredCore = false;
-    if (this.objective?.status === 'center' && targetNodeId === this.objective.nodeId) {
-      this.objective.carrierId = shooter.id;
-      this.objective.carrierTeam = shooter.team;
+    if (targetMove.core) {
+      const continuingRoute = this.objective.status === 'dropped' && this.objective.droppedFromTeam === mover.team;
+      this.objective.carrierId = mover.id;
+      this.objective.carrierTeam = mover.team;
+      if (!continuingRoute) this.objective.routeIndex = -1;
+      this.objective.routeSide = 1 - mover.team;
       this.objective.status = 'carried';
+      this.objective.dropX = null; this.objective.dropY = null; this.objective.droppedFromTeam = null;
       pickedCore = true;
-      this.event('corePickup', { team: shooter.team, residentId: shooter.id, x: target.x, y: target.y });
-    } else if (this.isCoreCarrier(shooter) && targetNodeId === this.objective.goalNodeId) {
-      scoredCore = this.scoreCore(shooter);
+      this.event('corePickup', { team: mover.team, residentId: mover.id, x: target.x, y: target.y });
+    } else if (this.isCoreCarrier(mover)) {
+      this.objective.routeIndex = targetMove.relayRouteIndex;
+      if (targetMove.deliversCore) scoredCore = this.scoreCore(mover);
     }
-    return { ok: true, nodeId: targetNodeId, spot: nodeDef.label, collectedBuff, pickedCore, scoredCore };
+    this.syncShooter();
+    return { ok: true, nodeId: targetNodeId, spot: mover.spot, collectedBuff, pickedCore, scoredCore };
   }
   add(kind, team, x, y, size, mass, hp, material = null) {
     if (kind !== 'resident' && !Object.hasOwn(MATERIALS, material)) throw new Error('Unknown material');
@@ -375,14 +397,10 @@ export class Match {
     proj.body.addEventListener('collide', event => this.pendingProjectileCollisions.push({ proj, hitBody: event.body, normal: event.contact.ni.clone(), velocity: proj.body.velocity.clone() }));
   }
   get shooter() {
-    if (this.objective?.carrierTeam === this.team) {
-      const carrier = this.items.find(item => item.id === this.objective.carrierId);
-      if (carrier?.hp > 0 && !carrier.eliminated) return carrier;
-    }
     const roster = this.items.filter(i => i.kind === 'resident' && i.team === this.team);
     for (let offset = 0; offset < roster.length; offset++) {
       const item = roster[(this.shooterCursor[this.team] + offset) % roster.length];
-      if (item.hp > 0) return item;
+      if (item.hp > 0 && !item.eliminated && !this.isCoreCarrier(item)) return item;
     }
     return null;
   }
@@ -449,7 +467,6 @@ export class Match {
       if (hit.body !== shooter.body && hit.distance < nearest) { nearest = hit.distance; obstruction = hit.hitPointWorld.clone(); }
     });
     let damageMod = 1.0;
-    if (this.isCoreCarrier(shooter)) damageMod *= .8;
     if (shooter.buff?.type === 'power' && shooter.buff.charges > 0) {
       damageMod *= shooter.buff.damageMod || 1.5;
       shooter.buff.charges--;
@@ -790,7 +807,7 @@ export class Match {
     this.wind = this.rollWind(); this.enterPhase('move', PHASE_DURATIONS.move); this.syncShooter();
   }
   relaySpawnNode(item) {
-    const candidates = this.map.nodes.filter(node => !node.neutral && !node.supportId);
+    const candidates = this.map.nodes.filter(node => !node.neutral && !node.supportId && !this.map.relayRoute?.includes(node.id));
     const preferred = candidates.find(node => node.id === this.objective?.goalNodeId);
     const ordered = preferred ? [preferred, ...candidates.filter(node => node !== preferred)] : candidates;
     return ordered.find(node => {
@@ -813,7 +830,16 @@ export class Match {
     if (!this.objective) return;
     const previousCarrierId = this.objective.carrierId;
     this.objective.carrierId = null; this.objective.carrierTeam = null; this.objective.status = 'center';
+    this.objective.routeIndex = -1; this.objective.routeSide = null;
+    this.objective.dropX = null; this.objective.dropY = null; this.objective.droppedFromTeam = null;
     this.event('coreReset', { reason, previousCarrierId, nodeId: this.objective.nodeId });
+  }
+  dropCore(carrier) {
+    if (!carrier || this.objective?.carrierId !== carrier.id) return;
+    this.objective.carrierId = null; this.objective.carrierTeam = null; this.objective.status = 'dropped';
+    this.objective.dropX = carrier.body.position.x; this.objective.dropY = Math.max(.53, carrier.body.position.y);
+    this.objective.droppedFromTeam = carrier.team;
+    this.event('coreDrop', { residentId: carrier.id, team: carrier.team, x: this.objective.dropX, y: this.objective.dropY });
   }
   scoreCore(carrier) {
     if (!this.isCoreCarrier(carrier)) return false;
@@ -832,7 +858,7 @@ export class Match {
     return true;
   }
   eliminateRelayResident(item) {
-    if (this.objective?.carrierId === item.id) this.resetCore('carrier-out');
+    if (this.objective?.carrierId === item.id) this.dropCore(item);
     try { this.world.removeBody(item.body); } catch {}
     item.eliminated = true; item.respawnAtTurn = this.turn + RELAY_RULES.respawnDelay;
     this.event('residentOut', { residentId: item.id, team: item.team, respawnAtTurn: item.respawnAtTurn });
@@ -846,8 +872,10 @@ export class Match {
   prepareRelayTeam(team) {
     const roster = this.items.filter(item => item.kind === 'resident' && item.team === team);
     for (const item of roster) if (item.eliminated && item.respawnAtTurn <= this.turn) this.respawnResident(item);
-    if (!roster.some(item => item.hp > 0 && !item.eliminated)) {
-      const first = roster.filter(item => item.eliminated).sort((a, b) => a.respawnAtTurn - b.respawnAtTurn)[0];
+    const needsEscort = this.objective?.carrierTeam === team;
+    const canAct = roster.some(item => item.hp > 0 && !item.eliminated && (!needsEscort || item.id !== this.objective.carrierId));
+    if (!canAct) {
+      const first = roster.filter(item => item.eliminated && (!needsEscort || item.id !== this.objective.carrierId)).sort((a, b) => a.respawnAtTurn - b.respawnAtTurn)[0];
       if (first) this.respawnResident(first, true);
     }
   }
@@ -1040,8 +1068,8 @@ export class Match {
     return {
       ...this.objective,
       scores: [...this.objective.scores],
-      x: carrier?.body.position.x ?? center.x,
-      y: carrier?.body.position.y ?? center.y,
+      x: carrier?.body.position.x ?? (this.objective.status === 'dropped' ? this.objective.dropX : center.x),
+      y: carrier?.body.position.y ?? (this.objective.status === 'dropped' ? this.objective.dropY : center.y),
     };
   }
   snapshot() {
@@ -1051,7 +1079,7 @@ export class Match {
       time: this.time, mapId: this.map.id, mapName: this.map.name, shooterId: ['flight', 'settle'].includes(this.phase) ? this.firedShooterId : this.shooter?.id ?? null,
       phase: this.phase, team: this.team, turn: this.turn, remaining: Math.max(0, Math.ceil(this.deadline - this.time)), aim: this.aim,
       aimImpact: this.phase === 'aim' ? this.traceAim() : null, winner: this.winner, winReason: this.winReason, ruleset: this.ruleset,
-      objective: this.getObjectiveSnapshot(),
+      objective: this.getObjectiveSnapshot(), moverId: this.mover?.id ?? null,
       availableMoves: this.getAvailableMoves(),
       wind: Math.round(this.wind * 10) / 10,
       weather: { ...this.weather },

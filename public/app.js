@@ -239,22 +239,21 @@ function updateControls() {
       let html = moves.map(m => {
         const buffLabel = m.airdropBuff === 'heal' ? '+35 HP' : m.airdropBuff === 'power' ? 'x1.5 Dmg' : 'Khiên -50%';
         const airdropBadge = m.hasAirdrop ? ` 🎁 [${buffLabel}]` : '';
-        const moveClass = `${m.hasAirdrop ? ' airdrop-node' : ''}${m.core || m.deliversCore ? ' control-node' : ''}`;
-        const icon = m.core ? '⚡' : m.deliversCore ? '🏁' : '🏃';
+        const moveClass = `${m.hasAirdrop ? ' airdrop-node' : ''}${m.core || Number.isInteger(m.relayRouteIndex) ? ' control-node' : ''}`;
+        const icon = m.core ? '⚡' : m.deliversCore ? '🏁' : Number.isInteger(m.relayRouteIndex) ? '➡' : '🏃';
         return `<button class="button secondary compact move-btn${moveClass}" data-node="${m.id}" style="margin-top:4px;font-size:10px;padding:6px 10px;width:100%">${icon} ${escape(m.label)}${airdropBadge}</button>`;
       }).join('');
       let lockSignature = '';
       if (showCoreNote) {
-        const shooter = state.game.items.find(item => item.id === state.game.shooterId);
         const me = state.players.find(player => player.id === playerId);
-        const reason = objective.carrierId === shooter?.id ? 'Bạn đang mang · tới căn cứ địch'
-          : objective.carrierTeam === me?.team ? 'Đồng đội đang mang lõi'
+        const reason = objective.status === 'dropped' ? 'Lõi đã rơi ngoài trời · tranh ngay'
+          : objective.carrierTeam === me?.team ? 'Carrier đang tiến · bạn bắn yểm trợ'
           : objective.carrierTeam !== null ? 'Đối thủ đang mang · hãy bắn hạ'
-          : 'Lõi đang trở lại trung tâm';
+          : 'Lõi đang chờ ở trung tâm';
         html += `<div class="control-node-note">⚡ Lõi năng lượng <small>${reason}</small></div>`;
         lockSignature = `${objective.status}:${objective.carrierId}:${objective.scores.join('-')}`;
       }
-      const sig = `${moves.map(m => `${m.id}:${m.hasAirdrop}:${m.core}:${m.deliversCore}`).join(',')}|${lockSignature}`;
+      const sig = `${moves.map(m => `${m.id}:${m.hasAirdrop}:${m.core}:${m.deliversCore}:${m.relayRouteIndex}`).join(',')}|${lockSignature}`;
       if (moveOptions.dataset.signature !== sig) {
         moveOptions.dataset.signature = sig;
         moveOptions.innerHTML = html;
@@ -334,7 +333,7 @@ function updateMapUI() {
   });
   const rulesetSummary = document.querySelector('#ruleset-summary');
   if (rulesetSummary) rulesetSummary.textContent = ruleset === 'control'
-    ? 'Cướp lõi · Mang lõi trung tâm tới căn cứ địch. Ghi 2 điểm để thắng; nhân vật được hồi sinh.'
+    ? 'Cướp lõi · Carrier đi tuyến ngoài trời, đồng đội bắn yểm trợ. Giao 2 lõi để thắng.'
     : 'Phá hủy · Loại toàn bộ cư dân đối phương để thắng.';
   if (scene) loadPreview(state.mapId === 'random' ? 'tower' : state.mapId);
 }
@@ -454,14 +453,17 @@ function updateGameUI() {
   const isSettle = game.phase === 'settle';
   document.querySelector('#turn-heading').textContent = isFlight ? 'Đạn đang bay' : isSettle ? 'Đang ổn định' : isMove ? (mine ? 'Chọn vị trí' : `${activeLabel} di chuyển`) : mine ? 'Kéo để ngắm' : `${activeLabel} đang ngắm`;
   const detail = document.querySelector('#turn-detail');
-  const carryingCore = game.objective?.carrierId === shooter?.id;
-  if (detail) detail.textContent = isFlight || isSettle ? 'Chờ công trình ổn định…' : `${weapon?.name || ''} · ${shooter?.spot || ''}${carryingCore ? ' · ⚡ MANG LÕI · SÁT THƯƠNG -20%' : ''}`;
+  const teamCarrier = game.objective?.carrierTeam === game.team
+    ? game.items.find(item => item.id === game.objective.carrierId) : null;
+  if (detail) detail.textContent = isFlight || isSettle ? 'Chờ công trình ổn định…' : `${weapon?.name || ''} · ${shooter?.spot || ''}${teamCarrier ? ` · YỂM TRỢ CARRIER Ở ${teamCarrier.spot}` : ''}`;
   document.querySelector('#timer').textContent = ['move', 'aim'].includes(game.phase) ? `${game.remaining}s` : '•••';
   document.querySelector('#round-label')?.replaceChildren(`LƯỢT ${game.turn}`);
   const control = document.querySelector('#control-status');
   if (control && game.objective) {
     control.hidden = false; control.dataset.owner = game.objective.carrierTeam ?? 'none';
-    const coreState = game.objective.carrierTeam === null
+    const coreState = game.objective.status === 'dropped'
+      ? 'LÕI ĐÃ RƠI · CÓ THỂ TRANH'
+      : game.objective.carrierTeam === null
       ? 'LÕI Ở TRUNG TÂM'
       : `${teams[game.objective.carrierTeam].toUpperCase()} ĐANG MANG LÕI`;
     const overtime = game.objective.overtime ? ' · HIỆP PHỤ' : ` · CÒN ${Math.max(0, game.objective.maxTurns - game.turn + 1)} LƯỢT`;
