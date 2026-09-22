@@ -45,7 +45,7 @@ export class Match {
     if (this.ruleset === 'control' && !this.map.heist) throw new Error('Objective mode requires the harbor map');
     this.objective = this.ruleset === 'control' ? {
       type: 'heist', attackerTeam: 0, defenderTeam: 1, stage: 'breach',
-      seals: this.map.heist.sealNodeIds.map((nodeId, index) => ({ id: index, nodeId, progress: 0, required: 2, disabled: false, repaired: false })),
+      seals: this.map.heist.sealNodeIds.map((nodeId, index) => ({ id: index, nodeId, progress: 0, required: 2, armed: false, disabled: false, repaired: false })),
       nodeId: this.map.heist.vaultNodeId, vaultNodeId: this.map.heist.vaultNodeId,
       extractionNodeId: this.map.heist.extractionNodeId,
       carrierId: null, carrierTeam: null, dropX: null, dropY: null, droppedFromTeam: null,
@@ -277,9 +277,10 @@ export class Match {
     if (this.objective?.type === 'heist' && mover.team === this.objective.attackerTeam) {
       if (this.objective.stage === 'breach') {
         for (const seal of this.objective.seals.filter(seal => !seal.disabled)) {
+          if (seal.armed || (!candidateIds.includes(seal.nodeId) && mover.nodeId !== seal.nodeId)) continue;
           const node = this.map.nodes.find(candidate => candidate.id === seal.nodeId);
           const target = this.nodePosition(node, mover.team);
-          const label = seal.progress === 0 ? `Tiếp cận ${node.label}` : `Phá ${node.label} · ${seal.progress}/${seal.required}`;
+          const label = seal.progress === 0 ? `Áp sát · ${node.label}` : `Đặt thuốc nổ · ${node.label}`;
           moves.unshift({ id: node.id, label, x: target.x, y: target.y, objectiveAction: 'breachSeal', sealId: seal.id });
         }
       } else if (this.objective.carrierId === null && ['vault', 'dropped'].includes(this.objective.status)) {
@@ -289,10 +290,11 @@ export class Match {
       }
     }
     if (this.objective?.type === 'heist' && mover.team === this.objective.defenderTeam && this.objective.stage === 'breach') {
-      for (const seal of this.objective.seals.filter(seal => seal.progress > 0 && !seal.repaired)) {
+      for (const seal of this.objective.seals.filter(seal => seal.armed && !seal.repaired)) {
+        if (!candidateIds.includes(seal.nodeId) && mover.nodeId !== seal.nodeId) continue;
         const node = this.map.nodes.find(candidate => candidate.id === seal.nodeId);
         const target = this.nodePosition(node, mover.team);
-        moves.unshift({ id: node.id, label: `Tái kích hoạt ${node.label}`, x: target.x, y: target.y, objectiveAction: 'repairSeal', sealId: seal.id });
+        moves.unshift({ id: node.id, label: `Gỡ thuốc nổ · ${node.label}`, x: target.x, y: target.y, objectiveAction: 'repairSeal', sealId: seal.id });
       }
     }
     const coreFree = this.objective?.type !== 'heist' && this.objective && ['center', 'dropped'].includes(this.objective.status) && this.objective.carrierId === null;
@@ -365,26 +367,22 @@ export class Match {
     this.movedTurn = this.turn;
 
     this.event('move', { shooterId: mover.id, moverId: mover.id, team: this.team, nodeId: targetNodeId, spot: mover.spot, buff: collectedBuff });
-    let pickedCore = false, scoredCore = false, disabledSeal = false, repairedSeal = false, extractedCore = false;
+    let pickedCore = false, scoredCore = false, armedCharge = false, repairedSeal = false, extractedCore = false;
     if (targetMove.objectiveAction === 'breachSeal') {
       const seal = this.objective.seals.find(candidate => candidate.id === targetMove.sealId);
       if (seal && !seal.disabled) {
         seal.progress = Math.min(seal.required, seal.progress + 1);
         this.event('sealProgress', { team: mover.team, residentId: mover.id, sealId: seal.id, nodeId: seal.nodeId, progress: seal.progress, required: seal.required });
         if (seal.progress >= seal.required) {
-          seal.disabled = true; disabledSeal = true;
-          this.event('sealDisabled', { team: mover.team, residentId: mover.id, sealId: seal.id, nodeId: seal.nodeId });
-          if (this.objective.seals.every(candidate => candidate.disabled)) {
-            this.objective.stage = 'steal'; this.objective.status = 'vault';
-            this.event('vaultOpened', { nodeId: this.objective.vaultNodeId });
-          }
+          seal.armed = true; armedCharge = true;
+          this.event('chargeArmed', { team: mover.team, residentId: mover.id, sealId: seal.id, nodeId: seal.nodeId });
         }
       }
     } else if (targetMove.objectiveAction === 'repairSeal') {
       const seal = this.objective.seals.find(candidate => candidate.id === targetMove.sealId);
-      if (seal && seal.progress > 0 && !seal.repaired && this.objective.stage === 'breach') {
-        seal.progress--; seal.disabled = false; seal.repaired = true; repairedSeal = true;
-        this.event('sealRepaired', { team: mover.team, residentId: mover.id, sealId: seal.id, nodeId: seal.nodeId, progress: seal.progress });
+      if (seal?.armed && !seal.repaired && this.objective.stage === 'breach') {
+        seal.progress = 0; seal.armed = false; seal.disabled = false; seal.repaired = true; repairedSeal = true;
+        this.event('chargeDisarmed', { team: mover.team, residentId: mover.id, sealId: seal.id, nodeId: seal.nodeId });
       }
     } else if (targetMove.core) {
       const continuingRoute = this.objective.status === 'dropped' && this.objective.droppedFromTeam === mover.team;
@@ -405,7 +403,7 @@ export class Match {
       if (targetMove.deliversCore) scoredCore = this.scoreCore(mover);
     }
     this.syncShooter();
-    return { ok: true, nodeId: targetNodeId, spot: mover.spot, collectedBuff, pickedCore, scoredCore, disabledSeal, repairedSeal, extractedCore };
+    return { ok: true, nodeId: targetNodeId, spot: mover.spot, collectedBuff, pickedCore, scoredCore, armedCharge, repairedSeal, extractedCore };
   }
   add(kind, team, x, y, size, mass, hp, material = null) {
     if (kind !== 'resident' && !Object.hasOwn(MATERIALS, material)) throw new Error('Unknown material');
@@ -862,11 +860,25 @@ export class Match {
   nextTurn() {
     if (this.ruleset === 'classic' && this.finishIfEliminated()) return;
     if (this.finishObjectiveByTurnLimit()) return;
+    if (this.objective?.type === 'heist' && this.team === this.objective.defenderTeam) this.resolveHeistCharges();
     const roster = this.items.filter(i => i.kind === 'resident' && i.team === this.team);
     this.shooterCursor[this.team] = (roster.findIndex(i => i.id === this.firedShooterId) + 1) % roster.length;
     this.team = 1 - this.team; this.turn++;
     if (this.objective) this.prepareRelayTeam(this.team);
     this.wind = this.rollWind(); this.enterPhase('move', PHASE_DURATIONS.move); this.syncShooter();
+  }
+  resolveHeistCharges() {
+    if (this.objective?.type !== 'heist' || this.objective.stage !== 'breach') return false;
+    const armed = this.objective.seals.filter(seal => seal.armed && !seal.disabled);
+    for (const seal of armed) {
+      seal.armed = false; seal.disabled = true; seal.progress = seal.required;
+      this.event('sealDisabled', { team: this.objective.attackerTeam, sealId: seal.id, nodeId: seal.nodeId, explosive: true });
+    }
+    if (armed.length && this.objective.seals.every(seal => seal.disabled)) {
+      this.objective.stage = 'steal'; this.objective.status = 'vault';
+      this.event('vaultOpened', { nodeId: this.objective.vaultNodeId });
+    }
+    return armed.length > 0;
   }
   relaySpawnNode(item) {
     if (this.objective?.type === 'heist') return this.map.nodes.find(node => node.id === item.spawnNodeId);

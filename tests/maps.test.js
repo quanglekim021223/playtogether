@@ -81,6 +81,11 @@ test('harbor: asymmetric blockout has two distinct bases and all heist landmarks
   assert.ok(map.heist.sealNodeIds.every(id => nodeIds.has(id)));
   assert.ok(nodeIds.has(map.heist.vaultNodeId));
   assert.ok(nodeIds.has(map.heist.extractionNodeId));
+  for (const team of [0, 1]) {
+    const routes = map.nodes.filter(node => node.team === team).map(node => map.heist.sealNodeIds.filter(id => node.neighbors.includes(id)));
+    assert.ok(routes.every(route => route.length === 1), `team ${team} actors must belong to exactly one infiltration lane`);
+    assert.deepEqual(new Set(routes.flat()), new Set(map.heist.sealNodeIds));
+  }
   const game = new Match('harbor', { ruleset: 'control' });
   for (let i = 0; i < 1200; i++) game.step();
   assert.equal(game.items.filter(item => item.kind === 'resident').length, 12);

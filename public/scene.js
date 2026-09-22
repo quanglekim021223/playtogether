@@ -655,9 +655,9 @@ export function createScene(container) {
           const marker = sealMarkers[index]; if (!marker) return;
           marker.position.set(seal.x, 0, 1.25); marker.visible = true;
           const progress = seal.progress / seal.required;
-          marker.scale.setScalar(seal.disabled ? .55 : .85 + progress * .15);
-          marker.userData.body.material.color.setHex(seal.disabled ? 0x647174 : seal.progress > 0 ? 0xe58a3a : 0xd65f4a);
-          marker.userData.ring.material.color.setHex(seal.disabled ? 0x91a3a4 : seal.progress > 0 ? 0xffecad : 0xffd376);
+          marker.scale.setScalar(seal.disabled ? .55 : seal.armed ? 1.12 : .85 + progress * .15);
+          marker.userData.body.material.color.setHex(seal.disabled ? 0x647174 : seal.armed ? 0xff3b24 : seal.progress > 0 ? 0xe58a3a : 0xd65f4a);
+          marker.userData.ring.material.color.setHex(seal.disabled ? 0x91a3a4 : seal.armed ? 0xffffff : seal.progress > 0 ? 0xffecad : 0xffd376);
         });
         vaultMarker.position.set(objective.vault.x, 0, 1.1);
         extractionMarker.position.set(objective.extraction.x, 0, 1.1);

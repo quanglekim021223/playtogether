@@ -196,7 +196,7 @@ test('harbor heist exposes attacker roles, two seals and live mission HUD', asyn
     await expect(page.locator('#match-map')).toHaveText('Hải cảng');
     await expect(page.locator('#scene')).toHaveAttribute('data-map', 'harbor');
     await expect(page.locator('#scene')).toHaveAttribute('data-control-progress', '0-0/2:breach');
-    await expect(player.phone.locator('.move-btn.control-node')).toHaveCount(2);
+    await expect(player.phone.locator('.move-btn.control-node')).toHaveCount(1);
     await player.phone.getByRole('button', { name: /Khóa cầu cảng/ }).click();
     await expect(page.locator('#control-status')).toContainText('XÂM NHẬP 1/4 · KHÓA 0/2');
     await expect(page.locator('#scene')).toHaveAttribute('data-control-progress', '1-0/2:breach');
@@ -207,6 +207,10 @@ test('harbor heist exposes attacker roles, two seals and live mission HUD', asyn
     await expect(player.phone.locator('#aim-pad')).toHaveClass(/armed/);
     await release(player);
     await expect(player.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'true');
+    await expect(player.phone.getByRole('button', { name: /Đặt thuốc nổ · Khóa cầu cảng/ })).toBeVisible({ timeout: 20_000 });
+    await player.phone.getByRole('button', { name: /Đặt thuốc nổ · Khóa cầu cảng/ }).click();
+    await expect(page.locator('#control-status')).toContainText('💣 1 ĐANG ĐẾM');
+    await expect(page.locator('#scene')).toHaveAttribute('data-control-progress', '2-0/2:breach');
 
   } finally { await player.context.close(); }
 });

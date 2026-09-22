@@ -82,7 +82,10 @@ test('harbor objective positions expose open firing lanes for both roles', () =>
   assert.ok(game.projectile, 'attacker must be able to fire after breaching a seal');
 
   const defense = new Match('harbor', { ruleset: 'control' });
-  defense.team = 1; defense.syncShooter();
+  const defenders = defense.items.filter(item => item.kind === 'resident' && item.team === 1);
+  defense.team = 1;
+  defense.shooterCursor[1] = defenders.findIndex(item => defense.map.nodes.find(node => node.id === item.nodeId)?.neighbors.includes('harbor-seal-b'));
+  defense.syncShooter();
   defense.phase = 'move'; defense.movedTurn = null;
   assert.equal(defense.moveShooter('harbor-seal-b').ok, true);
   defense.wind = 0; defense.readyAim();

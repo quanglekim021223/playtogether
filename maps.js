@@ -271,11 +271,13 @@ const harborNodes = [
   { id: 'harbor-vault', label: 'Kho lõi', x: 23.5, y: .53, world: true, neutral: true, neighbors: [] },
   { id: 'harbor-extraction', label: 'Bến thoát', x: -28, y: .53, world: true, neutral: true, neighbors: [] },
 ];
-// Normal repositioning remains local; objective interactions are exposed as
-// explicit actions by Match so the first blockout is immediately playable.
-for (const node of harborNodes) {
-  if (node.team === 0) node.neighbors.push('harbor-seal-a');
-  if (node.team === 1) node.neighbors.push('harbor-seal-b');
+// Each half of both rosters owns one infiltration lane. This keeps the two
+// locks spatial: an actor can only approach/defuse the lock connected to its lane.
+for (const node of harborNodes.filter(node => node.team !== undefined)) {
+  const index = Number(node.id.at(-1));
+  const sealId = index < 3 ? 'harbor-seal-a' : 'harbor-seal-b';
+  node.neighbors.push(sealId);
+  harborNodes.find(candidate => candidate.id === sealId).neighbors.push(node.id);
 }
 const harborObjects = [
   { id: 'harbor-fuel', kind: 'fuelBarrel', x: 2.8, y: .58, size: [.88, 1.16, .88], mass: 1.4, hp: 42 },

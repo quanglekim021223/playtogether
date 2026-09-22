@@ -250,7 +250,8 @@ function updateControls() {
         const me = state.players.find(player => player.id === playerId);
         const sealProgress = objective.seals.reduce((sum, seal) => sum + seal.progress, 0);
         const sealRequired = objective.seals.reduce((sum, seal) => sum + seal.required, 0);
-        const reason = objective.stage === 'breach' ? `Tiến độ xâm nhập ${sealProgress}/${sealRequired}`
+        const armed = objective.seals.filter(seal => seal.armed).length;
+        const reason = objective.stage === 'breach' ? `${armed ? `${armed} thuốc nổ đang đếm ngược · ` : ''}Tiến độ xâm nhập ${sealProgress}/${sealRequired}`
           : objective.status === 'dropped' ? 'Lõi đã rơi · đội Đột kích cần thu hồi'
           : objective.carrierTeam === me?.team ? 'Carrier đang tiến · bạn bắn yểm trợ'
           : objective.carrierTeam !== null ? 'Đối thủ đang mang · hãy bắn hạ'
@@ -471,9 +472,10 @@ function updateGameUI() {
   if (control && game.objective) {
     control.hidden = false; control.dataset.owner = game.objective.carrierTeam ?? 'none';
     const disabled = game.objective.seals.filter(seal => seal.disabled).length;
+    const armed = game.objective.seals.filter(seal => seal.armed).length;
     const sealProgress = game.objective.seals.reduce((sum, seal) => sum + seal.progress, 0);
     const sealRequired = game.objective.seals.reduce((sum, seal) => sum + seal.required, 0);
-    const coreState = game.objective.stage === 'breach' ? `XÂM NHẬP ${sealProgress}/${sealRequired} · KHÓA ${disabled}/2`
+    const coreState = game.objective.stage === 'breach' ? `${armed ? `💣 ${armed} ĐANG ĐẾM · ` : ''}XÂM NHẬP ${sealProgress}/${sealRequired} · KHÓA ${disabled}/2`
       : game.objective.status === 'dropped' ? 'LÕI ĐÃ RƠI · THU HỒI'
       : game.objective.stage === 'steal' ? 'KHO ĐÃ MỞ · LẤY LÕI'
       : game.objective.status === 'extracted' ? 'ĐÃ RÚT LÕI'
