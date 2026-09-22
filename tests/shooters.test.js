@@ -58,7 +58,7 @@ test('a wall in front of the muzzle blocks the shot instead of teleporting throu
   const blast = game.events.find(e => e.type === 'blast');
   assert.ok(blast.x < p.x + .65);
 });
-for (const map of Object.keys(MAPS)) test(`${map}: every resident can launch from an open position`, () => {
+for (const map of Object.keys(MAPS).filter(id => !MAPS[id].asymmetric)) test(`${map}: every resident can launch from an open position`, () => {
   for (const team of [0, 1]) for (let index = 0; index < 6; index++) {
     const game = new Match(map); game.wind = 0; game.team = team; game.shooterCursor[team] = index; game.syncShooter();
     const aim = game.botAim();
@@ -73,4 +73,19 @@ for (const map of Object.keys(MAPS)) test(`${map}: every resident can launch fro
     const blast = game.events.find(e => e.type === 'blast');
     assert.ok(blast && blast.x * (team === 0 ? 1 : -1) > 0, `${game.shooter.weapon} must have a viable arc to the enemy side`);
   }
+});
+test('harbor objective positions expose open firing lanes for both roles', () => {
+  const game = new Match('harbor', { ruleset: 'control' });
+  assert.equal(game.moveShooter('harbor-seal-a').ok, true);
+  game.wind = 0; game.readyAim();
+  assert.equal(game.fire({ angle: 55, power: 70, weapon: game.shooter.weapon }), true);
+  assert.ok(game.projectile, 'attacker must be able to fire after breaching a seal');
+
+  const defense = new Match('harbor', { ruleset: 'control' });
+  defense.team = 1; defense.syncShooter();
+  defense.phase = 'move'; defense.movedTurn = null;
+  assert.equal(defense.moveShooter('harbor-seal-b').ok, true);
+  defense.wind = 0; defense.readyAim();
+  assert.equal(defense.fire({ angle: 55, power: 70, weapon: defense.shooter.weapon }), true);
+  assert.ok(defense.projectile, 'defender must be able to fire from the outer seal');
 });

@@ -93,20 +93,24 @@ export function createApp({ port = 3000 } = {}) {
     handle('selectMap', ({ mapId }) => {
       if (!host || room.hostSocket !== socket.id || room.game) return { error: 'Chỉ chủ phòng được chọn bản đồ ở sảnh.' };
       if (mapId !== 'random' && (typeof mapId !== 'string' || !Object.hasOwn(MAPS, mapId))) return { error: 'Bản đồ không hợp lệ.' };
+      if (room.ruleset === 'control' && mapId !== 'harbor') return { error: 'Phi vụ lõi hiện dùng bản đồ Hải cảng.' };
+      if (room.ruleset === 'classic' && mapId === 'harbor') return { error: 'Hải cảng dành cho Phi vụ lõi.' };
       room.mapId = mapId; broadcast(room);
     });
     handle('selectRuleset', ({ ruleset }) => {
       if (!host || room.hostSocket !== socket.id || room.game) return { error: 'Chỉ chủ phòng được chọn luật chơi ở sảnh.' };
       if (!RULESETS.includes(ruleset)) return { error: 'Luật chơi không hợp lệ.' };
-      room.ruleset = ruleset; broadcast(room);
+      room.ruleset = ruleset;
+      room.mapId = ruleset === 'control' ? 'harbor' : (room.mapId === 'harbor' ? DEFAULT_MAP : room.mapId);
+      broadcast(room);
     });
     handle('start', ({ mode }) => {
       if (!host || room.hostSocket !== socket.id || room.game) return { error: 'Chỉ chủ phòng được bắt đầu ở sảnh.' };
       if (!['practice', 'party'].includes(mode)) return { error: 'Chế độ không hợp lệ.' };
       if (mode === 'party' && ![0, 1].every(t => room.players.some(p => p.team === t && p.connected))) return { error: 'Cần ít nhất một điện thoại ở mỗi đội.' };
       if (mode === 'practice' && !room.players.some(p => p.team === 0 && p.connected)) return { error: 'Kết nối một điện thoại vào đội San Hô để đấu bot.' };
-      const mapIds = Object.keys(MAPS);
-      const mapId = room.mapId === 'random' ? mapIds[randomInt(mapIds.length)] : room.mapId;
+      const mapIds = Object.keys(MAPS).filter(id => id !== 'harbor');
+      const mapId = room.ruleset === 'control' ? 'harbor' : room.mapId === 'random' ? mapIds[randomInt(mapIds.length)] : room.mapId;
       const matchOptions = mode === 'practice' ? { weather: 'clear' } : { randomWeather: true };
       room.mode = mode; room.game = new Match(mapId, { ...matchOptions, ruleset: room.ruleset }); broadcast(room);
     });
@@ -187,8 +191,8 @@ export function createApp({ port = 3000 } = {}) {
         if (bot) {
           if (room.game.phase === 'move' && room.game.deadline - room.game.time < PHASE_DURATIONS.move - .8) {
             const moves = room.game.getAvailableMoves();
-            let objectiveMove = ['center', 'dropped'].includes(room.game.objective?.status) ? moves.find(move => move.core) : null;
-            if (room.game.objective?.carrierTeam === room.game.team) objectiveMove = moves.find(move => Number.isInteger(move.relayRouteIndex));
+            let objectiveMove = moves.find(move => move.objectiveAction || move.core || move.deliversCore) || null;
+            if (room.game.objective?.type !== 'heist' && room.game.objective?.carrierTeam === room.game.team) objectiveMove = moves.find(move => Number.isInteger(move.relayRouteIndex));
             if (objectiveMove) room.game.moveShooter(objectiveMove.id);
             room.game.readyAim();
           } else if (room.game.phase === 'aim' && room.game.deadline - room.game.time < PHASE_DURATIONS.aim - 2) {

@@ -184,18 +184,22 @@ test('resident shot triggers live material damage, fragments and cracks on TV', 
   } finally { await player.context.close(); }
 });
 
-test('relay carrier can move while a teammate aims and fires', async ({ page, browser }) => {
+test('harbor heist exposes attacker roles, two seals and live mission HUD', async ({ page, browser }) => {
   const code = await createRoom(page);
   const player = await joinPhone(browser, code, 'Yểm trợ');
   try {
     await page.locator('#ruleset-picker [data-ruleset="control"]').click();
-    await page.locator('#map-picker [data-map="tower"]').click();
+    await expect(page.locator('#map-picker [data-map="harbor"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(player.phone.locator('#ruleset-summary')).toContainText('phá 2 khóa');
+    await expect(player.phone.getByRole('button', { name: 'Phe Đột kích' })).toBeVisible();
     await page.locator('#practice').click();
-
-    const firstWeapon = await player.phone.locator('#shooter-weapon').textContent();
-    await player.phone.locator('.move-btn.control-node').click();
-    await expect(player.phone.locator('.control-node-note')).toContainText('bắn yểm trợ');
-    await expect(player.phone.locator('#shooter-weapon')).not.toHaveText(firstWeapon);
+    await expect(page.locator('#match-map')).toHaveText('Hải cảng');
+    await expect(page.locator('#scene')).toHaveAttribute('data-map', 'harbor');
+    await expect(page.locator('#scene')).toHaveAttribute('data-control-progress', '0/2:breach');
+    await expect(player.phone.locator('.move-btn.control-node')).toHaveCount(2);
+    await player.phone.getByRole('button', { name: /Khóa cầu cảng/ }).click();
+    await expect(page.locator('#control-status')).toContainText('PHÁ KHÓA 1/2');
+    await expect(page.locator('#scene')).toHaveAttribute('data-control-progress', '1/2:breach');
     await player.phone.locator('#ready-aim').click();
     await expect(player.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'false');
 
@@ -204,32 +208,22 @@ test('relay carrier can move while a teammate aims and fires', async ({ page, br
     await release(player);
     await expect(player.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'true');
 
-    await expect(player.phone.locator('#ready-aim')).toBeVisible({ timeout: 35_000 });
-    await expect(player.phone.locator('.move-btn.control-node')).toContainText('Tiến lõi');
-    await player.phone.locator('.move-btn.control-node').click();
-    await player.phone.locator('#ready-aim').click();
-    await expect(player.phone.locator('#aim-pad')).toHaveAttribute('aria-disabled', 'false');
-    await pullStart(player, -40, 35);
-    await expect(player.phone.locator('#aim-pad')).toHaveClass(/armed/);
   } finally { await player.context.close(); }
 });
 
-test('four maps: shared selection, correct 3D geometry, replay, random and slow preview', async ({ page, browser }) => {
+test('four classic maps: shared selection, correct 3D geometry, replay, random and slow preview', async ({ page, browser }) => {
   test.setTimeout(90_000); // Multiple high-detail coastal screenshots take longer in software-rendered CI.
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   const code = await createRoom(page); const player = await joinPhone(browser, code, 'Kiến trúc sư');
   let releasePreview;
   try {
-    await page.locator('#ruleset-picker [data-ruleset="control"]').click();
-    await expect(page.locator('#ruleset-picker [data-ruleset="control"]')).toHaveAttribute('aria-pressed', 'true');
-    await expect(player.phone.locator('#ruleset-summary')).toContainText('Giao 2 lõi');
+    await expect(page.locator('#ruleset-picker [data-ruleset="classic"]')).toHaveAttribute('aria-pressed', 'true');
     for (const [mapId, name] of [['townhouse', 'Nhà phố'], ['tower', 'Tháp cao'], ['bridge', 'Cầu trên không'], ['fortress', 'Pháo đài']]) {
       await page.locator(`#map-picker [data-map="${mapId}"]`).click();
       await expect(page.locator('#scene')).toHaveAttribute('data-map', mapId);
       await expect(page.locator('#scene')).toHaveAttribute('data-special-objects', '5');
       await expect(player.phone.locator('#map-summary')).toContainText(name);
       await page.locator('#practice').click();
-      await expect(player.phone.locator('.move-btn.control-node')).toContainText('Cướp lõi');
       await player.phone.locator('#ready-aim').click();
       await expect(page.locator('#match-map')).toHaveText(name);
       await expect(player.phone.locator('#phone-team')).toContainText('SAN HÔ');
@@ -237,10 +231,8 @@ test('four maps: shared selection, correct 3D geometry, replay, random and slow 
       await expect(page.locator('#health-0 .life')).toHaveCount(6);
       await expect(page.locator('#health-1 .life')).toHaveCount(6);
       await expect(page.locator('#scene')).toHaveAttribute('data-map', mapId);
-      await expect(page.locator('#scene')).toHaveAttribute('data-ruleset', 'control');
-      await expect(page.locator('#scene')).toHaveAttribute('data-control-progress', '0-0/2');
-      await expect(page.locator('#control-status')).toContainText('LÕI Ở TRUNG TÂM');
-      await expect(player.phone.locator('#control-status')).toContainText('0–0 / 2');
+      await expect(page.locator('#scene')).toHaveAttribute('data-ruleset', 'classic');
+      await expect(page.locator('#control-status')).toBeHidden();
       await page.locator('#camera-toggle').click();
       await expect(page.locator('#scene')).toHaveAttribute('data-camera-mode', 'overview');
       await expect.poll(() => page.locator('#scene').getAttribute('data-camera-x').then(Number)).toBeCloseTo(0, 1);

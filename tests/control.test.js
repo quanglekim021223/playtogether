@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Match, RELAY_RULES, RULESETS } from '../game.js';
+import { HEIST_RULES, Match, RULESETS } from '../game.js';
 
 function moveOnce(game, nodeId) {
   game.phase = 'move';
@@ -8,150 +8,86 @@ function moveOnce(game, nodeId) {
   return game.moveShooter(nodeId);
 }
 
-function pickupCore(game) {
-  const result = moveOnce(game, game.objective.nodeId);
-  assert.equal(result.ok, true);
-  assert.equal(result.pickedCore, true);
-  return game.items.find(item => item.id === game.objective.carrierId);
-}
-
-function deliverCore(game) {
-  const carrier = game.mover;
-  let result;
-  for (const nodeId of game.map.relayRoute) {
-    result = moveOnce(game, nodeId);
+function openVault(game) {
+  for (const nodeId of game.map.heist.sealNodeIds) {
+    const result = moveOnce(game, nodeId);
     assert.equal(result.ok, true);
+    assert.equal(result.disabledSeal, true);
   }
-  assert.equal(result?.scoredCore, true);
-  return carrier;
 }
 
 test('classic remains the default ruleset', () => {
   const game = new Match('tower');
-  const snapshot = game.snapshot();
   assert.deepEqual(RULESETS, ['classic', 'control']);
-  assert.equal(snapshot.ruleset, 'classic');
-  assert.equal(snapshot.objective, null);
-  assert.equal(snapshot.availableMoves.some(move => move.id === 'tower-drop-center'), false);
+  assert.equal(game.snapshot().objective, null);
 });
 
-test('relay exposes a free center core to every active resident', () => {
-  const game = new Match('tower', { ruleset: 'control' });
+test('objective mode is bound to the asymmetric harbor blockout', () => {
+  assert.throws(() => new Match('tower', { ruleset: 'control' }), /harbor/);
+  const game = new Match('harbor', { ruleset: 'control' });
   const snapshot = game.snapshot();
-  assert.equal(snapshot.objective.nodeId, 'tower-drop-center');
-  assert.equal(snapshot.objective.goalNodeId, 'tower-node-1');
-  assert.deepEqual(snapshot.objective.scores, [0, 0]);
-  assert.equal(snapshot.objective.target, RELAY_RULES.scoreTarget);
-  const roster = game.items.filter(item => item.kind === 'resident' && item.team === 0);
-  for (let index = 0; index < roster.length; index++) {
-    game.shooterCursor[0] = index;
-    game.syncShooter();
-    assert.ok(game.getAvailableMoves().some(move => move.id === snapshot.objective.nodeId && move.core), `shooter ${index} cannot rush core`);
-  }
+  assert.equal(snapshot.objective.type, 'heist');
+  assert.equal(snapshot.objective.stage, 'breach');
+  assert.equal(snapshot.objective.status, 'locked');
+  assert.equal(snapshot.objective.attackerTurnsRemaining, HEIST_RULES.maxAttackerTurns);
+  assert.equal(snapshot.items.filter(item => item.team === 0 && item.kind === 'resident').length, 6);
+  assert.equal(snapshot.items.filter(item => item.team === 1 && item.kind === 'resident').length, 6);
 });
 
-test('the carrier moves on an exposed route while a teammate remains the shooter', () => {
-  const game = new Match('tower', { ruleset: 'control' });
-  const carrier = pickupCore(game);
-  assert.equal(game.objective.carrierId, carrier.id);
+test('attackers must disable both seals before the vault opens', () => {
+  const game = new Match('harbor', { ruleset: 'control' });
+  const actions = game.getAvailableMoves().filter(move => move.objectiveAction === 'disableSeal');
+  assert.equal(actions.length, 2);
+  assert.equal(moveOnce(game, actions[0].id).disabledSeal, true);
+  assert.equal(game.objective.stage, 'breach');
+  assert.equal(game.objective.status, 'locked');
+  assert.equal(moveOnce(game, actions[1].id).disabledSeal, true);
+  assert.equal(game.objective.stage, 'steal');
+  assert.equal(game.objective.status, 'vault');
+  assert.ok(game.events.some(event => event.type === 'vaultOpened'));
+});
+
+test('attackers steal the core and extract at the dock to win', () => {
+  const game = new Match('harbor', { ruleset: 'control' });
+  openVault(game);
+  const pickup = moveOnce(game, game.map.heist.vaultNodeId);
+  assert.equal(pickup.pickedCore, true);
+  assert.equal(game.objective.stage, 'escape');
   assert.equal(game.objective.carrierTeam, 0);
-  assert.equal(game.mover.id, carrier.id);
-  assert.notEqual(game.shooter.id, carrier.id);
-  const escort = game.shooter;
-  assert.equal(game.aim.weapon, escort.weapon);
-  game.readyAim();
-  assert.equal(game.fire({ ...game.aim, shooterId: escort.id, turn: game.turn }), true);
-  game.projectile = null;
-  game.phase = 'move';
-  game.firedShooterId = escort.id;
-  game.nextTurn();
-  game.firedShooterId = game.shooter.id;
-  game.nextTurn();
-  assert.equal(game.team, 0);
-  assert.equal(game.mover.id, carrier.id);
-  assert.notEqual(game.shooter.id, carrier.id);
-  const enemySideMove = game.getAvailableMoves().find(move => move.id === 'tower-relay-approach');
-  assert.ok(enemySideMove);
-  assert.ok(enemySideMove.x > 0, 'team 0 carrier should cross onto team 1 side');
-  assert.equal(enemySideMove.label, 'Tiến lõi · Lối trống trước tháp');
-});
-
-test('every map has a playable center-to-enemy-base relay route', () => {
-  for (const mapId of ['townhouse', 'tower', 'bridge', 'fortress']) {
-    const game = new Match(mapId, { ruleset: 'control' });
-    pickupCore(game);
-    deliverCore(game);
-    assert.deepEqual(game.objective.scores, [1, 0], `${mapId} cannot deliver a core`);
-  }
-});
-
-test('movement is limited to one action per turn', () => {
-  const game = new Match('tower', { ruleset: 'control' });
-  assert.equal(game.moveShooter(game.objective.nodeId).ok, true);
-  assert.deepEqual(game.getAvailableMoves(), []);
-  assert.match(game.moveShooter('tower-node-6').error, /một lần/);
-});
-
-test('delivering two cores wins relay; elimination alone never wins it', () => {
-  const game = new Match('tower', { ruleset: 'control' });
-  pickupCore(game);
-  deliverCore(game);
-  assert.deepEqual(game.objective.scores, [1, 0]);
-  assert.equal(game.winner, null);
-
-  pickupCore(game);
-  deliverCore(game);
-  assert.deepEqual(game.objective.scores, [2, 0]);
+  assert.notEqual(game.mover.id, game.shooter.id, 'a teammate should still provide covering fire');
+  const extraction = moveOnce(game, game.map.heist.extractionNodeId);
+  assert.equal(extraction.extractedCore, true);
   assert.equal(game.winner, 0);
-  assert.equal(game.winReason, 'relay');
+  assert.equal(game.winReason, 'heist-attack');
   assert.equal(game.phase, 'over');
-
-  const fresh = new Match('tower', { ruleset: 'control' });
-  for (const resident of fresh.items.filter(item => item.kind === 'resident' && item.team === 1)) resident.hp = 0;
-  assert.equal(fresh.finishIfEliminated(), false);
-  assert.equal(fresh.winner, null);
 });
 
-test('knocking out the carrier drops a contestable core and the resident respawns later', () => {
-  const game = new Match('tower', { ruleset: 'control' });
-  const carrier = pickupCore(game);
-  moveOnce(game, game.map.relayRoute[0]);
-  carrier.hp = 0;
-  game.step();
+test('a dropped core can only be recovered by the attackers', () => {
+  const game = new Match('harbor', { ruleset: 'control' });
+  openVault(game);
+  moveOnce(game, game.map.heist.vaultNodeId);
+  const carrier = game.items.find(item => item.id === game.objective.carrierId);
+  game.dropCore(carrier);
   assert.equal(game.objective.status, 'dropped');
-  assert.equal(game.objective.carrierId, null);
-  assert.ok(Number.isFinite(game.objective.dropX));
-  assert.ok(Number.isFinite(game.objective.dropY));
-  assert.equal(game.getObjectiveSnapshot().x, game.objective.dropX);
-  assert.equal(game.getObjectiveSnapshot().y, game.objective.dropY);
-  assert.equal(carrier.eliminated, true);
-  assert.equal(carrier.respawnAtTurn, 1 + RELAY_RULES.respawnDelay);
-
-  game.team = 1;
-  game.phase = 'move'; game.movedTurn = null;
-  const droppedMove = game.getAvailableMoves().find(move => move.core);
-  assert.equal(droppedMove.label, 'Nhặt lõi đang rơi');
-  assert.equal(game.moveShooter(droppedMove.id).pickedCore, true);
-  assert.equal(game.objective.carrierTeam, 1);
-  assert.equal(game.objective.routeIndex, -1);
-
-  game.turn = carrier.respawnAtTurn;
-  game.prepareRelayTeam(carrier.team);
-  assert.equal(carrier.eliminated, false);
-  assert.equal(carrier.hp, carrier.maxHp);
-  assert.ok(game.world.bodies.includes(carrier.body));
+  game.team = 1; game.phase = 'move'; game.movedTurn = null; game.syncShooter();
+  assert.equal(game.getAvailableMoves().some(move => move.core), false);
+  game.team = 0; game.phase = 'move'; game.movedTurn = null; game.syncShooter();
+  assert.equal(game.getAvailableMoves().find(move => move.core)?.label, 'Thu hồi lõi bị rơi');
 });
 
-test('time limit picks the higher score and tied games enter sudden-death overtime', () => {
-  const game = new Match('tower', { ruleset: 'control' });
-  game.turn = game.objective.maxTurns;
-  assert.equal(game.finishRelayByTurnLimit(), false);
-  assert.equal(game.objective.overtime, true);
+test('defenders win when all attacker turns expire', () => {
+  const game = new Match('harbor', { ruleset: 'control' });
+  game.objective.attackerTurnsRemaining = 1;
+  game.team = 0;
+  assert.equal(game.finishObjectiveByTurnLimit(), true);
+  assert.equal(game.winner, 1);
+  assert.equal(game.winReason, 'heist-defense');
+  assert.equal(game.phase, 'over');
+});
 
-  const leader = new Match('tower', { ruleset: 'control' });
-  leader.objective.scores = [1, 0];
-  leader.turn = leader.objective.maxTurns;
-  assert.equal(leader.finishRelayByTurnLimit(), true);
-  assert.equal(leader.winner, 0);
-  assert.equal(leader.winReason, 'relay-time');
+test('elimination alone does not end the objective mission', () => {
+  const game = new Match('harbor', { ruleset: 'control' });
+  for (const resident of game.items.filter(item => item.kind === 'resident' && item.team === 1)) resident.hp = 0;
+  assert.equal(game.finishIfEliminated(), false);
+  assert.equal(game.winner, null);
 });

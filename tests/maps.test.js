@@ -4,7 +4,7 @@ import { Match } from '../game.js';
 import { muzzlePosition, WEAPONS } from '../public/weapons.js';
 import { MAPS } from '../maps.js';
 
-for (const mapId of Object.keys(MAPS)) {
+for (const mapId of Object.keys(MAPS).filter(id => !MAPS[id].asymmetric)) {
   test(`${mapId}: movement graph has valid supports and bidirectional neighbors`, () => {
     const map = MAPS[mapId], partIds = new Set(map.parts.map(p => p.id)), nodeIds = new Set(map.nodes.map(n => n.id));
     assert.equal(map.nodes.filter(node => !node.id.includes('-relay-')).length, 12);
@@ -70,6 +70,22 @@ for (const mapId of Object.keys(MAPS)) {
     assert.ok(new Match(mapId).items.filter(i => i.kind === 'resident').every(i => i.hp === 100), 'replay must start fresh');
   });
 }
+test('harbor: asymmetric blockout has two distinct bases and all heist landmarks', () => {
+  const map = MAPS.harbor;
+  assert.equal(map.asymmetric, true);
+  assert.equal(map.partsByTeam.length, 2);
+  assert.equal(map.partsByTeam[0].filter(part => part.kind === 'resident').length, 6);
+  assert.equal(map.partsByTeam[1].filter(part => part.kind === 'resident').length, 6);
+  assert.notDeepEqual(map.partsByTeam[0].map(part => part.x), map.partsByTeam[1].map(part => -part.x));
+  const nodeIds = new Set(map.nodes.map(node => node.id));
+  assert.ok(map.heist.sealNodeIds.every(id => nodeIds.has(id)));
+  assert.ok(nodeIds.has(map.heist.vaultNodeId));
+  assert.ok(nodeIds.has(map.heist.extractionNodeId));
+  const game = new Match('harbor', { ruleset: 'control' });
+  for (let i = 0; i < 1200; i++) game.step();
+  assert.equal(game.items.filter(item => item.kind === 'resident').length, 12);
+  assert.ok(game.items.every(item => Number.isFinite(item.body.position.x) && Number.isFinite(item.body.position.y)));
+});
 test('unknown maps cannot silently fall back to an unintended layout', () => {
   for (const id of ['random', '__proto__', 'missing']) assert.throws(() => new Match(id), /Unknown map/);
 });

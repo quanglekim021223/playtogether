@@ -15,6 +15,7 @@ export const SKILL_LABELS = {
 export const PHASE_DURATIONS = Object.freeze({ move: 12, aim: 30, flight: 7, settle: 2.6 });
 export const RULESETS = Object.freeze(['classic', 'control']);
 export const RELAY_RULES = Object.freeze({ scoreTarget: 2, maxTurns: 24, respawnDelay: 4 });
+export const HEIST_RULES = Object.freeze({ maxAttackerTurns: 12, respawnDelay: 4 });
 export function getWeatherConfig(type) {
   switch (type) {
     case 'rain':
@@ -41,10 +42,17 @@ export class Match {
     this.map = MAPS[mapId];
     this.options = options;
     this.ruleset = RULESETS.includes(options.ruleset) ? options.ruleset : 'classic';
-    const relayGoalNodeId = this.map.relayRoute?.at(-1);
-    this.objective = this.ruleset === 'control'
-      ? { nodeId: this.map.dropNodes?.[0], goalNodeId: relayGoalNodeId, carrierId: null, carrierTeam: null, routeIndex: -1, routeSide: null, dropX: null, dropY: null, droppedFromTeam: null, scores: [0, 0], target: RELAY_RULES.scoreTarget, maxTurns: RELAY_RULES.maxTurns, status: 'center', overtime: false }
-      : null;
+    if (this.ruleset === 'control' && !this.map.heist) throw new Error('Objective mode requires the harbor map');
+    this.objective = this.ruleset === 'control' ? {
+      type: 'heist', attackerTeam: 0, defenderTeam: 1, stage: 'breach',
+      seals: this.map.heist.sealNodeIds.map((nodeId, index) => ({ id: index, nodeId, disabled: false })),
+      nodeId: this.map.heist.vaultNodeId, vaultNodeId: this.map.heist.vaultNodeId,
+      extractionNodeId: this.map.heist.extractionNodeId,
+      carrierId: null, carrierTeam: null, dropX: null, dropY: null, droppedFromTeam: null,
+      maxAttackerTurns: this.map.heist.maxAttackerTurns || HEIST_RULES.maxAttackerTurns,
+      attackerTurnsRemaining: this.map.heist.maxAttackerTurns || HEIST_RULES.maxAttackerTurns,
+      status: 'locked',
+    } : null;
     this.winReason = null;
     this.rng = options.rng || Math.random;
     // Engine instances stay deterministic by default; live party rooms opt into a weighted roll.
@@ -72,8 +80,10 @@ export class Match {
     for (let team = 0; team < 2; team++) {
       const direction = team === 0 ? 1 : -1;
       const center = team === 0 ? -this.map.center : this.map.center;
-      for (const p of this.map.parts) {
-        this.add(p.kind, team, center + p.x * direction, p.y, p.size, p.mass, p.hp, p.material);
+      const authoredParts = this.map.partsByTeam?.[team] || this.map.parts;
+      for (const p of authoredParts) {
+        const x = this.map.asymmetric ? p.x : center + p.x * direction;
+        this.add(p.kind, team, x, p.y, p.size, p.mass, p.hp, p.material);
         Object.assign(this.items.at(-1), { partId: p.id, weapon: p.weapon, spot: p.spot, nodeId: p.nodeId, spawnNodeId: p.nodeId, terrace: p.terrace });
       }
     }
@@ -204,7 +214,8 @@ export class Match {
     if (!nodeDef) return false;
     if (this.environmentItems.some(item => item.kind === 'rockFall' && item.released && !item.destroyed && item.blockNodeId === nodeId)) return false;
     if (!nodeDef.supportId) return true;
-    const supportItem = this.items.find(i => (nodeDef.neutral || i.team === team) && i.partId === nodeDef.supportId);
+    const supportTeam = nodeDef.supportTeam ?? nodeDef.team ?? team;
+    const supportItem = this.items.find(i => (nodeDef.neutral || i.team === supportTeam) && i.partId === nodeDef.supportId);
     if (!supportItem || supportItem.hp <= 0 || supportItem.destroyed) return false;
     if (supportItem.body.position.distanceTo(supportItem.homeP) > 1.2) return false;
     const q = supportItem.body.quaternion, h = supportItem.homeQ;
@@ -215,7 +226,7 @@ export class Match {
   nodePosition(nodeDef, team) {
     if (typeof nodeDef === 'string') nodeDef = this.map.nodes?.find(node => node.id === nodeDef);
     if (!nodeDef) throw new Error('Unknown movement node');
-    if (nodeDef.neutral) {
+    if (nodeDef.neutral || nodeDef.world) {
       return new C.Vec3(nodeDef.x, nodeDef.y, 0);
     }
     const direction = team === 0 ? 1 : -1;
@@ -245,7 +256,12 @@ export class Match {
     const mover = this.mover;
     if (!mover || mover.hp <= 0) return [];
     if (this.objective && this.movedTurn === this.turn) return [];
-    if (this.isCoreCarrier(mover)) {
+    if (this.objective?.type === 'heist' && this.isCoreCarrier(mover)) {
+      const nodeDef = this.map.nodes.find(node => node.id === this.objective.extractionNodeId);
+      const target = this.nodePosition(nodeDef, mover.team);
+      return [{ id: nodeDef.id, label: `Thoát bằng lõi · ${nodeDef.label}`, x: target.x, y: target.y, deliversCore: true }];
+    }
+    if (this.objective?.type !== 'heist' && this.isCoreCarrier(mover)) {
       const routeIndex = this.objective.routeIndex + 1;
       const nodeId = this.map.relayRoute?.[routeIndex];
       const nodeDef = this.map.nodes.find(node => node.id === nodeId);
@@ -258,7 +274,20 @@ export class Match {
     if (!currentNode) return [];
     const moves = [];
     const candidateIds = [...currentNode.neighbors];
-    const coreFree = this.objective && ['center', 'dropped'].includes(this.objective.status) && this.objective.carrierId === null;
+    if (this.objective?.type === 'heist' && mover.team === this.objective.attackerTeam) {
+      if (this.objective.stage === 'breach') {
+        for (const seal of this.objective.seals.filter(seal => !seal.disabled)) {
+          const node = this.map.nodes.find(candidate => candidate.id === seal.nodeId);
+          const target = this.nodePosition(node, mover.team);
+          moves.unshift({ id: node.id, label: `Vô hiệu ${node.label}`, x: target.x, y: target.y, objectiveAction: 'disableSeal', sealId: seal.id });
+        }
+      } else if (this.objective.carrierId === null && ['vault', 'dropped'].includes(this.objective.status)) {
+        const dropped = this.objective.status === 'dropped';
+        const target = dropped ? new C.Vec3(this.objective.dropX, this.objective.dropY, 0) : this.nodePosition(this.objective.vaultNodeId, mover.team);
+        moves.unshift({ id: dropped ? `${this.map.id}-core-dropped` : this.objective.vaultNodeId, label: dropped ? 'Thu hồi lõi bị rơi' : 'Lấy lõi trong kho', x: target.x, y: target.y, core: true });
+      }
+    }
+    const coreFree = this.objective?.type !== 'heist' && this.objective && ['center', 'dropped'].includes(this.objective.status) && this.objective.carrierId === null;
     const coreTarget = this.objective?.status === 'dropped'
       ? new C.Vec3(this.objective.dropX, this.objective.dropY, 0)
       : this.objective ? this.nodePosition(this.objective.nodeId, 0) : null;
@@ -271,6 +300,8 @@ export class Match {
     }
     const side = mover.team;
     for (const neighborId of candidateIds) {
+      if (this.objective?.type === 'heist' && mover.team === this.objective.attackerTeam
+        && this.objective.seals.some(seal => seal.nodeId === neighborId)) continue;
       const neighborDef = this.map.nodes.find(n => n.id === neighborId);
       if (!neighborDef) continue;
       if (!this.isNodeAvailable(neighborId, side)) continue;
@@ -327,23 +358,37 @@ export class Match {
     this.movedTurn = this.turn;
 
     this.event('move', { shooterId: mover.id, moverId: mover.id, team: this.team, nodeId: targetNodeId, spot: mover.spot, buff: collectedBuff });
-    let pickedCore = false, scoredCore = false;
-    if (targetMove.core) {
+    let pickedCore = false, scoredCore = false, disabledSeal = false, extractedCore = false;
+    if (targetMove.objectiveAction === 'disableSeal') {
+      const seal = this.objective.seals.find(candidate => candidate.id === targetMove.sealId);
+      if (seal && !seal.disabled) {
+        seal.disabled = true; disabledSeal = true;
+        this.event('sealDisabled', { team: mover.team, residentId: mover.id, sealId: seal.id, nodeId: seal.nodeId });
+        if (this.objective.seals.every(candidate => candidate.disabled)) {
+          this.objective.stage = 'steal'; this.objective.status = 'vault';
+          this.event('vaultOpened', { nodeId: this.objective.vaultNodeId });
+        }
+      }
+    } else if (targetMove.core) {
       const continuingRoute = this.objective.status === 'dropped' && this.objective.droppedFromTeam === mover.team;
       this.objective.carrierId = mover.id;
       this.objective.carrierTeam = mover.team;
       if (!continuingRoute) this.objective.routeIndex = -1;
       this.objective.routeSide = 1 - mover.team;
       this.objective.status = 'carried';
+      if (this.objective.type === 'heist') this.objective.stage = 'escape';
       this.objective.dropX = null; this.objective.dropY = null; this.objective.droppedFromTeam = null;
       pickedCore = true;
       this.event('corePickup', { team: mover.team, residentId: mover.id, x: target.x, y: target.y });
+    } else if (this.objective?.type === 'heist' && this.isCoreCarrier(mover) && targetMove.deliversCore) {
+      this.winner = this.objective.attackerTeam; this.winReason = 'heist-attack'; this.objective.status = 'extracted'; this.phase = 'over'; extractedCore = true;
+      this.event('heistWin', { team: this.winner, residentId: mover.id, nodeId: this.objective.extractionNodeId });
     } else if (this.isCoreCarrier(mover)) {
       this.objective.routeIndex = targetMove.relayRouteIndex;
       if (targetMove.deliversCore) scoredCore = this.scoreCore(mover);
     }
     this.syncShooter();
-    return { ok: true, nodeId: targetNodeId, spot: mover.spot, collectedBuff, pickedCore, scoredCore };
+    return { ok: true, nodeId: targetNodeId, spot: mover.spot, collectedBuff, pickedCore, scoredCore, disabledSeal, extractedCore };
   }
   add(kind, team, x, y, size, mass, hp, material = null) {
     if (kind !== 'resident' && !Object.hasOwn(MATERIALS, material)) throw new Error('Unknown material');
@@ -799,7 +844,7 @@ export class Match {
   }
   nextTurn() {
     if (this.ruleset === 'classic' && this.finishIfEliminated()) return;
-    if (this.finishRelayByTurnLimit()) return;
+    if (this.finishObjectiveByTurnLimit()) return;
     const roster = this.items.filter(i => i.kind === 'resident' && i.team === this.team);
     this.shooterCursor[this.team] = (roster.findIndex(i => i.id === this.firedShooterId) + 1) % roster.length;
     this.team = 1 - this.team; this.turn++;
@@ -807,6 +852,7 @@ export class Match {
     this.wind = this.rollWind(); this.enterPhase('move', PHASE_DURATIONS.move); this.syncShooter();
   }
   relaySpawnNode(item) {
+    if (this.objective?.type === 'heist') return this.map.nodes.find(node => node.id === item.spawnNodeId);
     const candidates = this.map.nodes.filter(node => !node.neutral && !node.supportId && !this.map.relayRoute?.includes(node.id));
     const preferred = candidates.find(node => node.id === this.objective?.goalNodeId);
     const ordered = preferred ? [preferred, ...candidates.filter(node => node !== preferred)] : candidates;
@@ -889,6 +935,16 @@ export class Match {
     }
     this.winner = coral > teal ? 0 : 1; this.winReason = 'relay-time'; this.phase = 'over';
     this.event('relayWin', { team: this.winner, scores: [...this.objective.scores], timeLimit: true });
+    return true;
+  }
+  finishObjectiveByTurnLimit() {
+    if (!this.objective) return false;
+    if (this.objective.type !== 'heist') return this.finishRelayByTurnLimit();
+    if (this.team !== this.objective.attackerTeam || this.objective.status === 'extracted') return false;
+    this.objective.attackerTurnsRemaining--;
+    if (this.objective.attackerTurnsRemaining > 0) return false;
+    this.winner = this.objective.defenderTeam; this.winReason = 'heist-defense'; this.phase = 'over';
+    this.event('heistWin', { team: this.winner, timeLimit: true });
     return true;
   }
   step(dt = 1 / 60) {
@@ -1065,6 +1121,19 @@ export class Match {
     if (!this.objective) return null;
     const carrier = this.items.find(item => item.id === this.objective.carrierId && item.hp > 0 && !item.eliminated);
     const center = this.nodePosition(this.objective.nodeId, 0);
+    if (this.objective.type === 'heist') {
+      const position = nodeId => {
+        const p = this.nodePosition(nodeId, 0);
+        return { x: p.x, y: p.y };
+      };
+      return {
+        ...this.objective,
+        seals: this.objective.seals.map(seal => ({ ...seal, ...position(seal.nodeId) })),
+        vault: position(this.objective.vaultNodeId), extraction: position(this.objective.extractionNodeId),
+        x: carrier?.body.position.x ?? (this.objective.status === 'dropped' ? this.objective.dropX : center.x),
+        y: carrier?.body.position.y ?? (this.objective.status === 'dropped' ? this.objective.dropY : center.y),
+      };
+    }
     return {
       ...this.objective,
       scores: [...this.objective.scores],

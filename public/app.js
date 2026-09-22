@@ -17,6 +17,8 @@ let gesture = null, steerGesture = null, aimTimer = null, shotPending = false, s
 const audio = createGameAudio();
 let muted = localStorage.getItem('bp-muted') === 'true'; audio.mute(muted);
 const teams = ['San Hô', 'Ngọc Lam'];
+const teamName = (team, ruleset = state?.ruleset || state?.game?.ruleset) => ruleset === 'control'
+  ? ['Đột kích', 'Phòng thủ'][team] : teams[team];
 const escape = text => String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const toast = text => { const t = document.querySelector('#toast'); t.textContent = text; t.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), 4000); };
 const emit = (event, data = {}) => new Promise(resolve => ((event === 'fire' || (event === 'skill' && data.action === 'steer')) ? socket.volatile : socket).timeout(4500).emit(event, data, (err, result) => {
@@ -232,26 +234,27 @@ function updateControls() {
   if (moveOptions) {
     const moves = isMove && Array.isArray(state?.game?.availableMoves) ? state.game.availableMoves : [];
     const objective = isMove ? state.game.objective : null;
-    const coreAvailable = objective?.status === 'center' && moves.some(move => move.core);
+    const coreAvailable = moves.some(move => move.core || move.objectiveAction || move.deliversCore);
     const showCoreNote = Boolean(objective && !coreAvailable);
     if (moves.length > 0 || showCoreNote) {
       moveOptions.hidden = false;
       let html = moves.map(m => {
         const buffLabel = m.airdropBuff === 'heal' ? '+35 HP' : m.airdropBuff === 'power' ? 'x1.5 Dmg' : 'Khiên -50%';
         const airdropBadge = m.hasAirdrop ? ` 🎁 [${buffLabel}]` : '';
-        const moveClass = `${m.hasAirdrop ? ' airdrop-node' : ''}${m.core || Number.isInteger(m.relayRouteIndex) ? ' control-node' : ''}`;
-        const icon = m.core ? '⚡' : m.deliversCore ? '🏁' : Number.isInteger(m.relayRouteIndex) ? '➡' : '🏃';
+        const moveClass = `${m.hasAirdrop ? ' airdrop-node' : ''}${m.core || m.objectiveAction || m.deliversCore || Number.isInteger(m.relayRouteIndex) ? ' control-node' : ''}`;
+        const icon = m.objectiveAction === 'disableSeal' ? '🔓' : m.core ? '⚡' : m.deliversCore ? '🚤' : Number.isInteger(m.relayRouteIndex) ? '➡' : '🏃';
         return `<button class="button secondary compact move-btn${moveClass}" data-node="${m.id}" style="margin-top:4px;font-size:10px;padding:6px 10px;width:100%">${icon} ${escape(m.label)}${airdropBadge}</button>`;
       }).join('');
       let lockSignature = '';
       if (showCoreNote) {
         const me = state.players.find(player => player.id === playerId);
-        const reason = objective.status === 'dropped' ? 'Lõi đã rơi ngoài trời · tranh ngay'
+        const reason = objective.stage === 'breach' ? `Còn ${objective.seals.filter(seal => !seal.disabled).length} khóa cần phá`
+          : objective.status === 'dropped' ? 'Lõi đã rơi · đội Đột kích cần thu hồi'
           : objective.carrierTeam === me?.team ? 'Carrier đang tiến · bạn bắn yểm trợ'
           : objective.carrierTeam !== null ? 'Đối thủ đang mang · hãy bắn hạ'
-          : 'Lõi đang chờ ở trung tâm';
+          : objective.status === 'vault' ? 'Kho đã mở · lấy lõi' : 'Giữ vị trí và yểm trợ';
         html += `<div class="control-node-note">⚡ Lõi năng lượng <small>${reason}</small></div>`;
-        lockSignature = `${objective.status}:${objective.carrierId}:${objective.scores.join('-')}`;
+        lockSignature = `${objective.stage}:${objective.status}:${objective.carrierId}:${objective.seals?.map(seal => Number(seal.disabled)).join('') || ''}`;
       }
       const sig = `${moves.map(m => `${m.id}:${m.hasAirdrop}:${m.core}:${m.deliversCore}:${m.relayRouteIndex}`).join(',')}|${lockSignature}`;
       if (moveOptions.dataset.signature !== sig) {
@@ -294,15 +297,17 @@ document.addEventListener('visibilitychange', cancelGesture);
 function teamLists() {
   for (const team of [0, 1]) {
     const list = document.querySelector(`#team-${team}`); if (!list) continue;
+    const heading = list.parentElement?.querySelector('h3'); if (heading) heading.innerHTML = `<i></i> ${teamName(team).toUpperCase()}`;
     const players = state.players.filter(p => p.team === team);
     list.innerHTML = players.length ? players.map((p, index) => `<div class="player"><span class="avatar">${index + 1}</span><span>Tay cầm ${index + 1}${p.id === playerId ? ' <small>(bạn)</small>' : ''}</span><small>${p.connected ? 'Sẵn sàng' : 'Mất kết nối'}</small></div>`).join('') : '<div class="empty-player">Đang chờ tay cầm…</div>';
   }
   const count = document.querySelector('#player-count'); if (count) count.textContent = `${state.players.filter(p => p.connected).length}/8 người đã vào`;
+  document.querySelectorAll('.team-switch [data-team]').forEach(button => { button.textContent = `Phe ${teamName(Number(button.dataset.team))}`; });
   updateMapUI();
   const practice = document.querySelector('#practice'); if (practice) practice.disabled = !state.players.some(p => p.team === 0 && p.connected);
   const start = document.querySelector('#start'); if (start) start.disabled = ![0, 1].every(t => state.players.some(p => p.team === t && p.connected));
 }
-function teamsMarkup() { return `<div class="teams"><div class="team coral"><h3><i></i> SAN HÔ</h3><div id="team-0"></div></div><div class="team teal"><h3><i></i> NGỌC LAM</h3><div id="team-1"></div></div></div>`; }
+function teamsMarkup() { return `<div class="teams"><div class="team coral"><h3><i></i> ${teamName(0).toUpperCase()}</h3><div id="team-0"></div></div><div class="team teal"><h3><i></i> ${teamName(1).toUpperCase()}</h3><div id="team-1"></div></div></div>`; }
 function mapThumbnail(map) {
   const minX = Math.min(...map.thumbnail.map(p => p.x - p.size[0] / 2));
   const maxX = Math.max(...map.thumbnail.map(p => p.x + p.size[0] / 2));
@@ -318,22 +323,24 @@ function updateMapUI() {
   if (!state || state.game) return;
   const map = mapCatalog.find(m => m.id === state.mapId);
   const picker = document.querySelector('#map-picker');
-  if (picker && !picker.children.length && mapCatalog.length) {
-    picker.innerHTML = mapCatalog.map(m => `<button class="map-option" data-map="${m.id}" aria-pressed="false"><span class="map-thumb">${mapThumbnail(m)}</span><span><strong>${escape(m.name)}</strong><small>${escape(m.tag)}</small></span><span class="map-check" aria-hidden="true">✓</span></button>`).join('') + '<button class="map-option map-random" data-map="random" aria-pressed="false"><span class="random-icon" aria-hidden="true">⚄</span><span><strong>Ngẫu nhiên mỗi ván</strong><small>BẤT NGỜ CHO CẢ HAI ĐỘI</small></span><span class="map-check" aria-hidden="true">✓</span></button>';
+  const ruleset = state.ruleset || 'classic';
+  if (picker && picker.dataset.ruleset !== ruleset && mapCatalog.length) {
+    const visibleMaps = mapCatalog.filter(m => ruleset === 'control' ? m.id === 'harbor' : m.id !== 'harbor');
+    picker.dataset.ruleset = ruleset;
+    picker.innerHTML = visibleMaps.map(m => `<button class="map-option" data-map="${m.id}" aria-pressed="false"><span class="map-thumb">${mapThumbnail(m)}</span><span><strong>${escape(m.name)}</strong><small>${escape(m.tag)}</small></span><span class="map-check" aria-hidden="true">✓</span></button>`).join('') + (ruleset === 'classic' ? '<button class="map-option map-random" data-map="random" aria-pressed="false"><span class="random-icon" aria-hidden="true">⚄</span><span><strong>Ngẫu nhiên mỗi ván</strong><small>BẤT NGỜ CHO CẢ HAI ĐỘI</small></span><span class="map-check" aria-hidden="true">✓</span></button>' : '');
     picker.querySelectorAll('[data-map]').forEach(button => button.onclick = () => emit('selectMap', { mapId: button.dataset.map }));
   }
   document.querySelectorAll('#map-picker [data-map]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.map === state.mapId)));
   const summary = document.querySelector('#map-summary');
   if (summary) summary.textContent = map ? `${map.name} · ${map.description}` : 'Ngẫu nhiên · Bản đồ được chọn khi bắt đầu ván.';
   const tip = document.querySelector('#map-tip'); if (tip) tip.textContent = map?.tip || 'Mỗi ván chọn một trong bốn công trình.';
-  const ruleset = state.ruleset || 'classic';
   document.querySelectorAll('#ruleset-picker [data-ruleset]').forEach(button => {
     button.setAttribute('aria-pressed', String(button.dataset.ruleset === ruleset));
     button.onclick = () => emit('selectRuleset', { ruleset: button.dataset.ruleset });
   });
   const rulesetSummary = document.querySelector('#ruleset-summary');
   if (rulesetSummary) rulesetSummary.textContent = ruleset === 'control'
-    ? 'Cướp lõi · Carrier đi tuyến ngoài trời, đồng đội bắn yểm trợ. Giao 2 lõi để thắng.'
+    ? 'Phi vụ lõi · Đột kích phá 2 khóa, lấy lõi và rút về bến. Phòng thủ cầm cự 12 lượt tấn công.'
     : 'Phá hủy · Loại toàn bộ cư dân đối phương để thắng.';
   if (scene) loadPreview(state.mapId === 'random' ? 'tower' : state.mapId);
 }
@@ -392,10 +399,10 @@ function renderLobby() {
   clearGesture(); document.body.classList.remove('controller-playing');
   screenKey = 'lobby'; scene?.setMode('lobby');
   if (controller) {
-    app.innerHTML = `${header()}<main class="phone-shell"><span class="eyebrow">PHÒNG ${state.code}</span><h1>Tay cầm đã kết nối.</h1><p>Chọn phe. Trận đấu sẽ bắt đầu trên màn hình lớn.</p>${teamsMarkup()}<div class="team-switch"><button class="button coral-button" data-team="0">Phe San Hô</button><button class="button teal-button" data-team="1">Phe Ngọc Lam</button></div><p id="map-summary" class="phone-map"></p><p id="ruleset-summary" class="phone-map"></p></main>`;
+    app.innerHTML = `${header()}<main class="phone-shell"><span class="eyebrow">PHÒNG ${state.code}</span><h1>Tay cầm đã kết nối.</h1><p>Chọn phe. Trận đấu sẽ bắt đầu trên màn hình lớn.</p>${teamsMarkup()}<div class="team-switch"><button class="button coral-button" data-team="0">Phe ${teamName(0)}</button><button class="button teal-button" data-team="1">Phe ${teamName(1)}</button></div><p id="map-summary" class="phone-map"></p><p id="ruleset-summary" class="phone-map"></p></main>`;
     document.querySelectorAll('[data-team]').forEach(b => b.onclick = () => emit('team', { team: Number(b.dataset.team) }));
   } else {
-    app.innerHTML = `${header()}<main class="lobby-layout"><div class="lobby-copy"><span class="eyebrow">MỜI CẢ HỘI VÀO CHƠI</span><h1>Chọn nhà.<br><span>Rủ hàng xóm.</span></h1><p>Quét QR bằng điện thoại cùng Wi-Fi.<br>Chọn công trình cho cuộc đấu tiếp theo.</p><section class="map-selection" aria-label="Chọn bản đồ"><div id="map-picker"></div><p id="map-summary"></p><p id="map-tip"></p><div class="ruleset-selection"><strong>LUẬT CHƠI</strong><div id="ruleset-picker"><button data-ruleset="classic" aria-pressed="false">💥 Phá hủy</button><button data-ruleset="control" aria-pressed="false">⚡ Cướp lõi</button></div><p id="ruleset-summary"></p></div><div class="material-key" aria-label="Độ bền vật liệu"><span><i style="background:#8ee0e5"></i>Kính · dễ vỡ</span><span><i style="background:#b77943"></i>Gỗ · nhẹ</span><span><i style="background:#cd795c"></i>Gạch · vừa</span><span><i style="background:#83969c"></i>Đá · bền</span><span><i style="background:#d94b3f"></i>Thùng xăng · nổ</span><span><i style="background:#71d9c9"></i>Tấm nảy · đổi quỹ đạo</span></div></section></div><section class="lobby-panel"><div class="room-label"><span>PHÒNG CỦA BẠN</span><b id="player-count"></b></div><div class="join-block"><img id="qr" alt="Mã QR để tham gia phòng" width="148" height="148"><div><span class="small-label">QUÉT ĐỂ THAM GIA</span><strong class="room-code">${state.code}</strong><span class="qr-help">Hoặc mở link và nhập mã</span><a id="join-url" target="_blank" rel="noopener"></a></div></div>${teamsMarkup()}<button id="start" class="button primary">Bắt đầu trận <span>↗</span></button><button id="practice" class="button secondary">Một điện thoại + bot</button><p class="panel-note">Đấu nhóm: mỗi đội 1 người. Đấu bot: 1 người ở San Hô.</p></section></main><footer><span>NGẮM CHO CHUẨN. CƯỜI CHO ĐÃ.</span><span>ĐẢO HÀNG XÓM / 01</span></footer>`;
+    app.innerHTML = `${header()}<main class="lobby-layout"><div class="lobby-copy"><span class="eyebrow">MỜI CẢ HỘI VÀO CHƠI</span><h1>Chọn nhà.<br><span>Rủ hàng xóm.</span></h1><p>Quét QR bằng điện thoại cùng Wi-Fi.<br>Chọn công trình cho cuộc đấu tiếp theo.</p><section class="map-selection" aria-label="Chọn bản đồ"><div id="map-picker"></div><p id="map-summary"></p><p id="map-tip"></p><div class="ruleset-selection"><strong>LUẬT CHƠI</strong><div id="ruleset-picker"><button data-ruleset="classic" aria-pressed="false">💥 Phá hủy</button><button data-ruleset="control" aria-pressed="false">⚡ Phi vụ lõi</button></div><p id="ruleset-summary"></p></div><div class="material-key" aria-label="Độ bền vật liệu"><span><i style="background:#8ee0e5"></i>Kính · dễ vỡ</span><span><i style="background:#b77943"></i>Gỗ · nhẹ</span><span><i style="background:#cd795c"></i>Gạch · vừa</span><span><i style="background:#83969c"></i>Đá · bền</span><span><i style="background:#d94b3f"></i>Thùng xăng · nổ</span><span><i style="background:#71d9c9"></i>Tấm nảy · đổi quỹ đạo</span></div></section></div><section class="lobby-panel"><div class="room-label"><span>PHÒNG CỦA BẠN</span><b id="player-count"></b></div><div class="join-block"><img id="qr" alt="Mã QR để tham gia phòng" width="148" height="148"><div><span class="small-label">QUÉT ĐỂ THAM GIA</span><strong class="room-code">${state.code}</strong><span class="qr-help">Hoặc mở link và nhập mã</span><a id="join-url" target="_blank" rel="noopener"></a></div></div>${teamsMarkup()}<button id="start" class="button primary">Bắt đầu trận <span>↗</span></button><button id="practice" class="button secondary">Một điện thoại + bot</button><p class="panel-note">Đấu nhóm: mỗi đội 1 người. Đấu bot: 1 người ở phe Đột kích.</p></section></main><footer><span>NGẮM CHO CHUẨN. CƯỜI CHO ĐÃ.</span><span>ĐẢO HÀNG XÓM / 01</span></footer>`;
     document.querySelector('#start').onclick = () => { unlockAudio(); emit('start', { mode: 'party' }); };
     document.querySelector('#practice').onclick = () => { unlockAudio(); emit('start', { mode: 'practice' }); };
     refreshQr();
@@ -407,7 +414,7 @@ function renderGame() {
   if (controller) {
     app.innerHTML = `<main class="gamepad"><div class="gamepad-status"><span class="eyebrow" id="phone-team"></span><strong id="turn-heading"></strong><span id="weather-badge" class="weather-badge"></span><span id="control-status" class="control-status" hidden></span><span class="timer" id="timer"></span></div><div class="gamepad-body">${controls()}</div></main>`;
   } else {
-    app.innerHTML = `${header()}<div class="match-hud"><div class="score coral"><span>SAN HÔ</span><div id="health-0"></div></div><div class="round"><span id="round-label"></span><span id="weather-badge" class="weather-badge"></span><small class="wind" id="wind"></small><strong id="timer"></strong><span id="control-status" class="control-status" hidden></span></div><div class="score teal"><span>NGỌC LAM</span><div id="health-1"></div></div></div><div class="turn-banner"><span class="turn-dot"></span><span id="turn-heading"></span><small id="turn-detail"></small><div id="aim-readout" class="aim-readout"></div></div><div class="bottom-game"><button id="back-lobby" class="button secondary compact">← Về sảnh</button><div class="spectator-note">Kéo trên điện thoại · Bắn từ nhân vật</div><button id="camera-toggle" class="button secondary compact" aria-pressed="false">Toàn cảnh</button><span class="room-badge"><span id="match-map"></span> · PHÒNG <b>${state.code}</b></span></div>`;
+    app.innerHTML = `${header()}<div class="match-hud"><div class="score coral"><span>${teamName(0, state.game.ruleset).toUpperCase()}</span><div id="health-0"></div></div><div class="round"><span id="round-label"></span><span id="weather-badge" class="weather-badge"></span><small class="wind" id="wind"></small><strong id="timer"></strong><span id="control-status" class="control-status" hidden></span></div><div class="score teal"><span>${teamName(1, state.game.ruleset).toUpperCase()}</span><div id="health-1"></div></div></div><div class="turn-banner"><span class="turn-dot"></span><span id="turn-heading"></span><small id="turn-detail"></small><div id="aim-readout" class="aim-readout"></div></div><div class="bottom-game"><button id="back-lobby" class="button secondary compact">← Về sảnh</button><div class="spectator-note">Kéo trên điện thoại · Bắn từ nhân vật</div><button id="camera-toggle" class="button secondary compact" aria-pressed="false">Toàn cảnh</button><span class="room-badge"><span id="match-map"></span> · PHÒNG <b>${state.code}</b></span></div>`;
     document.querySelector('#back-lobby').onclick = () => emit('lobby');
     scene?.setOverview(false);
     document.querySelector('#camera-toggle').onclick = event => {
@@ -446,7 +453,7 @@ function updateGameUI() {
     weatherBadge.textContent = `${weatherIcons[game.weather.type] || '☀️'} ${game.weather.name || ''}`;
     weatherBadge.dataset.weather = game.weather.type;
   }
-  const activeLabel = state.mode === 'practice' && game.team === 1 ? 'Máy' : `Phe ${teams[game.team]}`;
+  const activeLabel = state.mode === 'practice' && game.team === 1 ? 'Máy' : `Phe ${teamName(game.team, game.ruleset)}`;
   const mine = controller && state.activeId === playerId;
   const isMove = game.phase === 'move';
   const isFlight = game.phase === 'flight';
@@ -461,13 +468,13 @@ function updateGameUI() {
   const control = document.querySelector('#control-status');
   if (control && game.objective) {
     control.hidden = false; control.dataset.owner = game.objective.carrierTeam ?? 'none';
-    const coreState = game.objective.status === 'dropped'
-      ? 'LÕI ĐÃ RƠI · CÓ THỂ TRANH'
-      : game.objective.carrierTeam === null
-      ? 'LÕI Ở TRUNG TÂM'
-      : `${teams[game.objective.carrierTeam].toUpperCase()} ĐANG MANG LÕI`;
-    const overtime = game.objective.overtime ? ' · HIỆP PHỤ' : ` · CÒN ${Math.max(0, game.objective.maxTurns - game.turn + 1)} LƯỢT`;
-    control.textContent = `⚡ ${coreState} · ${game.objective.scores[0]}–${game.objective.scores[1]} / ${game.objective.target}${overtime}`;
+    const disabled = game.objective.seals.filter(seal => seal.disabled).length;
+    const coreState = game.objective.stage === 'breach' ? `PHÁ KHÓA ${disabled}/2`
+      : game.objective.status === 'dropped' ? 'LÕI ĐÃ RƠI · THU HỒI'
+      : game.objective.stage === 'steal' ? 'KHO ĐÃ MỞ · LẤY LÕI'
+      : game.objective.status === 'extracted' ? 'ĐÃ RÚT LÕI'
+      : 'MANG LÕI VỀ BẾN THOÁT';
+    control.textContent = `⚡ ${coreState} · CÒN ${game.objective.attackerTurnsRemaining} LƯỢT TẤN CÔNG`;
   }
   for (let team = 0; team < 2; team++) {
     const residents = game.items.filter(i => i.kind === 'resident' && i.team === team);
@@ -496,7 +503,7 @@ function updateGameUI() {
       }
     }
     const me = state.players.find(p => p.id === playerId);
-    document.querySelector('#phone-team').textContent = `${teams[me?.team || 0].toUpperCase()} · LƯỢT ${game.turn}`;
+    document.querySelector('#phone-team').textContent = `${teamName(me?.team || 0, game.ruleset).toUpperCase()} · LƯỢT ${game.turn}`;
     document.body.dataset.team = me?.team || 0;
   }
   updateControls();
@@ -505,11 +512,13 @@ function renderOver() {
   clearGesture(); document.body.classList.remove('controller-playing');
   screenKey = 'over'; const game = state.game;
   const actions = controller ? '<p>Chờ chủ phòng mở ván tiếp theo.</p>' : `<div class="result-actions">${scene?.canReplay?.() ? '<button id="watch-replay" class="button secondary">Xem lại cú bắn <span>▶</span></button>' : ''}<button id="again" class="button primary">Về sảnh · Chơi tiếp <span>↻</span></button></div>`;
-  const resultReason = game.winReason === 'relay' || game.winReason === 'relay-time'
-    ? `Đã giao ${game.objective.scores[game.winner]} lõi năng lượng${game.winReason === 'relay-time' ? ' khi hết lượt' : ''}.`
+  const resultReason = game.winReason === 'heist-attack' ? 'Đội Đột kích đã phá khóa, lấy lõi và rút về bến thoát.'
+    : game.winReason === 'heist-defense' ? 'Đội Phòng thủ giữ được kho lõi đến hết thời gian.'
+    : game.winReason === 'relay' || game.winReason === 'relay-time'
+    ? `Đã hoàn thành mục tiêu lõi năng lượng.`
     : game.winner === -1 ? 'Hai phe cùng hết cư dân chiến đấu.'
     : `Phe ${teams[1 - game.winner]} không còn cư dân chiến đấu sau ${game.turn} lượt.`;
-  app.innerHTML = `${header()}<main class="results"><span class="eyebrow">HÀNG XÓM NHỚ NHAU LÂU</span><div class="trophy">✦</div><h1>${game.winner === -1 ? 'Hòa rồi!' : `${teams[game.winner]}<br>thắng rồi!`}</h1><p>${resultReason}</p>${actions}</main>`;
+  app.innerHTML = `${header()}<main class="results"><span class="eyebrow">HÀNG XÓM NHỚ NHAU LÂU</span><div class="trophy">✦</div><h1>${game.winner === -1 ? 'Hòa rồi!' : `${teamName(game.winner, game.ruleset)}<br>thắng rồi!`}</h1><p>${resultReason}</p>${actions}</main>`;
   bindHeader(); document.querySelector('#again')?.addEventListener('click', () => emit('lobby')); document.querySelector('#watch-replay')?.addEventListener('click', () => scene?.replayLast());
 }
 function renderReplay() {

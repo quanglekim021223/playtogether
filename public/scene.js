@@ -237,6 +237,18 @@ export function createScene(container) {
   const controlBeacon = new T.Mesh(new T.TorusGeometry(.38, .055, 8, 36), controlBeaconMaterial);
   controlBeacon.name = 'EnergyCore'; controlBeacon.renderOrder = 10; controlBeacon.visible = false;
   const coreOrb = new T.Mesh(new T.IcosahedronGeometry(.22, 1), controlBeaconMaterial); coreOrb.name = 'EnergyCoreOrb'; controlBeacon.add(coreOrb); scene.add(controlBeacon);
+  const heistMarkers = new T.Group(); heistMarkers.name = 'HeistBlockout'; heistMarkers.visible = false; scene.add(heistMarkers);
+  const sealMarkers = [0, 1].map(index => {
+    const marker = new T.Group(); marker.name = `HarborSeal${index + 1}`; heistMarkers.add(marker);
+    const body = box(0, .45, 0, .75, .9, .75, 0xd65f4a, marker); body.material = body.material.clone();
+    const ring = new T.Mesh(new T.TorusGeometry(.48, .07, 8, 24), new T.MeshBasicMaterial({ color: 0xffd376 }));
+    ring.rotation.x = Math.PI / 2; marker.add(ring); marker.userData = { body, ring }; return marker;
+  });
+  const vaultMarker = new T.Group(); vaultMarker.name = 'CoreVault'; heistMarkers.add(vaultMarker);
+  box(0, .7, 0, 1.7, 1.4, 1.5, 0x59666d, vaultMarker); box(0, .75, .78, 1.05, .8, .08, 0xe3b84f, vaultMarker);
+  const extractionMarker = new T.Group(); extractionMarker.name = 'ExtractionDock'; heistMarkers.add(extractionMarker);
+  box(0, .12, 0, 3.1, .24, 2.2, 0x8b5a35, extractionMarker);
+  for (const x of [-1.25, 1.25]) box(x, .55, 0, .15, 1.1, .15, 0xead5a9, extractionMarker);
   const viewTarget = new T.Vector3(0, 2, 0); let viewDistance = 50, impactFocus = null;
   function kitKey(item) {
     if (['fuelBarrel', 'bouncePad'].includes(item.kind)) return item.kind;
@@ -624,8 +636,10 @@ export function createScene(container) {
     if (currentMap !== data.mapId) { reset(); currentMap = data.mapId; applyLightingTheme(currentMap); rebuildMapDecor(); }
     activeShooter = data.items.find(i => i.id === data.shooterId) || null; gamePhase = data.phase; currentWind = data.wind || 0;
     const objective = data.objective;
-    controlZone.visible = mode === 'game' && objective?.status === 'center';
-    controlBeacon.visible = mode === 'game' && Boolean(objective);
+    const isHeist = objective?.type === 'heist';
+    controlZone.visible = mode === 'game' && Boolean(objective) && (isHeist ? ['vault', 'dropped'].includes(objective.status) : objective.status === 'center');
+    controlBeacon.visible = mode === 'game' && Boolean(objective) && (!isHeist || !['locked', 'extracted'].includes(objective.status));
+    heistMarkers.visible = mode === 'game' && isHeist;
     if (objective) {
       controlZone.position.set(objective.x, .055, 0);
       controlBeacon.userData.baseY = objective.y + .78;
@@ -636,7 +650,20 @@ export function createScene(container) {
       container.dataset.coreStatus = objective.status;
       container.dataset.coreCarrier = objective.carrierId == null ? 'none' : String(objective.carrierId);
       container.dataset.controlOwner = objective.carrierTeam == null ? 'none' : String(objective.carrierTeam);
-      container.dataset.controlProgress = `${objective.scores[0]}-${objective.scores[1]}/${objective.target}`;
+      if (isHeist) {
+        objective.seals.forEach((seal, index) => {
+          const marker = sealMarkers[index]; if (!marker) return;
+          marker.position.set(seal.x, 0, 1.25); marker.visible = true;
+          marker.scale.setScalar(seal.disabled ? .55 : 1);
+          marker.userData.body.material.color.setHex(seal.disabled ? 0x647174 : 0xd65f4a);
+          marker.userData.ring.material.color.setHex(seal.disabled ? 0x91a3a4 : 0xffd376);
+        });
+        vaultMarker.position.set(objective.vault.x, 0, 1.1);
+        extractionMarker.position.set(objective.extraction.x, 0, 1.1);
+        container.dataset.controlProgress = `${objective.seals.filter(seal => seal.disabled).length}/2:${objective.stage}`;
+      } else {
+        container.dataset.controlProgress = `${objective.scores[0]}-${objective.scores[1]}/${objective.target}`;
+      }
     } else {
       container.dataset.ruleset = data.ruleset || 'classic';
       container.dataset.coreStatus = 'none';
@@ -979,7 +1006,7 @@ export function createScene(container) {
       spin: (Math.random() - .5) * (options.spin ?? 7) });
   }
   function reset() {
-    aimArrow.visible = false; impactMarker.visible = false; dots.forEach(dot => { dot.visible = false; }); lastEvent = 0; eventBaseline = false; matchWinner = null; activeShooter = null; selection.visible = false; controlZone.visible = false; controlBeacon.visible = false;
+    aimArrow.visible = false; impactMarker.visible = false; dots.forEach(dot => { dot.visible = false; }); lastEvent = 0; eventBaseline = false; matchWinner = null; activeShooter = null; selection.visible = false; controlZone.visible = false; controlBeacon.visible = false; heistMarkers.visible = false;
     rainPoints.visible = false; weatherLight.intensity = 0; currentWeather = null; if (airdropMesh) airdropMesh.visible = false;
     for (const obj of objects.values()) scene.remove(obj); objects.clear();
     if (shot) scene.remove(shot); shot = null; for (const m of projectileMeshes.values()) scene.remove(m); projectileMeshes.clear();
@@ -1221,7 +1248,9 @@ export function createScene(container) {
     setMode: value => {
       mode = value;
       const showControl = mode === 'game' && container.dataset.ruleset === 'control';
-      controlZone.visible = showControl && container.dataset.coreStatus === 'center'; controlBeacon.visible = showControl;
+      controlZone.visible = showControl && ['center', 'vault', 'dropped'].includes(container.dataset.coreStatus);
+      controlBeacon.visible = showControl && !['locked', 'extracted'].includes(container.dataset.coreStatus);
+      heistMarkers.visible = showControl && container.dataset.map === 'harbor';
     }
   };
 }

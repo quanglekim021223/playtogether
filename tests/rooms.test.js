@@ -14,7 +14,7 @@ test('room authorization, capacity, turn ownership, reconnect, and QR', async t 
   const shot = () => { const game = server.rooms.get(code).game; return { angle: 40, power: 40, weapon: game.shooter.weapon, turn: game.turn, shooterId: game.shooter.id }; };
   const host = await connect(), hostToken = randomUUID();
   const { code } = await send(host, 'create', { token: hostToken }); assert.match(code, /^[A-F0-9]{6}$/);
-  const catalog = await fetch(`${base}/maps`).then(r => r.json()); assert.equal(catalog.length, 4);
+  const catalog = await fetch(`${base}/maps`).then(r => r.json()); assert.equal(catalog.length, 5);
   for (const map of catalog) { const preview = await fetch(`${base}/preview.json?map=${map.id}`).then(r => r.json()); assert.equal(preview.mapId, map.id); }
   assert.equal((await fetch(`${base}/preview.json?map=__proto__`)).status, 400);
   assert.ok((await send(host, 'selectMap', { mapId: '__proto__' })).error);
@@ -35,9 +35,9 @@ test('room authorization, capacity, turn ownership, reconnect, and QR', async t 
   assert.ok((await send(host, 'selectMap', { mapId: 'bridge' })).ok);
   assert.ok((await send(host, 'selectRuleset', { ruleset: 'control' })).ok);
   assert.ok((await send(host, 'start', { mode: 'party' })).ok);
-  assert.equal(server.rooms.get(code).game.map.id, 'bridge');
+  assert.equal(server.rooms.get(code).game.map.id, 'harbor');
   assert.equal(server.rooms.get(code).game.ruleset, 'control');
-  assert.equal(server.rooms.get(code).game.snapshot().objective.nodeId, 'bridge-drop-center');
+  assert.equal(server.rooms.get(code).game.snapshot().objective.type, 'heist');
   assert.ok((await send(host, 'selectMap', { mapId: 'tower' })).error);
   assert.ok((await send(players[1].c, 'fire', shot())).error);
   assert.ok((await send(players[0].c, 'fire', shot())).error);
@@ -59,7 +59,7 @@ test('room authorization, capacity, turn ownership, reconnect, and QR', async t 
   const replacement = await connect();
   assert.equal((await send(replacement, 'join', { code, token: reconnectToken })).id, replacement.id);
   assert.equal(server.rooms.get(code).players.length, 8);
-  assert.equal(server.rooms.get(code).game.map.id, 'bridge');
+  assert.equal(server.rooms.get(code).game.map.id, 'harbor');
   const qr = await fetch(`${base}/connection?room=${code}`).then(r => r.json()); assert.ok(qr.qr.startsWith('data:image/png;base64,')); assert.ok(qr.url.endsWith(`/?room=${code}`));
   assert.equal((await fetch(`${base}/connection?room=BAD`)).status, 404);
   assert.ok((await send(host, 'lobby')).ok); assert.equal(server.rooms.get(code).game, null);
@@ -74,7 +74,8 @@ test('room authorization, capacity, turn ownership, reconnect, and QR', async t 
   assert.equal(server.rooms.get(code).players.length, 8);
   host.disconnect(); const resumed = await connect();
   assert.equal((await send(resumed, 'resumeHost', { code, token: hostToken })).code, code);
-  assert.equal(server.rooms.get(code).mapId, 'bridge');
+  assert.equal(server.rooms.get(code).mapId, 'harbor');
+  assert.ok((await send(resumed, 'selectRuleset', { ruleset: 'classic' })).ok);
   assert.ok((await send(resumed, 'selectMap', { mapId: 'random' })).ok);
   assert.ok((await send(resumed, 'start', { mode: 'practice' })).ok);
   assert.ok(catalog.some(m => m.id === server.rooms.get(code).game.map.id));

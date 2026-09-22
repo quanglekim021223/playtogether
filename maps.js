@@ -227,11 +227,77 @@ const arenaObjects = {
   ],
 };
 
+// Asymmetric blockout for the objective mode: raiders stage from the docks on
+// the left, while defenders hold a compact customs fort on the right.
+const harborRaiders = [
+  pillar(-25, .95), pillar(-20, .95), beam(-22.5, 2.16, 6.2, 'beam', 'harbor-raider-deck'),
+  pillar(-24.5, 3.4), pillar(-19.9, 3.4), beam(-22.2, 4.61, 5.8, 'roof', 'harbor-raider-roof'),
+  withId(part('block', -15, .7, [1.5, 1.4, 1.9], 5, 105, 'wood'), 'harbor-raider-crane'),
+];
+const harborDefenders = [
+  pillar(15, .95, 1.9, .9, 120), pillar(20, .95, 1.9, .9, 120), beam(17.5, 2.16, 6.2, 'beam', 'harbor-fort-deck'),
+  pillar(15.4, 3.4, 1.9, .9, 120), pillar(19.6, 3.4, 1.9, .9, 120), beam(17.5, 4.61, 5.5, 'roof', 'harbor-fort-roof'),
+  withId(part('block', 24, 1.45, [3.5, 2.9, 2.2], 12, 230, 'stone'), 'harbor-vault-wall'),
+  withId(part('block', 26.1, .7, [1.4, 1.4, 1.9], 6, 130, 'stone'), 'harbor-watch-post'),
+];
+function populateHarbor(parts, team, spots) {
+  spots.forEach(([x, y, spot], index) => parts.push({
+    ...resident(x, y), weapon: roster[index], spot, residentIndex: index,
+    nodeId: `harbor-${team === 0 ? 'attack' : 'defend'}-${index}`,
+  }));
+}
+populateHarbor(harborRaiders, 0, [
+  [-27, .53, 'Bến xuất phát'], [-23.5, 2.94, 'Sàn container'], [-21, 2.94, 'Cầu cảng'],
+  [-24, 5.39, 'Mái kho'], [-20.5, 5.39, 'Đài cẩu'], [-15, 1.93, 'Chòi bến'],
+]);
+populateHarbor(harborDefenders, 1, [
+  [12.5, .53, 'Cổng hải quan'], [16.5, 2.94, 'Ban công trái'], [18.5, 2.94, 'Ban công phải'],
+  [15.6, 5.39, 'Mái pháo đài'], [19.4, 5.39, 'Vọng gác'], [26.1, 1.93, 'Chốt kho lõi'],
+]);
+tagParts(harborRaiders, 'harbor-raider');
+tagParts(harborDefenders, 'harbor-defender');
+
+const harborNodes = [
+  ...[
+    [-27, .53, 'Bến xuất phát'], [-23.5, 2.94, 'Sàn container'], [-21, 2.94, 'Cầu cảng'],
+    [-24, 5.39, 'Mái kho'], [-20.5, 5.39, 'Đài cẩu'], [-15, 1.93, 'Chòi bến'],
+  ].map(([x, y, label], index) => ({ id: `harbor-attack-${index}`, label, x, y, world: true, team: 0, neighbors: [`harbor-attack-${(index + 1) % 6}`] })),
+  ...[
+    [12.5, .53, 'Cổng hải quan'], [16.5, 2.94, 'Ban công trái'], [18.5, 2.94, 'Ban công phải'],
+    [15.6, 5.39, 'Mái pháo đài'], [19.4, 5.39, 'Vọng gác'], [26.1, 1.93, 'Chốt kho lõi'],
+  ].map(([x, y, label], index) => ({ id: `harbor-defend-${index}`, label, x, y, world: true, team: 1, neighbors: [`harbor-defend-${(index + 1) % 6}`] })),
+  { id: 'harbor-seal-a', label: 'Khóa cầu cảng', x: -4.5, y: .53, world: true, neutral: true, neighbors: [] },
+  { id: 'harbor-seal-b', label: 'Khóa tháp canh', x: 8.5, y: 3.15, world: true, neutral: true, neighbors: [] },
+  { id: 'harbor-vault', label: 'Kho lõi', x: 23.5, y: .53, world: true, neutral: true, neighbors: [] },
+  { id: 'harbor-extraction', label: 'Bến thoát', x: -28, y: .53, world: true, neutral: true, neighbors: [] },
+];
+// Normal repositioning remains local; objective interactions are exposed as
+// explicit actions by Match so the first blockout is immediately playable.
+for (const node of harborNodes) {
+  if (node.team === 0) node.neighbors.push('harbor-seal-a');
+  if (node.team === 1) node.neighbors.push('harbor-seal-b');
+}
+const harborObjects = [
+  { id: 'harbor-fuel', kind: 'fuelBarrel', x: 2.8, y: .58, size: [.88, 1.16, .88], mass: 1.4, hp: 42 },
+  { id: 'harbor-pad', kind: 'bouncePad', x: -.5, y: .15, size: [1.25, .3, 1.65], mass: 0, angle: .18 },
+  { id: 'harbor-plank', kind: 'firePlank', x: 5.2, y: .22, size: [2.4, .44, 1.25], mass: 0, hp: 58 },
+  { id: 'harbor-glass', kind: 'glassTrap', x: 10, y: 5.4, size: [2.2, .28, 1.2], mass: 0, fallMass: 3.4, hp: 48 },
+  { id: 'harbor-magnet', kind: 'magnet', x: 6.4, y: 1.1, size: [1.05, 1.05, 1.05], mass: 0, hp: 68, radius: 6.5 },
+];
+
 export const MAPS = {
   townhouse: { id: 'townhouse', name: 'Nhà phố', tag: 'BỐN GIAN · BA TẦNG', description: 'Dãy nhà phố mở rộng với sân thượng, hiên và sáu cư dân. Chọn phòng và nhắm từng trụ.', tip: 'Đốt ván để cháy lan hoặc bắn sập mái kính.', center: 16.2, parts: townhouse, nodes: townhouseNodes, dropNodes: ['townhouse-drop-center'], relayRoute: ['townhouse-relay-approach', 'townhouse-relay-balcony', 'townhouse-node-5'], arenaObjects: arenaObjects.townhouse },
   tower: { id: 'tower', name: 'Tháp cao', tag: 'THÁP BẬC · CÁNH PHỤ', description: 'Tháp bậc bốn tầng, cánh phụ hai tầng và sáu cư dân trên một chiến tuyến rộng.', tip: 'Nam châm giữa sân sẽ bẻ đường bay của tên lửa.', center: 16.2, parts: tower, nodes: towerNodes, dropNodes: ['tower-drop-center'], relayRoute: ['tower-relay-approach', 'tower-node-1'], arenaObjects: arenaObjects.tower },
   bridge: { id: 'bridge', name: 'Cầu trên không', tag: 'HAI THÁP · CẦU DÀI', description: 'Hai tháp canh lớn nối bằng cầu gỗ trên cao, với nhiều tuyến bắn ở cả hai đầu.', tip: 'Lửa lan qua ván; kính treo có thể rơi xuống sân.', center: 16.2, parts: bridge, nodes: bridgeNodes, dropNodes: ['bridge-drop-center'], relayRoute: ['bridge-relay-approach', 'bridge-node-1'], arenaObjects: arenaObjects.bridge },
   fortress: { id: 'fortress', name: 'Pháo đài', tag: 'THÀNH RỘNG · THÁP GÁC', description: 'Pháo đài đá mở rộng với vọng lâu, tường chắn và nhiều lớp kết cấu chịu lực.', tip: 'Bắn đá treo để khóa sân giữa, nhưng coi chừng nam châm.', center: 16.2, parts: fortress, nodes: fortressNodes, dropNodes: ['fortress-drop-center'], relayRoute: ['fortress-relay-approach', 'fortress-node-4'], arenaObjects: arenaObjects.fortress },
+  harbor: {
+    id: 'harbor', name: 'Hải cảng', tag: 'ĐỘT KÍCH · PHÒNG THỦ',
+    description: 'Đội Đột kích phá hai khóa, lấy lõi trong kho rồi rút về bến thoát trước khi hết lượt.',
+    tip: 'Phá khóa cầu cảng và khóa tháp canh trước khi tiếp cận kho lõi.',
+    asymmetric: true, center: 0, parts: [...harborRaiders, ...harborDefenders], partsByTeam: [harborRaiders, harborDefenders],
+    nodes: harborNodes, dropNodes: ['harbor-seal-a'], arenaObjects: harborObjects,
+    heist: { sealNodeIds: ['harbor-seal-a', 'harbor-seal-b'], vaultNodeId: 'harbor-vault', extractionNodeId: 'harbor-extraction', maxAttackerTurns: 12 },
+  },
 };
 export const DEFAULT_MAP = 'tower';
-export const MAP_CATALOG = Object.values(MAPS).map(({ parts, nodes, dropNodes: _dropNodes, arenaObjects: _arenaObjects, ...map }) => ({ ...map, thumbnail: parts.map(({ kind, x, y, size, material }) => ({ kind, x, y, size, material })) }));
+export const MAP_CATALOG = Object.values(MAPS).map(({ parts, partsByTeam: _partsByTeam, nodes, dropNodes: _dropNodes, arenaObjects: _arenaObjects, heist: _heist, ...map }) => ({ ...map, thumbnail: parts.map(({ kind, x, y, size, material }) => ({ kind, x, y, size, material })) }));
