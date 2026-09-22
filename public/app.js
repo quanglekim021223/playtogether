@@ -242,19 +242,21 @@ function updateControls() {
         const buffLabel = m.airdropBuff === 'heal' ? '+35 HP' : m.airdropBuff === 'power' ? 'x1.5 Dmg' : 'Khiên -50%';
         const airdropBadge = m.hasAirdrop ? ` 🎁 [${buffLabel}]` : '';
         const moveClass = `${m.hasAirdrop ? ' airdrop-node' : ''}${m.core || m.objectiveAction || m.deliversCore || Number.isInteger(m.relayRouteIndex) ? ' control-node' : ''}`;
-        const icon = m.objectiveAction === 'disableSeal' ? '🔓' : m.core ? '⚡' : m.deliversCore ? '🚤' : Number.isInteger(m.relayRouteIndex) ? '➡' : '🏃';
+        const icon = m.objectiveAction === 'breachSeal' ? '🧨' : m.objectiveAction === 'repairSeal' ? '🛠' : m.core ? '⚡' : m.deliversCore ? '🚤' : Number.isInteger(m.relayRouteIndex) ? '➡' : '🏃';
         return `<button class="button secondary compact move-btn${moveClass}" data-node="${m.id}" style="margin-top:4px;font-size:10px;padding:6px 10px;width:100%">${icon} ${escape(m.label)}${airdropBadge}</button>`;
       }).join('');
       let lockSignature = '';
       if (showCoreNote) {
         const me = state.players.find(player => player.id === playerId);
-        const reason = objective.stage === 'breach' ? `Còn ${objective.seals.filter(seal => !seal.disabled).length} khóa cần phá`
+        const sealProgress = objective.seals.reduce((sum, seal) => sum + seal.progress, 0);
+        const sealRequired = objective.seals.reduce((sum, seal) => sum + seal.required, 0);
+        const reason = objective.stage === 'breach' ? `Tiến độ xâm nhập ${sealProgress}/${sealRequired}`
           : objective.status === 'dropped' ? 'Lõi đã rơi · đội Đột kích cần thu hồi'
           : objective.carrierTeam === me?.team ? 'Carrier đang tiến · bạn bắn yểm trợ'
           : objective.carrierTeam !== null ? 'Đối thủ đang mang · hãy bắn hạ'
           : objective.status === 'vault' ? 'Kho đã mở · lấy lõi' : 'Giữ vị trí và yểm trợ';
         html += `<div class="control-node-note">⚡ Lõi năng lượng <small>${reason}</small></div>`;
-        lockSignature = `${objective.stage}:${objective.status}:${objective.carrierId}:${objective.seals?.map(seal => Number(seal.disabled)).join('') || ''}`;
+        lockSignature = `${objective.stage}:${objective.status}:${objective.carrierId}:${objective.seals?.map(seal => `${seal.progress}/${seal.required}/${Number(seal.repaired)}`).join('|') || ''}`;
       }
       const sig = `${moves.map(m => `${m.id}:${m.hasAirdrop}:${m.core}:${m.deliversCore}:${m.relayRouteIndex}`).join(',')}|${lockSignature}`;
       if (moveOptions.dataset.signature !== sig) {
@@ -469,7 +471,9 @@ function updateGameUI() {
   if (control && game.objective) {
     control.hidden = false; control.dataset.owner = game.objective.carrierTeam ?? 'none';
     const disabled = game.objective.seals.filter(seal => seal.disabled).length;
-    const coreState = game.objective.stage === 'breach' ? `PHÁ KHÓA ${disabled}/2`
+    const sealProgress = game.objective.seals.reduce((sum, seal) => sum + seal.progress, 0);
+    const sealRequired = game.objective.seals.reduce((sum, seal) => sum + seal.required, 0);
+    const coreState = game.objective.stage === 'breach' ? `XÂM NHẬP ${sealProgress}/${sealRequired} · KHÓA ${disabled}/2`
       : game.objective.status === 'dropped' ? 'LÕI ĐÃ RƠI · THU HỒI'
       : game.objective.stage === 'steal' ? 'KHO ĐÃ MỞ · LẤY LÕI'
       : game.objective.status === 'extracted' ? 'ĐÃ RÚT LÕI'

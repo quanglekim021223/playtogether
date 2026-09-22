@@ -10,9 +10,12 @@ function moveOnce(game, nodeId) {
 
 function openVault(game) {
   for (const nodeId of game.map.heist.sealNodeIds) {
-    const result = moveOnce(game, nodeId);
-    assert.equal(result.ok, true);
-    assert.equal(result.disabledSeal, true);
+    const approach = moveOnce(game, nodeId);
+    assert.equal(approach.ok, true);
+    assert.equal(approach.disabledSeal, false);
+    const breach = moveOnce(game, nodeId);
+    assert.equal(breach.ok, true);
+    assert.equal(breach.disabledSeal, true);
   }
 }
 
@@ -29,22 +32,43 @@ test('objective mode is bound to the asymmetric harbor blockout', () => {
   assert.equal(snapshot.objective.type, 'heist');
   assert.equal(snapshot.objective.stage, 'breach');
   assert.equal(snapshot.objective.status, 'locked');
+  assert.deepEqual(snapshot.objective.seals.map(seal => seal.progress), [0, 0]);
   assert.equal(snapshot.objective.attackerTurnsRemaining, HEIST_RULES.maxAttackerTurns);
   assert.equal(snapshot.items.filter(item => item.team === 0 && item.kind === 'resident').length, 6);
   assert.equal(snapshot.items.filter(item => item.team === 1 && item.kind === 'resident').length, 6);
 });
 
-test('attackers must disable both seals before the vault opens', () => {
+test('attackers must spend two actions on each seal before the vault opens', () => {
   const game = new Match('harbor', { ruleset: 'control' });
-  const actions = game.getAvailableMoves().filter(move => move.objectiveAction === 'disableSeal');
+  const actions = game.getAvailableMoves().filter(move => move.objectiveAction === 'breachSeal');
   assert.equal(actions.length, 2);
+  assert.equal(moveOnce(game, actions[0].id).disabledSeal, false);
+  assert.equal(game.objective.seals.find(seal => seal.nodeId === actions[0].id).progress, 1);
   assert.equal(moveOnce(game, actions[0].id).disabledSeal, true);
   assert.equal(game.objective.stage, 'breach');
   assert.equal(game.objective.status, 'locked');
+  assert.equal(moveOnce(game, actions[1].id).disabledSeal, false);
   assert.equal(moveOnce(game, actions[1].id).disabledSeal, true);
   assert.equal(game.objective.stage, 'steal');
   assert.equal(game.objective.status, 'vault');
   assert.ok(game.events.some(event => event.type === 'vaultOpened'));
+});
+
+test('defenders can reset each breached seal once', () => {
+  const game = new Match('harbor', { ruleset: 'control' });
+  const nodeId = game.map.heist.sealNodeIds[0];
+  moveOnce(game, nodeId);
+  game.team = 1; game.movedTurn = null; game.syncShooter();
+  const repair = game.getAvailableMoves().find(move => move.objectiveAction === 'repairSeal' && move.id === nodeId);
+  assert.ok(repair);
+  const result = moveOnce(game, nodeId);
+  assert.equal(result.repairedSeal, true);
+  assert.equal(game.objective.seals[0].progress, 0);
+  assert.equal(game.objective.seals[0].repaired, true);
+  game.team = 0; game.movedTurn = null; game.syncShooter();
+  moveOnce(game, nodeId);
+  game.team = 1; game.movedTurn = null; game.syncShooter();
+  assert.equal(game.getAvailableMoves().some(move => move.objectiveAction === 'repairSeal' && move.id === nodeId), false);
 });
 
 test('attackers steal the core and extract at the dock to win', () => {

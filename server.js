@@ -191,8 +191,15 @@ export function createApp({ port = 3000 } = {}) {
         if (bot) {
           if (room.game.phase === 'move' && room.game.deadline - room.game.time < PHASE_DURATIONS.move - .8) {
             const moves = room.game.getAvailableMoves();
-            let objectiveMove = moves.find(move => move.objectiveAction || move.core || move.deliversCore) || null;
-            if (room.game.objective?.type !== 'heist' && room.game.objective?.carrierTeam === room.game.team) objectiveMove = moves.find(move => Number.isInteger(move.relayRouteIndex));
+            let objectiveMove = null;
+            if (room.game.objective?.type === 'heist') {
+              if (room.game.team === room.game.objective.attackerTeam) {
+                objectiveMove = moves.find(move => move.objectiveAction === 'breachSeal' || move.core || move.deliversCore) || null;
+              }
+            } else {
+              objectiveMove = moves.find(move => move.objectiveAction || move.core || move.deliversCore) || null;
+              if (room.game.objective?.carrierTeam === room.game.team) objectiveMove = moves.find(move => Number.isInteger(move.relayRouteIndex));
+            }
             if (objectiveMove) room.game.moveShooter(objectiveMove.id);
             room.game.readyAim();
           } else if (room.game.phase === 'aim' && room.game.deadline - room.game.time < PHASE_DURATIONS.aim - 2) {

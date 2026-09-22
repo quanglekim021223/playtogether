@@ -45,7 +45,7 @@ export class Match {
     if (this.ruleset === 'control' && !this.map.heist) throw new Error('Objective mode requires the harbor map');
     this.objective = this.ruleset === 'control' ? {
       type: 'heist', attackerTeam: 0, defenderTeam: 1, stage: 'breach',
-      seals: this.map.heist.sealNodeIds.map((nodeId, index) => ({ id: index, nodeId, disabled: false })),
+      seals: this.map.heist.sealNodeIds.map((nodeId, index) => ({ id: index, nodeId, progress: 0, required: 2, disabled: false, repaired: false })),
       nodeId: this.map.heist.vaultNodeId, vaultNodeId: this.map.heist.vaultNodeId,
       extractionNodeId: this.map.heist.extractionNodeId,
       carrierId: null, carrierTeam: null, dropX: null, dropY: null, droppedFromTeam: null,
@@ -279,12 +279,20 @@ export class Match {
         for (const seal of this.objective.seals.filter(seal => !seal.disabled)) {
           const node = this.map.nodes.find(candidate => candidate.id === seal.nodeId);
           const target = this.nodePosition(node, mover.team);
-          moves.unshift({ id: node.id, label: `Vô hiệu ${node.label}`, x: target.x, y: target.y, objectiveAction: 'disableSeal', sealId: seal.id });
+          const label = seal.progress === 0 ? `Tiếp cận ${node.label}` : `Phá ${node.label} · ${seal.progress}/${seal.required}`;
+          moves.unshift({ id: node.id, label, x: target.x, y: target.y, objectiveAction: 'breachSeal', sealId: seal.id });
         }
       } else if (this.objective.carrierId === null && ['vault', 'dropped'].includes(this.objective.status)) {
         const dropped = this.objective.status === 'dropped';
         const target = dropped ? new C.Vec3(this.objective.dropX, this.objective.dropY, 0) : this.nodePosition(this.objective.vaultNodeId, mover.team);
         moves.unshift({ id: dropped ? `${this.map.id}-core-dropped` : this.objective.vaultNodeId, label: dropped ? 'Thu hồi lõi bị rơi' : 'Lấy lõi trong kho', x: target.x, y: target.y, core: true });
+      }
+    }
+    if (this.objective?.type === 'heist' && mover.team === this.objective.defenderTeam && this.objective.stage === 'breach') {
+      for (const seal of this.objective.seals.filter(seal => seal.progress > 0 && !seal.repaired)) {
+        const node = this.map.nodes.find(candidate => candidate.id === seal.nodeId);
+        const target = this.nodePosition(node, mover.team);
+        moves.unshift({ id: node.id, label: `Tái kích hoạt ${node.label}`, x: target.x, y: target.y, objectiveAction: 'repairSeal', sealId: seal.id });
       }
     }
     const coreFree = this.objective?.type !== 'heist' && this.objective && ['center', 'dropped'].includes(this.objective.status) && this.objective.carrierId === null;
@@ -300,8 +308,7 @@ export class Match {
     }
     const side = mover.team;
     for (const neighborId of candidateIds) {
-      if (this.objective?.type === 'heist' && mover.team === this.objective.attackerTeam
-        && this.objective.seals.some(seal => seal.nodeId === neighborId)) continue;
+      if (moves.some(move => move.id === neighborId && move.objectiveAction)) continue;
       const neighborDef = this.map.nodes.find(n => n.id === neighborId);
       if (!neighborDef) continue;
       if (!this.isNodeAvailable(neighborId, side)) continue;
@@ -358,16 +365,26 @@ export class Match {
     this.movedTurn = this.turn;
 
     this.event('move', { shooterId: mover.id, moverId: mover.id, team: this.team, nodeId: targetNodeId, spot: mover.spot, buff: collectedBuff });
-    let pickedCore = false, scoredCore = false, disabledSeal = false, extractedCore = false;
-    if (targetMove.objectiveAction === 'disableSeal') {
+    let pickedCore = false, scoredCore = false, disabledSeal = false, repairedSeal = false, extractedCore = false;
+    if (targetMove.objectiveAction === 'breachSeal') {
       const seal = this.objective.seals.find(candidate => candidate.id === targetMove.sealId);
       if (seal && !seal.disabled) {
-        seal.disabled = true; disabledSeal = true;
-        this.event('sealDisabled', { team: mover.team, residentId: mover.id, sealId: seal.id, nodeId: seal.nodeId });
-        if (this.objective.seals.every(candidate => candidate.disabled)) {
-          this.objective.stage = 'steal'; this.objective.status = 'vault';
-          this.event('vaultOpened', { nodeId: this.objective.vaultNodeId });
+        seal.progress = Math.min(seal.required, seal.progress + 1);
+        this.event('sealProgress', { team: mover.team, residentId: mover.id, sealId: seal.id, nodeId: seal.nodeId, progress: seal.progress, required: seal.required });
+        if (seal.progress >= seal.required) {
+          seal.disabled = true; disabledSeal = true;
+          this.event('sealDisabled', { team: mover.team, residentId: mover.id, sealId: seal.id, nodeId: seal.nodeId });
+          if (this.objective.seals.every(candidate => candidate.disabled)) {
+            this.objective.stage = 'steal'; this.objective.status = 'vault';
+            this.event('vaultOpened', { nodeId: this.objective.vaultNodeId });
+          }
         }
+      }
+    } else if (targetMove.objectiveAction === 'repairSeal') {
+      const seal = this.objective.seals.find(candidate => candidate.id === targetMove.sealId);
+      if (seal && seal.progress > 0 && !seal.repaired && this.objective.stage === 'breach') {
+        seal.progress--; seal.disabled = false; seal.repaired = true; repairedSeal = true;
+        this.event('sealRepaired', { team: mover.team, residentId: mover.id, sealId: seal.id, nodeId: seal.nodeId, progress: seal.progress });
       }
     } else if (targetMove.core) {
       const continuingRoute = this.objective.status === 'dropped' && this.objective.droppedFromTeam === mover.team;
@@ -388,7 +405,7 @@ export class Match {
       if (targetMove.deliversCore) scoredCore = this.scoreCore(mover);
     }
     this.syncShooter();
-    return { ok: true, nodeId: targetNodeId, spot: mover.spot, collectedBuff, pickedCore, scoredCore, disabledSeal, extractedCore };
+    return { ok: true, nodeId: targetNodeId, spot: mover.spot, collectedBuff, pickedCore, scoredCore, disabledSeal, repairedSeal, extractedCore };
   }
   add(kind, team, x, y, size, mass, hp, material = null) {
     if (kind !== 'resident' && !Object.hasOwn(MATERIALS, material)) throw new Error('Unknown material');
